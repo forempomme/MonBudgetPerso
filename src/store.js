@@ -1,0 +1,290 @@
+import { uid, todayISO } from "./utils.js";
+
+// ─────────────────────────────────────────────────────────────────
+//  JSDoc Types
+// ─────────────────────────────────────────────────────────────────
+/**
+ * @typedef {'income'|'expense'|'epargne'|'decagnottage'|'dissolution_cagnotte'|'transfer'} TxType
+ *
+ * @typedef {Object} Transaction
+ * @property {string}  id
+ * @property {TxType}  type
+ * @property {number}  amount
+ * @property {string}  date        – ISO "YYYY-MM-DD"
+ * @property {string}  [categoryId]
+ * @property {string}  [targetCagId]
+ * @property {string}  [note]
+ *
+ * @typedef {Object} Cagnotte
+ * @property {string}  id
+ * @property {string}  name
+ * @property {number}  current
+ * @property {number|null}  target
+ * @property {string|null}  targetDate  – ISO "YYYY-MM-DD"
+ *
+ * @typedef {Object} Category
+ * @property {string}  id
+ * @property {string}  name
+ * @property {string}  icon
+ * @property {'expense'|'income'} type
+ *
+ * @typedef {Object} FixedExpense
+ * @property {string}  id
+ * @property {string}  name
+ * @property {number}  amount
+ * @property {string}  [categoryId]
+ *
+ * @typedef {Object} AppData
+ * @property {Transaction[]}   transactions
+ * @property {Category[]}      categories
+ * @property {Cagnotte[]}      cagnottes
+ * @property {FixedExpense[]}  fixedExpenses
+ * @property {string|null}     lastBackupDate
+ */
+
+// ─────────────────────────────────────────────────────────────────
+//  Action types
+// ─────────────────────────────────────────────────────────────────
+export const A = /** @type {const} */ ({
+  SAVE_TRANSACTION:  "SAVE_TRANSACTION",
+  DELETE_TRANSACTION:"DELETE_TRANSACTION",
+  SAVE_CAGNOTTE:     "SAVE_CAGNOTTE",
+  DELETE_CAGNOTTE:   "DELETE_CAGNOTTE",
+  SAVE_FIXED:        "SAVE_FIXED",
+  DELETE_FIXED:      "DELETE_FIXED",
+  EXECUTE_TRANSFER:  "EXECUTE_TRANSFER",
+  SAVE_CATEGORY:     "SAVE_CATEGORY",
+  DELETE_CATEGORY:   "DELETE_CATEGORY",
+  SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
+  DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
+  SET_BACKUP_DATE:   "SET_BACKUP_DATE",
+  IMPORT_DATA:       "IMPORT_DATA",
+  RESET:             "RESET",
+});
+
+// ─────────────────────────────────────────────────────────────────
+//  Default state
+// ─────────────────────────────────────────────────────────────────
+/** @type {AppData} */
+export const DEFAULT_DATA = {
+  transactions: [],
+  categories: [
+    { id: "1", name: "Loyer",   icon: "🏠", type: "expense" },
+    { id: "2", name: "Courses", icon: "🛒", type: "expense" },
+    { id: "3", name: "Salaire", icon: "💰", type: "income"  },
+  ],
+  cagnottes: [],
+  fixedExpenses: [],
+  provisionalExpenses: [],
+  lastBackupDate: null,
+};
+
+// ─────────────────────────────────────────────────────────────────
+//  Reducer
+// ─────────────────────────────────────────────────────────────────
+/**
+ * @param {AppData} state
+ * @param {{ type: string, [key: string]: any }} action
+ * @returns {AppData}
+ */
+export function reducer(state, action) {
+  switch (action.type) {
+
+    // ── Transactions ──────────────────────────────────────────────
+    case A.SAVE_TRANSACTION: {
+      const { tx } = action;
+
+      // ── Edit existing ──
+      if (tx.id) {
+        const old = state.transactions.find(t => t.id === tx.id);
+        let cagnottes = state.cagnottes;
+
+        // Reverse the old cagnotte effect before applying the new one
+        if (old?.type === "epargne") {
+          cagnottes = cagnottes.map(c =>
+            c.id === old.targetCagId
+              ? { ...c, current: c.current - (parseFloat(old.amount) || 0) }
+              : c
+          );
+        } else if (old?.type === "decagnottage") {
+          cagnottes = cagnottes.map(c =>
+            c.id === old.targetCagId
+              ? { ...c, current: c.current + (parseFloat(old.amount) || 0) }
+              : c
+          );
+        }
+
+        // Apply the new cagnotte effect
+        if (tx.type === "epargne") {
+          cagnottes = cagnottes.map(c =>
+            c.id === tx.targetCagId ? { ...c, current: c.current + tx.amount } : c
+          );
+        } else if (tx.type === "decagnottage") {
+          cagnottes = cagnottes.map(c =>
+            c.id === tx.targetCagId ? { ...c, current: c.current - tx.amount } : c
+          );
+        }
+
+        return {
+          ...state,
+          cagnottes,
+          transactions: state.transactions.map(t =>
+            t.id === tx.id ? { ...t, ...tx } : t
+          ),
+        };
+      }
+
+      // ── New transaction ──
+      const newTx = { ...tx, id: uid("t") };
+      let cagnottes = state.cagnottes;
+
+      if (tx.type === "epargne") {
+        cagnottes = cagnottes.map(c =>
+          c.id === tx.targetCagId ? { ...c, current: c.current + tx.amount } : c
+        );
+      } else if (tx.type === "decagnottage") {
+        cagnottes = cagnottes.map(c =>
+          c.id === tx.targetCagId ? { ...c, current: c.current - tx.amount } : c
+        );
+      }
+
+      return {
+        ...state,
+        cagnottes,
+        transactions: [...state.transactions, newTx],
+      };
+    }
+
+    case A.DELETE_TRANSACTION:
+      return {
+        ...state,
+        transactions: state.transactions.filter(t => t.id !== action.id),
+      };
+
+    // ── Cagnottes ─────────────────────────────────────────────────
+    case A.SAVE_CAGNOTTE: {
+      const { cag } = action;
+      if (cag.id) {
+        return {
+          ...state,
+          cagnottes: state.cagnottes.map(c =>
+            c.id === cag.id ? { ...c, ...cag } : c
+          ),
+        };
+      }
+      return {
+        ...state,
+        cagnottes: [...state.cagnottes, { ...cag, id: uid("cg") }],
+      };
+    }
+
+    case A.DELETE_CAGNOTTE: {
+      const target = state.cagnottes.find(c => c.id === action.id);
+      if (!target) return state;
+
+      const cagnottes = state.cagnottes.filter(c => c.id !== action.id);
+      const transactions = target.current > 0
+        ? [...state.transactions, {
+            id: uid("t"),
+            type: "dissolution_cagnotte",
+            amount: target.current,
+            date: todayISO(),
+            categoryId: "",
+            note: target.name,
+            targetCagId: "",
+          }]
+        : state.transactions;
+
+      return { ...state, cagnottes, transactions };
+    }
+
+    // ── Fixed expenses ────────────────────────────────────────────
+    case A.SAVE_FIXED: {
+      const { idx, fixed } = action;
+      const newFixed = [...state.fixedExpenses];
+      if (idx != null) {
+        newFixed[idx] = { ...newFixed[idx], ...fixed };
+      } else {
+        newFixed.push({ ...fixed, id: uid("f") });
+      }
+      return { ...state, fixedExpenses: newFixed };
+    }
+
+    case A.DELETE_FIXED: {
+      const newFixed = [...state.fixedExpenses];
+      newFixed.splice(action.idx, 1);
+      return { ...state, fixedExpenses: newFixed };
+    }
+
+    // ── Transfer between cagnottes ────────────────────────────────
+    case A.EXECUTE_TRANSFER: {
+      const { fromId, toId, amt } = action;
+      return {
+        ...state,
+        cagnottes: state.cagnottes.map(c =>
+          c.id === fromId ? { ...c, current: c.current - amt } :
+          c.id === toId   ? { ...c, current: c.current + amt } : c
+        ),
+      };
+    }
+
+    // ── Categories ────────────────────────────────────────────────
+    case A.SAVE_CATEGORY: {
+      const { cat } = action;
+      if (cat.id) {
+        return {
+          ...state,
+          categories: state.categories.map(c =>
+            c.id === cat.id ? { ...c, ...cat } : c
+          ),
+        };
+      }
+      return {
+        ...state,
+        categories: [...state.categories, { ...cat, id: uid("cat") }],
+      };
+    }
+
+    case A.DELETE_CATEGORY:
+      return {
+        ...state,
+        categories: state.categories.filter(c => c.id !== action.id),
+      };
+
+    // ── Provisional expenses ──────────────────────────────────────
+    case A.SAVE_PROVISIONAL: {
+      const { provisional } = action;
+      if (provisional.id) {
+        return {
+          ...state,
+          provisionalExpenses: (state.provisionalExpenses || []).map(p =>
+            p.id === provisional.id ? { ...p, ...provisional } : p
+          ),
+        };
+      }
+      return {
+        ...state,
+        provisionalExpenses: [...(state.provisionalExpenses || []), { ...provisional, id: uid("pv") }],
+      };
+    }
+
+    case A.DELETE_PROVISIONAL:
+      return {
+        ...state,
+        provisionalExpenses: (state.provisionalExpenses || []).filter(p => p.id !== action.id),
+      };
+
+    // ── Misc ──────────────────────────────────────────────────────
+    case A.SET_BACKUP_DATE:
+      return { ...state, lastBackupDate: action.date };
+
+    case A.IMPORT_DATA:
+      return { ...DEFAULT_DATA, ...action.data };
+
+    case A.RESET:
+      return DEFAULT_DATA;
+
+    default:
+      return state;
+  }
+}

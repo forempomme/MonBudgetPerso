@@ -1,0 +1,100 @@
+// ─── Constants ───────────────────────────────────────────────────
+export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+export const MONTHS_MINI  = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+export const PALETTE = [
+  "#4d9fff","#a78bfa","#fb923c","#34d399","#f87171",
+  "#38bdf8","#c084fc","#4ade80","#fbbf24","#f472b6","#22d3ee","#a3e635",
+];
+export const LS_KEY = "budget_ultimate_2026_v10";
+
+// ─── Formatting ──────────────────────────────────────────────────
+/** @param {number} n */
+export function fmt(n) {
+  return (Number(n) || 0).toLocaleString("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + " €";
+}
+
+// ─── Geometry (donut chart) ──────────────────────────────────────
+/** @returns {{ x: number, y: number }} */
+export function polar(cx, cy, r, angleDeg) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+// ─── ID generator ────────────────────────────────────────────────
+export function uid(prefix = "id") {
+  return `${prefix}${Date.now()}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// ─── Date helpers ────────────────────────────────────────────────
+/** "2026-04" → "2026-03" */
+export function getPrevMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+
+export function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function currentYM() {
+  return new Date().toISOString().slice(0, 7);
+}
+
+// ─── Delta badge ─────────────────────────────────────────────────
+/**
+ * Returns badge info for a % change between cur and prev.
+ * @returns {{ cls: string, text: string } | null}
+ */
+export function deltaInfo(cur, prev) {
+  if (prev === 0) return null;
+  const pct = ((cur - prev) / prev) * 100;
+  if (Math.abs(pct) < 0.5) return { cls: "delta-neu", text: "→ 0%" };
+  return pct > 0
+    ? { cls: "delta-pos", text: `▲ ${Math.abs(pct).toFixed(1)}%` }
+    : { cls: "delta-neg", text: `▼ ${Math.abs(pct).toFixed(1)}%` };
+}
+
+// ─── Transaction helpers ─────────────────────────────────────────
+/** True for types that add to income */
+export function isIncome(type) {
+  return type === "income" || type === "dissolution_cagnotte";
+}
+
+/** Human-readable label for a transaction */
+export function txLabel(t, categories, cagnottes) {
+  const cat = categories.find(c => c.id === t.categoryId);
+  switch (t.type) {
+    case "dissolution_cagnotte": return `Dissolution : ${t.note || ""}`;
+    case "epargne": {
+      const cag = cagnottes.find(c => c.id === t.targetCagId);
+      return `Épargne ➔ ${cag?.name || "Cagnotte"}`;
+    }
+    case "decagnottage": {
+      const cag = cagnottes.find(c => c.id === t.targetCagId);
+      return `Décagnottage : ${cag?.name || "Cagnotte"}`;
+    }
+    case "transfer": return "Transfert inter-cagnotte";
+    default: return t.note || cat?.name || "Inconnu";
+  }
+}
+
+export function txTypeClass(type) {
+  switch (type) {
+    case "income":
+    case "dissolution_cagnotte": return "type-income";
+    case "expense":              return "type-expense";
+    case "epargne":              return "type-savings";
+    case "decagnottage":         return "type-decag";
+    case "transfer":             return "type-transfer";
+    default:                     return "type-expense";
+  }
+}
+
+export function txSign(type) {
+  if (type === "income" || type === "dissolution_cagnotte") return "+";
+  if (type === "decagnottage" || type === "transfer")       return "";
+  return "−";
+}
