@@ -112,7 +112,10 @@ export function useSpark(transactions, fixedExpenses) {
     const now = new Date();
     return Array.from({ length: 6 }, (_, i) => {
       const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-      const ym = d.toISOString().slice(0, 7);
+      // ⚠ Correction : utilise l'heure locale au lieu de toISOString() (UTC)
+      // pour éviter que le mois calculé soit décalé d'un mois pour les
+      // utilisateurs en UTC+ (ex. France), notamment en début de mois.
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const isCur = ym === curYM;
       let inc = 0, exp = 0;
       transactions.filter(t => t.date.startsWith(ym)).forEach(t => {

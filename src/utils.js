@@ -35,12 +35,24 @@ export function getPrevMonth(ym) {
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 }
 
+/**
+ * Returns today's date as "YYYY-MM-DD" in LOCAL time.
+ * ⚠ Correction : remplace toISOString() (UTC) par heure locale pour éviter
+ *   le décalage d'un jour pour les utilisateurs en UTC+.
+ */
 export function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/**
+ * Returns the current year-month as "YYYY-MM" in LOCAL time.
+ * ⚠ Correction : remplace toISOString() (UTC) par heure locale pour éviter
+ *   que le mois courant soit incorrect entre minuit et 1-2h du matin en UTC+.
+ */
 export function currentYM() {
-  return new Date().toISOString().slice(0, 7);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 // ─── Delta badge ─────────────────────────────────────────────────
