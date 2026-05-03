@@ -87,9 +87,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <div
         className="hero-card"
         style={{
-          background: "linear-gradient(135deg, #4338ca 0%, #7c3aed 100%)",
+          background: "linear-gradient(135deg, #1e2d3d 0%, #2d3d52 100%)",
           border: "none",
-          boxShadow: "0 4px 24px rgba(124,58,237,.35)",
+          boxShadow: "0 4px 24px rgba(126,207,255,.2)",
         }}
       >
         <div className="hero-indicator" />
@@ -476,10 +476,10 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
     <div>
       {/* ── Carte récap totaux ── */}
       <div style={{
-        background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)",
+        background: "linear-gradient(135deg, #1e2d3d 0%, #2d3d52 100%)",
         borderRadius: 14, padding: "13px 16px", marginBottom: 12,
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        boxShadow: "0 4px 18px rgba(99,102,241,.25)",
+        boxShadow: "0 4px 18px rgba(126,207,255,.15)",
       }}>
         <div>
           <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
