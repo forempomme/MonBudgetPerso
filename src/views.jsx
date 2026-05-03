@@ -1,11 +1,33 @@
 import { useState, useMemo } from "react";
 import { ItemRow, Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT } from "./utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION } from "./utils.js";
 import {
   useBalance, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes,
 } from "./hooks.js";
+
+// ─────────────────────────────────────────────────────────────────
+//  SectionTitle — police renforcée, appliquée partout
+// ─────────────────────────────────────────────────────────────────
+function SectionTitle({ children, style }) {
+  return (
+    <div
+      className="section-title"
+      style={{
+        fontFamily: "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif",
+        fontWeight: 800,
+        fontSize: ".8rem",
+        letterSpacing: ".07em",
+        textTransform: "uppercase",
+        color: "var(--text1)",
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
@@ -16,7 +38,6 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const curM      = currentYM();
   const prevM     = getPrevMonth(curM);
   const curY      = new Date().getFullYear().toString();
-  const prevY     = (new Date().getFullYear() - 1).toString();
 
   const balance   = useBalance(transactions, fixedExpenses);
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
@@ -49,6 +70,11 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const showBackup = !data.lastBackupDate ||
     (Date.now() - new Date(data.lastBackupDate)) / 86400000 > 7;
 
+  // ── Couleur dynamique du solde ────────────────────────────────
+  // Blanc par défaut, jaune sous 100 €, rouge en négatif
+  const balanceColor = balance < 0 ? "#ef4444" : balance < 100 ? "#fbbf24" : "#ffffff";
+  const afterProvColor = balanceAfterProv < 0 ? "#ef4444" : balanceAfterProv < 100 ? "#fbbf24" : "rgba(255,255,255,.75)";
+
   return (
     <div>
       {showBackup && (
@@ -57,42 +83,58 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       )}
 
-      <div className="hero-card">
+      {/* ── Carte solde : fond violet/bleu, texte blanc dynamique ── */}
+      <div
+        className="hero-card"
+        style={{
+          background: "linear-gradient(135deg, #4338ca 0%, #7c3aed 100%)",
+          border: "none",
+          boxShadow: "0 4px 24px rgba(124,58,237,.35)",
+        }}
+      >
         <div className="hero-indicator" />
-        <div className="hero-label">Solde Bancaire Estimé</div>
-        <div className="hero-value">{fmt(balance)}</div>
+        <div
+          className="hero-label"
+          style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}
+        >
+          Solde Bancaire Estimé
+        </div>
+        <div className="hero-value" style={{ color: balanceColor }}>
+          {fmt(balance)}
+        </div>
         {provTotal > 0 && (
           <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
-            <div style={{ fontSize: ".62rem", color: "var(--text2)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
+            <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
               Après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
             </div>
             <div style={{
               fontFamily: "var(--mono)", fontSize: "1.25rem", fontWeight: 700,
-              color: balanceAfterProv >= 0 ? "var(--text2)" : "var(--danger)",
+              color: afterProvColor,
               fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em",
             }}>
               {fmt(balanceAfterProv)}
             </div>
           </div>
         )}
-        <div style={{ position: "absolute", bottom: 14, right: 16, opacity: .65, pointerEvents: "none" }}>
+        <div style={{ position: "absolute", bottom: 14, right: 16, opacity: .45, pointerEvents: "none" }}>
           <Sparkline transactions={transactions} fixedExpenses={fixedExpenses} />
         </div>
       </div>
 
+      {/* ── 🐷 Cagnottes + 📌 Fixes ── */}
       <div className="grid-2">
         <div className="stat-mini dash-cagnotte" onClick={() => onShowDetail("cagnottes", "all")}>
-          <div className="stat-label">Cagnottes</div>
+          <div className="stat-label">🐷 Cagnottes</div>
           <div className="stat-val" style={{ color: "var(--khaki)" }}>{fmt(cagTotal)}</div>
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-fixe">
-          <div className="stat-label">Fixes / mois</div>
+          <div className="stat-label">📌 Fixes / mois</div>
           <div className="stat-val" style={{ color: "var(--accent2)" }}>{fmt(tf)}</div>
         </div>
       </div>
 
-      <div className="section-title">Mois en cours</div>
+      <SectionTitle>🗓️ Mois en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}>
           <div className="stat-label">Revenus</div>
@@ -119,7 +161,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       </div>
 
-      <div className="section-title">Année en cours</div>
+      <SectionTitle>📅 Année en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "year")}>
           <div className="stat-label">Revenus</div>
@@ -147,7 +189,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       </div>
 
-      <div className="section-title">Flux mensuels {curY}</div>
+      <SectionTitle>📊 Flux mensuels {curY}</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         <ChartSVG months={months} chartFilter="all"
           onMonthClick={i => onShowMonthDetail?.(curYearNum, i)} />
@@ -158,7 +200,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       </div>
 
-      <div className="section-title">5 Dernières opérations</div>
+      <SectionTitle>5 Dernières opérations</SectionTitle>
       <div className="card" style={{ padding: "0 16px" }}>
         {recent.length === 0
           ? <div className="empty-state"><div className="empty-icon">💸</div><p>Aucune opération</p></div>
@@ -242,7 +284,6 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
   const isCurM  = month === currentYM();
   const mStats  = useMonthStats(transactions, fixedExpenses, month);
 
-  // Dynamic category chips
   const usedCats = useMemo(() =>
     [...new Set(transactions.filter(t => t.date.startsWith(month)).map(t => t.categoryId).filter(Boolean))]
       .map(id => categories.find(c => c.id === id)).filter(Boolean),
@@ -307,7 +348,6 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
         </div>
       </div>
 
-      {/* Mini summary */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
         <div style={{ background: "var(--success-glow)", border: "1px solid rgba(52,211,153,.25)", borderRadius: "var(--radius-sm)", padding: "10px 12px" }}>
           <div className="stat-label">Revenus</div>
@@ -361,7 +401,6 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
   return (
     <div>
-      {/* ── Frais fixes ── */}
       <button className="btn btn-outline" style={{ width: "100%", marginBottom: 12 }} onClick={onNewFixed}>
         + Ajouter un frais fixe
       </button>
@@ -402,8 +441,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
         }
       </div>
 
-      {/* ── Frais prévisionnels ── */}
-      <div className="section-title" style={{ marginTop: 20 }}>Frais prévisionnels</div>
+      <SectionTitle style={{ marginTop: 20 }}>Frais prévisionnels</SectionTitle>
       <div className="card" style={{
         fontSize: ".8rem", color: "var(--text2)",
         borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)",
@@ -490,9 +528,8 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const active = useMemo(() => months.filter(m => m.inc > 0 || m.exp > 0), [months]);
   const sorted = useMemo(() => [...active].sort((a, b) => b.net - a.net), [active]);
   const best   = sorted[0];
-  const worst  = sorted.length > 1 ? sorted[sorted.length - 1] : null; // hide if only 1 month
+  const worst  = sorted.length > 1 ? sorted[sorted.length - 1] : null;
 
-  // Top 5 expense categories
   const { top5, topTotal } = useMemo(() => {
     const tf    = fixedExpenses.reduce((s, f) => s + f.amount, 0);
     const isCur = currentYear === new Date().getFullYear();
@@ -509,7 +546,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
     return { top5: entries, topTotal: total };
   }, [transactions, fixedExpenses, currentYear]);
 
-  // Comparison table rows — arrow color is semantic per row type
   const compRows = [
     { label: "💰 Revenus",   v1: yInc,  v0: prevY.inc,           color: "var(--success)", higherIsBetter: true  },
     { label: "💸 Dépenses",  v1: yExp,  v0: prevY.exp,           color: "var(--danger)",  higherIsBetter: false },
@@ -519,14 +555,12 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
 
   return (
     <div>
-      {/* ── Year nav ── */}
       <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => y - 1)}>◀</button>
         <span style={{ fontFamily: "var(--display)", fontSize: "1.3rem", fontWeight: 800 }}>{currentYear}</span>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => y + 1)}>▶</button>
       </div>
 
-      {/* ── 3 stat cards : revenus / dépenses / solde net ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
         <div className="stat-mini dash-revenu">
           <div className="stat-label">Revenus</div>
@@ -544,7 +578,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </div>
       </div>
 
-      {/* ── Savings rate ── */}
       <div className="card" style={{ padding: 14 }}>
         {ySav === 0 ? (
           <div style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "4px 0 8px" }}>
@@ -569,8 +602,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         <div className="savings-bar-bg"><div className="savings-bar-fill" style={{ width: `${savRate}%` }} /></div>
       </div>
 
-
-      {/* ── Best / Worst month — cliquables ── */}
       {active.length > 0 && (
         <div className={worst ? "grid-2" : ""}>
           {[
@@ -592,7 +623,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </div>
       )}
 
-      {/* ── Monthly chart (sans filtres, légende suffit) ── */}
       <div className="card" style={{ padding: 14 }}>
         <div className="stat-label" style={{ marginBottom: 10 }}>Flux mensuels — clique sur un mois</div>
         <ChartSVG months={months} chartFilter="all" onMonthClick={i => onShowMonthDetail(currentYear, i)} />
@@ -603,8 +633,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </div>
       </div>
 
-      {/* ── Top 5 dépenses (remplace donut + top3) ── */}
-      <div className="section-title">Top 5 dépenses</div>
+      <SectionTitle>Top 5 dépenses</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         {top5.length === 0
           ? <p style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "12px 0" }}>Aucune dépense enregistrée</p>
@@ -634,8 +663,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         }
       </div>
 
-      {/* ── Évolution du solde net cumulé ── */}
-      <div className="section-title">Évolution du solde net</div>
+      <SectionTitle>Évolution du solde net</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         <PatrimoineSVG months={months} />
         <div style={{ display: "flex", gap: 12, fontSize: ".58rem", color: "var(--text3)", marginTop: 6, flexWrap: "wrap" }}>
@@ -644,8 +672,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </div>
       </div>
 
-      {/* ── Comparaison annuelle avec flèches sémantiques ── */}
-      <div className="section-title">Comparaison Annuelle</div>
+      <SectionTitle>Comparaison Annuelle</SectionTitle>
       <div className="card" style={{ padding: 10 }}>
         <table className="comp-table">
           <thead>
@@ -658,7 +685,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           <tbody>
             {compRows.map(r => {
               const diff = r.v1 - r.v0;
-              // Semantic color : good = green, bad = red, based on row type
               const isGood = diff === 0 ? null : (r.higherIsBetter ? diff > 0 : diff < 0);
               const arrowColor = isGood === null ? "var(--text3)" : isGood ? "var(--success)" : "var(--danger)";
               const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "—";
@@ -676,11 +702,11 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           </tbody>
         </table>
       </div>
-      {/* ── Analyste IA ── */}
       <AnalysteLocal data={data} currentYear={currentYear} months={months} />
     </div>
   );
 }
+
 // ─────────────────────────────────────────────────────────────────
 //  ANALYSTE LOCAL — analyses 100% locales, sans internet
 // ─────────────────────────────────────────────────────────────────
@@ -690,10 +716,10 @@ function buildInsights(data, currentYear, months) {
   const tf     = fixedExpenses.reduce((s, f) => s + f.amount, 0);
   const now    = new Date();
   const isCurY = currentYear === now.getFullYear();
-  const curYM  = now.toISOString().slice(0, 7);
+  // ⚠ Correction UTC : utilise l'heure locale au lieu de toISOString()
+  const curYM  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const MOIS   = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
-  // ── Raw aggregation ───────────────────────────────────────────
   let inc = 0, exp = 0, sav = 0;
   const byMonth = {};
   transactions.filter(t => t.date.startsWith(yStr)).forEach(t => {
@@ -719,7 +745,6 @@ function buildInsights(data, currentYear, months) {
 
   const insights = [];
 
-  // ── 6. Projection fin d'année (année courante seulement) ──────
   if (isCurY && n > 0 && inc > 0) {
     const moisRestants = 12 - now.getMonth() - 1;
     const avgNet = net / n;
@@ -744,7 +769,6 @@ function buildInsights(data, currentYear, months) {
     });
   }
 
-  // ── 7. Cagnottes ──────────────────────────────────────────────
   if (cagnottes.length > 0) {
     const totalCag = cagnottes.reduce((s, c) => s + c.current, 0);
     const done     = cagnottes.filter(c => c.target && c.current >= c.target);
@@ -764,7 +788,6 @@ function buildInsights(data, currentYear, months) {
     });
   }
 
-
   return insights;
 }
 
@@ -776,16 +799,14 @@ function AnalysteLocal({ data, currentYear, months }) {
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div className="section-title">Analyses financières ✨</div>
+      <SectionTitle>Analyses financières ✨</SectionTitle>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {insights.map(ins => (
           <div key={ins.id} className="card" style={{ padding: 14, borderLeft: "3px solid " + ins.color }}>
-            {/* Card header */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: "1rem" }}>{ins.icon}</span>
               <span style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: ".85rem" }}>{ins.title}</span>
             </div>
-            {/* Data lines */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               {ins.lines.map((l, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".78rem" }}>
@@ -794,7 +815,6 @@ function AnalysteLocal({ data, currentYear, months }) {
                 </div>
               ))}
             </div>
-            {/* Alert / commentary */}
             {ins.alert && (
               <div style={{ marginTop: 10, padding: "7px 10px", background: "rgba(0,0,0,.15)", borderRadius: 7, fontSize: ".72rem", color: "var(--text2)", lineHeight: 1.5 }}>
                 {ins.alert}
@@ -815,8 +835,6 @@ function AnalysteLocal({ data, currentYear, months }) {
 
 // ─────────────────────────────────────────────────────────────────
 //  OPTIONS
-
-
 // ─────────────────────────────────────────────────────────────────
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset }) {
   const [catFilter,   setCatFilter]   = useState("all");
@@ -827,7 +845,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
   return (
     <div>
-      <div className="section-title">Gestion Catégories</div>
+      <SectionTitle>Gestion Catégories</SectionTitle>
       <div className="filter-row">
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (
           <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={() => setCatFilter(k)}>{l}</div>
@@ -850,9 +868,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       </div>
       <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
 
-
-      {/* ── Sauvegarde ── */}
-      <div className="section-title">Sauvegarde & Sécurité</div>
+      <SectionTitle style={{ marginTop: 20 }}>Sauvegarde & Sécurité</SectionTitle>
       <div className="grid-2">
         <button className="btn btn-primary"  onClick={onExport}>⬇ Exporter JSON</button>
         <button className="btn btn-outline"  onClick={onImport}>⬆ Importer JSON</button>
@@ -860,6 +876,18 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:12 }} onClick={onReset}>
         ⚠️ Réinitialiser toutes les données
       </button>
+
+      {/* ── Version ── */}
+      <div style={{
+        marginTop: 32,
+        textAlign: "center",
+        color: "var(--text3)",
+        fontSize: ".65rem",
+        letterSpacing: ".06em",
+        fontWeight: 600,
+      }}>
+        {APP_NAME} — v{APP_VERSION}
+      </div>
     </div>
   );
 }

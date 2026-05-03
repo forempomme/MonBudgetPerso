@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A } from "./store.js";
-import { LS_KEY, uid } from "./utils.js";
+import { LS_KEY, uid, APP_NAME } from "./utils.js";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
@@ -25,7 +25,7 @@ const TABS = [
   ["options",    "⚙️",  "Options"],
 ];
 const PAGE_TITLES = Object.fromEntries(
-  [["accueil","Tableau de bord"],["cagnottes","Cagnottes"],["historique","Historique"],
+  [["accueil","Tableau de bord"],["cagnottes","🐷 Cagnottes"],["historique","Historique"],
    ["fixes","Frais Fixes"],["rapport","Rapport Annuel"],["options","Options"]]
 );
 
@@ -74,6 +74,9 @@ export default function App() {
     document.documentElement.className = theme === "light" ? "light" : "";
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  // ── App title ────────────────────────────────────────────────
+  useEffect(() => { document.title = APP_NAME; }, []);
 
   // ── Persist to localStorage on every data change ─────────────
   useEffect(() => {

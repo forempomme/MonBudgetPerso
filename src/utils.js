@@ -1,3 +1,8 @@
+// ─── App identity ────────────────────────────────────────────────
+export const APP_NAME    = "Gestion du budget";
+/** À bumper manuellement à chaque release — doit rester en sync avec package.json */
+export const APP_VERSION = "1.1.0";
+
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 export const MONTHS_MINI  = ["J","F","M","A","M","J","J","A","S","O","N","D"];

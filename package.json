@@ -1,7 +1,7 @@
 {
-  "name": "budget-pro-2026",
+  "name": "gestion-du-budget",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Gestionnaire de budget personnel",
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "android:build":"npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
     "android:debug":"npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
     "icons":        "python3 generate_icons.py",
-    "cap:init":     "npx cap init 'Budget Pro 2026' com.budgetpro.app --web-dir dist",
+    "cap:init":     "npx cap init 'Gestion du budget' com.gestionbudget.app --web-dir dist",
     "cap:add":      "npx cap add android",
     "cap:sync":     "npx cap sync",
     "setup":        "npm install && npm run icons && npm run build && npx cap add android && npx cap sync"
