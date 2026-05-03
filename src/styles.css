@@ -37,7 +37,7 @@ body {
   font-family: var(--ui);
   background: var(--bg);
   color: var(--text);
-  padding-bottom: 100px;
+  padding-bottom: 135px;
   min-height: 100vh;
   background-image:
     radial-gradient(ellipse at 20% 0%, rgba(77,159,255,.04) 0%, transparent 60%),
@@ -175,25 +175,14 @@ body {
 .btn-action:hover { opacity: 1; }
 .btn-del { color: var(--danger) !important; font-weight: 700; opacity: .8; }
 
-/* ── Navigation ─────────────────────────────────────────────── */
-.tabs {
-  position: fixed; bottom: 0; width: 100%;
-  background: rgba(15,21,32,.96); backdrop-filter: blur(20px);
-  border-top: 1px solid var(--border-soft); display: flex;
-  padding-bottom: env(safe-area-inset-bottom); z-index: 90;
-}
-.tab-btn {
-  flex: 1; padding: 10px 4px; border: none; background: none; color: var(--text3);
-  font-size: .55rem; font-family: var(--ui); font-weight: 600; letter-spacing: .04em;
-  text-transform: uppercase; display: flex; flex-direction: column; align-items: center;
-  cursor: pointer; transition: color .2s; gap: 3px;
-}
-.tab-btn.active { color: var(--accent); }
-.tab-icon { font-size: 1.15rem; }
+/* ── Navigation — remplacé par inline styles dans App.jsx ───── */
+.tabs { display: none; } /* neutralisé — tab bar gérée en inline dans App.jsx */
+.tab-btn  { display: none; }
+.tab-icon { display: none; }
 
 /* ── FAB ────────────────────────────────────────────────────── */
 .fab {
-  position: fixed; bottom: 85px; right: 18px; width: 52px; height: 52px;
+  position: fixed; bottom: 110px; right: 18px; width: 52px; height: 52px;
   background: var(--accent); color: #fff; border-radius: 50%; border: none;
   font-size: 22px; font-weight: 300; box-shadow: 0 4px 20px rgba(77,159,255,.4);
   cursor: pointer; z-index: 80; transition: transform .2s, box-shadow .2s;
@@ -302,7 +291,7 @@ input.error, select.error { border-color: var(--danger); }
 
 /* ── Toast notifications ─────────────────────────────────────── */
 .toast-container {
-  position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 135px; left: 50%; transform: translateX(-50%);
   display: flex; flex-direction: column; gap: 8px; z-index: 2000; pointer-events: none;
   width: min(360px, calc(100vw - 32px));
 }
