@@ -97,7 +97,23 @@ export function useBalance(transactions, fixedExpenses) {
       else if (t.type === "expense")     bal -= a;
       else if (t.type === "epargne")     bal -= a;
     });
-    return bal - totalFixes;
+
+    // ⚠ Correction : les frais fixes sont mensuels, il faut les soustraire
+    // pour chaque mois écoulé depuis la première transaction jusqu'au mois
+    // en cours (inclus). Avant, ils n'étaient soustraits qu'une seule fois.
+    let monthsElapsed = 1;
+    if (transactions.length > 0) {
+      const earliest = transactions.reduce(
+        (min, t) => (t.date < min ? t.date : min),
+        transactions[0].date
+      );
+      const [ey, em] = earliest.slice(0, 7).split("-").map(Number);
+      const now = new Date();
+      const [cy, cm] = [now.getFullYear(), now.getMonth() + 1];
+      monthsElapsed = Math.max(1, (cy - ey) * 12 + (cm - em) + 1);
+    }
+
+    return bal - totalFixes * monthsElapsed;
   }, [transactions, totalFixes]);
 }
 
