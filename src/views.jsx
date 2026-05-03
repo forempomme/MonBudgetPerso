@@ -437,10 +437,11 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
 export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSaveProvisional, onDeleteProvisional }) {
   const { fixedExpenses, categories } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
+  const [selected,    setSelected]    = useState(null); // id carte sélectionnée (tap)
   const [showProvForm, setShowProvForm] = useState(false);
-  const [provName, setProvName] = useState("");
-  const [provAmt,  setProvAmt]  = useState("");
-  const [provErr,  setProvErr]  = useState({});
+  const [provName,    setProvName]    = useState("");
+  const [provAmt,     setProvAmt]     = useState("");
+  const [provErr,     setProvErr]     = useState({});
   const total     = fixedExpenses.reduce((s, f) => s + (f.amount || 0), 0);
   const provTotal = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
 
@@ -455,80 +456,149 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
     setProvName(""); setProvAmt(""); setShowProvForm(false); setProvErr({});
   }
 
+  // Style partagé pour une carte 4-col
+  const card4 = (selKey, accentColor) => ({
+    background: "var(--card-bg, #1e1e2e)",
+    borderRadius: 10,
+    borderTop: `3px solid ${accentColor}`,
+    padding: "8px 5px 6px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 3,
+    cursor: "pointer",
+    outline: selected === selKey ? `2px solid ${accentColor}` : "none",
+    transition: "outline .1s",
+    position: "relative",
+  });
+
   return (
     <div>
-      <button className="btn btn-outline" style={{ width: "100%", marginBottom: 12 }} onClick={onNewFixed}>
-        + Ajouter un frais fixe
-      </button>
-      <div className="card" style={{
-        fontSize: ".8rem", color: "var(--text2)",
-        borderLeft: "3px solid var(--accent2)", background: "var(--accent2-glow)",
+      {/* ── Carte récap totaux ── */}
+      <div style={{
+        background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)",
+        borderRadius: 14, padding: "13px 16px", marginBottom: 12,
         display: "flex", justifyContent: "space-between", alignItems: "center",
+        boxShadow: "0 4px 18px rgba(99,102,241,.25)",
       }}>
-        <span>Frais fixes récurrents — déduits du mois en cours uniquement.</span>
-        {total > 0 && (
-          <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--accent2)",
-            fontVariantNumeric: "tabular-nums", flexShrink: 0, marginLeft: 10 }}>
-            {fmt(total)}/mois
-          </span>
-        )}
-      </div>
-      <div style={{ marginTop: 12 }}>
-        {fixedExpenses.length === 0
-          ? <div className="empty-state"><div className="empty-icon">🔄</div><p>Aucun frais fixe</p></div>
-          : (
-            <div className="fixed-grid">
-              {fixedExpenses.map((f, idx) => {
-                const cat = categories.find(c => c.id === f.categoryId);
-                return (
-                  <div key={f.id ?? idx} className="fixed-card">
-                    <div className="fixed-card-icon">{cat?.icon ?? "🔄"}</div>
-                    <div className="fixed-card-name">{f.name}</div>
-                    <div className="fixed-card-amt">{fmt(f.amount)}</div>
-                    <div className="fixed-card-actions">
-                      <button className="btn-action" style={{ fontSize: ".7rem" }} onClick={() => onEditFixed(idx)}>✏️</button>
-                      <button className="btn-action btn-del" style={{ fontSize: ".7rem" }} onClick={() => onDeleteFixed(idx)}>✕</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )
-        }
+        <div>
+          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
+            📌 Fixes / mois
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 800, color: "#fff", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+            {fmt(total)}
+          </div>
+          <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.4)", marginTop: 2 }}>
+            {fixedExpenses.length} frais récurrents
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
+            🔮 Prévisions
+          </div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1rem", fontWeight: 700, color: "var(--warning)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+            −{fmt(provTotal)}
+          </div>
+          <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.4)", marginTop: 2 }}>
+            {provisionalExpenses.length} prévision{provisionalExpenses.length !== 1 ? "s" : ""}
+          </div>
+        </div>
       </div>
 
-      <SectionTitle style={{ marginTop: 20 }}>Frais prévisionnels</SectionTitle>
+      {/* ── Bouton ajouter frais fixe ── */}
+      <button className="btn btn-outline" style={{ width: "100%", marginBottom: 10 }} onClick={onNewFixed}>
+        + Ajouter un frais fixe
+      </button>
+
+      {/* ── Grille 4 colonnes — frais fixes ── */}
+      {fixedExpenses.length === 0
+        ? <div className="empty-state"><div className="empty-icon">📌</div><p>Aucun frais fixe</p></div>
+        : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 16 }}>
+            {fixedExpenses.map((f, idx) => {
+              const cat    = categories.find(c => c.id === f.categoryId);
+              const selKey = f.id ?? idx;
+              return (
+                <div key={selKey} style={card4(selKey, "var(--accent)")}
+                  onClick={() => setSelected(selected === selKey ? null : selKey)}>
+                  <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "📌"}</span>
+                  {/* Nom sur 2 lignes max, jamais tronqué */}
+                  <div style={{
+                    fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
+                    textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
+                    width: "100%", padding: "0 2px",
+                    minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    {f.name}
+                  </div>
+                  <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>
+                    {fmt(f.amount)}
+                  </div>
+                  {/* Boutons visibles au tap uniquement */}
+                  {selected === selKey && (
+                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                        onClick={e => { e.stopPropagation(); onEditFixed(idx); }}>✏️</button>
+                      <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                        onClick={e => { e.stopPropagation(); onDeleteFixed(idx); }}>✕</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      }
+
+      {/* ── Section prévisionnels ── */}
+      <SectionTitle style={{ marginTop: 4 }}>🔮 Frais prévisionnels</SectionTitle>
       <div className="card" style={{
-        fontSize: ".8rem", color: "var(--text2)",
+        fontSize: ".75rem", color: "var(--text2)",
         borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)",
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 12,
+        marginBottom: 10,
       }}>
-        <span>Dépenses ponctuelles prévues — visibles sur la carte du solde.</span>
+        <span>Dépenses ponctuelles — déduites du solde estimé.</span>
         {provTotal > 0 && (
-          <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--warning)",
-            fontVariantNumeric: "tabular-nums", flexShrink: 0, marginLeft: 10 }}>
+          <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--warning)", fontVariantNumeric: "tabular-nums", flexShrink: 0, marginLeft: 10 }}>
             −{fmt(provTotal)}
           </span>
         )}
       </div>
 
+      {/* ── Grille 4 colonnes — prévisionnels ── */}
       {provisionalExpenses.length > 0 && (
-        <div className="fixed-grid" style={{ marginBottom: 10 }}>
-          {provisionalExpenses.map(p => (
-            <div key={p.id} className="fixed-card" style={{ borderTopColor: "var(--warning)" }}>
-              <div className="fixed-card-icon">📋</div>
-              <div className="fixed-card-name">{p.name}</div>
-              <div className="fixed-card-amt" style={{ color: "var(--warning)" }}>{fmt(p.amount)}</div>
-              <div className="fixed-card-actions">
-                <button className="btn-action btn-del" style={{ fontSize: ".7rem" }}
-                  onClick={() => onDeleteProvisional(p.id)}>✕</button>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
+          {provisionalExpenses.map(p => {
+            const selKey = `p_${p.id}`;
+            return (
+              <div key={p.id} style={card4(selKey, "var(--warning)")}
+                onClick={() => setSelected(selected === selKey ? null : selKey)}>
+                <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>📋</span>
+                <div style={{
+                  fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
+                  textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
+                  width: "100%", padding: "0 2px",
+                  minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  {p.name}
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--warning)", fontVariantNumeric: "tabular-nums" }}>
+                  −{fmt(p.amount)}
+                </div>
+                {selected === selKey && (
+                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                    <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                      onClick={e => { e.stopPropagation(); onDeleteProvisional(p.id); }}>✕</button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
+      {/* ── Formulaire / bouton ajout prévision ── */}
       {showProvForm ? (
         <div className="card" style={{ padding: 14, borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)" }}>
           <div className="form-group">
@@ -560,7 +630,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
         <button className="btn btn-outline"
           style={{ width: "100%", borderColor: "var(--warning)", color: "var(--warning)" }}
           onClick={() => setShowProvForm(true)}>
-          + Ajouter un frais prévisionnel
+          + Ajouter une prévision
         </button>
       )}
     </div>

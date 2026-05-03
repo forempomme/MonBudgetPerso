@@ -18,10 +18,10 @@ import {
 // ─────────────────────────────────────────────────────────────────
 const TABS = [
   ["accueil",    "🏠", "Accueil"],
-  ["cagnottes",  "🎯", "Cagnottes"],
-  ["historique", "📅", "Historique"],
-  ["fixes",      "🔄", "Fixes"],
-  ["rapport",    "📈", "Rapport"],
+  ["cagnottes",  "🐷", "Cagnottes"],
+  ["historique", "📋", "Historique"],
+  ["fixes",      "📌", "Fixes"],
+  ["rapport",    "📊", "Rapport"],
   ["options",    "⚙️",  "Options"],
 ];
 const PAGE_TITLES = Object.fromEntries(
