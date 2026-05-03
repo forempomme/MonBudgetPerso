@@ -219,15 +219,71 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 //  CAGNOTTES
 // ─────────────────────────────────────────────────────────────────
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory }) {
-  const { cagnottes } = data;
+  const { cagnottes, transactions } = data;
+  const curM = currentYM();
+  const curY = new Date().getFullYear().toString();
+
+  // ── Stats épargne + décagnottage ─────────────────────────────
+  const { savMonth, savYear, decagMonth, decagYear } = useMemo(() => {
+    let savMonth = 0, savYear = 0, decagMonth = 0, decagYear = 0;
+    transactions.forEach(t => {
+      const a = parseFloat(t.amount) || 0;
+      const inMonth = t.date.startsWith(curM);
+      const inYear  = t.date.startsWith(curY);
+      if (t.type === "epargne") {
+        if (inMonth) savMonth += a;
+        if (inYear)  savYear  += a;
+      } else if (t.type === "decagnottage") {
+        if (inMonth) decagMonth += a;
+        if (inYear)  decagYear  += a;
+      }
+    });
+    return { savMonth, savYear, decagMonth, decagYear };
+  }, [transactions, curM, curY]);
+
   return (
     <div>
-      <div className="grid-2">
-        <button className="btn btn-success" style={{ width: "100%" }} onClick={onNewCag}>+ Nouveau</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={onTransfer}>🔄 Transfert</button>
+      {/* ── Bloc stats ── */}
+      <div className="card" style={{
+        borderLeft: "3px solid var(--accent)",
+        background: "var(--accent-glow, rgba(124,58,237,.1))",
+        padding: "12px 14px",
+        marginBottom: 10,
+      }}>
+        <div style={{ fontSize: ".67rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8 }}>
+          📊 Épargne &amp; Mouvements
+        </div>
+        {[
+          { label: "💰 Épargné ce mois",         value: savMonth,   color: "var(--success)" },
+          { label: "💰 Épargné cette année",      value: savYear,    color: "var(--success)" },
+          { label: "↩️ Décagnottage ce mois",     value: decagMonth, color: "var(--warning)" },
+          { label: "↩️ Décagnottage cette année", value: decagYear,  color: "var(--warning)" },
+        ].map(({ label, value, color }, i, arr) => (
+          <div key={label} style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "5px 0",
+            borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,.05)" : "none",
+          }}>
+            <span style={{ fontSize: ".75rem", color: "var(--text2)" }}>{label}</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".78rem", color, fontVariantNumeric: "tabular-nums" }}>
+              {fmt(value)}
+            </span>
+          </div>
+        ))}
       </div>
+
+      {/* ── Boutons ── */}
+      <div className="grid-2" style={{ marginBottom: 12 }}>
+        <button className="btn btn-outline" style={{ width: "100%", borderColor: "var(--accent)", color: "var(--accent)" }} onClick={onTransfer}>
+          🔄 Transfert
+        </button>
+        <button className="btn btn-primary" style={{ width: "100%" }} onClick={onNewCag}>
+          ＋ Nouvelle
+        </button>
+      </div>
+
       {cagnottes.length === 0
-        ? <div className="empty-state"><div className="empty-icon">🎯</div><p>Aucune cagnotte</p></div>
+        ? <div className="empty-state"><div className="empty-icon">🐷</div><p>Aucune cagnotte</p></div>
         : (
           <div className="grid-2">
             {cagnottes.map(c => {
