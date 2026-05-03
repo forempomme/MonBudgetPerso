@@ -397,7 +397,8 @@ export default function App() {
       <div className="tabs">
         {TABS.map(([k, icon, label]) => (
           <button key={k} className={`tab-btn${tab === k ? " active" : ""}`} onClick={() => navigateTo(k)}>
-            <span className="tab-icon">{icon}</span>{label}
+            <span className="tab-icon">{icon}</span>
+            {label}
           </button>
         ))}
       </div>
