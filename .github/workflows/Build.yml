@@ -40,7 +40,7 @@ jobs:
       # ── 7. Capacitor — init + android + sync ─────────────────────
       - name: Capacitor init
         run: |
-          npx cap init "Budget Pro 2026" "com.budgetpro.app" \
+          npx cap init "Gestion du budget" "com.gestionbudget.app" \
             --web-dir dist \
             2>&1 || true
 
@@ -81,18 +81,19 @@ jobs:
             -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
             -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
-      # ── 11. Renommer l'APK ───────────────────────────────────────
+      # ── 11. Renommer l'APK avec numéro de version ────────────────
       - name: Rename APK
         run: |
+          VERSION=$(node -p "require('./package.json').version")
           mkdir -p output
           cp android/app/build/outputs/apk/release/app-release.apk \
-             output/BudgetPro2026.apk
+             output/GestionBudget-v${VERSION}.apk
 
       # ── 12. Upload artifact ──────────────────────────────────────
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: BudgetPro2026
-          path: output/BudgetPro2026.apk
+          name: GestionBudget
+          path: output/GestionBudget-v*.apk
           retention-days: 30
           
