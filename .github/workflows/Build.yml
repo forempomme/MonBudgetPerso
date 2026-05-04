@@ -52,29 +52,33 @@ jobs:
         run: npx cap sync android
 
       # ── 7b. Injection des icônes ─────────────────────────────────
-      # Les icônes sont versionnées dans assets/android-icons/.
-      # On supprime mipmap-anydpi-v26/ (icônes adaptatives XML générées
-      # par Capacitor qui écrasent nos PNG sur Android 8+), puis on
-      # copie nos PNG dans chaque dossier mipmap.
       - name: Inject app icons
         run: |
           SRC="assets/android-icons"
           DEST="android/app/src/main/res"
 
-          # Supprime les icônes adaptatives XML — elles ont priorité sur les PNG
-          rm -rf "$DEST/mipmap-anydpi-v26"
-          rm -rf "$DEST/mipmap-anydpi-v31"
+          echo "=== Avant injection ==="
+          find "$DEST" -name "ic_launcher*" | sort
+
+          # Supprime TOUS les dossiers anydpi (icônes adaptatives XML
+          # qui ont priorité absolue sur les PNG sur Android 8+)
+          find "$DEST" -type d -name "mipmap-anydpi*" -exec rm -rf {} + 2>/dev/null || true
+
+          # Supprime tous les XML d'icônes dans les dossiers mipmap
+          find "$DEST" -name "ic_launcher*.xml" -delete 2>/dev/null || true
 
           # Copie nos PNG dans chaque dossier mipmap
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             mkdir -p "$DEST/$dir"
-            # Supprime les éventuels .webp générés par Capacitor
-            rm -f "$DEST/$dir/"*.webp
-            cp "$SRC/$dir/"*.png "$DEST/$dir/"
+            rm -f "$DEST/$dir/ic_launcher*.webp"
+            rm -f "$DEST/$dir/ic_launcher*.png"
+            cp "$SRC/$dir/ic_launcher.png"       "$DEST/$dir/ic_launcher.png"
+            cp "$SRC/$dir/ic_launcher_round.png" "$DEST/$dir/ic_launcher_round.png"
+            echo "✅ $dir — $(ls $DEST/$dir/ic_launcher*.png)"
           done
 
-          echo "✅ Icons injected"
-          ls "$DEST/mipmap-xxhdpi/"
+          echo "=== Après injection ==="
+          find "$DEST" -name "ic_launcher*" | sort
 
       # ── 8. Keystore — décodage depuis GitHub Secrets ─────────────
       # Le keystore est stocké en base64 dans KEYSTORE_BASE64.
