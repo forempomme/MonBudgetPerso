@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { ItemRow, Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION } from "./utils.js";
@@ -25,6 +25,210 @@ function SectionTitle({ children, style }) {
       }}
     >
       {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  CountUp — chiffre animé de 0 à target
+// ─────────────────────────────────────────────────────────────────
+function CountUp({ target, duration = 1100, color, style = {} }) {
+  const [val, setVal] = useState(0);
+  const raf  = useRef(null);
+  const t0   = useRef(null);
+  useEffect(() => {
+    t0.current = null;
+    const step = ts => {
+      if (!t0.current) t0.current = ts;
+      const p    = Math.min((ts - t0.current) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      setVal(target * ease);
+      if (p < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, duration]);
+  return <span style={{ color, fontVariantNumeric: "tabular-nums", ...style }}>{fmt(val)}</span>;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  SmartIndicator — point coloré Option D (priorité descendante)
+// ─────────────────────────────────────────────────────────────────
+function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onSwitchTab }) {
+  const [open, setOpen] = useState(false);
+
+  const daysSinceBackup = lastBackupDate
+    ? (Date.now() - new Date(lastBackupDate)) / 86400000
+    : 999;
+
+  // Priorité : problème le plus urgent en premier
+  const status = useMemo(() => {
+    if (balance < 0)
+      return { color: "#ef4444", glow: "rgba(239,68,68,.5)",   label: "🔴 Solde négatif",              sub: `${fmt(balance)} — revoir les dépenses` };
+    if (balance < 100)
+      return { color: "#ef4444", glow: "rgba(239,68,68,.4)",   label: "🔴 Solde critique",              sub: `Moins de 100 € restants` };
+    if (daysSinceBackup > 14)
+      return { color: "#ef4444", glow: "rgba(239,68,68,.35)",  label: "🔴 Sauvegarde urgente",          sub: `${Math.floor(daysSinceBackup)} jours sans backup`, action: "options" };
+    if (curMonthExp > curMonthInc && curMonthInc > 0)
+      return { color: "#fbbf24", glow: "rgba(251,191,36,.5)",  label: "🟡 Dépenses > revenus",          sub: `Ce mois : −${fmt(curMonthExp - curMonthInc)}` };
+    if (balance < 500)
+      return { color: "#fbbf24", glow: "rgba(251,191,36,.4)",  label: "🟡 Solde faible",                sub: `Moins de 500 € — sois vigilant` };
+    if (daysSinceBackup > 7)
+      return { color: "#fbbf24", glow: "rgba(251,191,36,.35)", label: "🟡 Sauvegarde recommandée",      sub: `${Math.floor(daysSinceBackup)} jours sans backup`, action: "options" };
+    return   { color: "#4ade80", glow: "rgba(74,222,128,.5)",  label: "🟢 Tout va bien",               sub: `Budget équilibré, solde sain` };
+  }, [balance, curMonthInc, curMonthExp, daysSinceBackup]);
+
+  return (
+    <div style={{ position: "absolute", top: 18, right: 18, zIndex: 10 }}>
+      {/* Point */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: 11, height: 11, borderRadius: "50%",
+          background: status.color,
+          boxShadow: `0 0 8px ${status.glow}`,
+          cursor: "pointer",
+          animation: "pulse-indicator 2s infinite",
+        }}
+      />
+      {/* Bulle tooltip */}
+      {open && (
+        <div style={{
+          position: "absolute", top: 18, right: 0,
+          background: "#141618", border: `1px solid ${status.color}`,
+          borderRadius: 10, padding: "10px 12px", width: 200,
+          boxShadow: `0 4px 20px rgba(0,0,0,.5)`,
+          animation: "fade-in-down .15s ease",
+          zIndex: 50,
+        }}>
+          <div style={{ fontSize: ".72rem", fontWeight: 800, color: status.color, marginBottom: 4 }}>
+            {status.label}
+          </div>
+          <div style={{ fontSize: ".65rem", color: "#8899aa", lineHeight: 1.5 }}>
+            {status.sub}
+          </div>
+          {status.action && (
+            <button
+              onClick={() => { setOpen(false); onSwitchTab?.(status.action); }}
+              style={{
+                marginTop: 8, background: "transparent",
+                border: `1px solid ${status.color}`, borderRadius: 6,
+                padding: "4px 10px", color: status.color,
+                fontSize: ".65rem", fontWeight: 700, cursor: "pointer", width: "100%",
+              }}
+            >
+              Aller aux options →
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  EmptyIllustration — empty states avec SVG contextuel
+// ─────────────────────────────────────────────────────────────────
+const EMPTY_SVG = {
+  transactions: (
+    <svg viewBox="0 0 120 90" width="110" height="82">
+      <rect x="15" y="20" width="90" height="55" rx="10" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5"/>
+      <rect x="15" y="20" width="90" height="16" rx="10" fill="var(--surface3)"/>
+      <rect x="15" y="28" width="90" height="8" fill="var(--surface3)"/>
+      <rect x="26" y="44" width="40" height="5" rx="2.5" fill="var(--border)"/>
+      <rect x="26" y="54" width="28" height="4" rx="2"   fill="var(--border-soft)"/>
+      <rect x="26" y="63" width="35" height="4" rx="2"   fill="var(--border-soft)"/>
+      <rect x="80" y="44" width="18" height="5" rx="2.5" fill="var(--border)"/>
+      <rect x="82" y="54" width="14" height="4" rx="2"   fill="var(--border-soft)"/>
+      <circle cx="86" cy="25" r="10" fill="var(--bg)" stroke="var(--accent)" strokeWidth="1.5"/>
+      <circle cx="86" cy="25" r="5.5" fill="none" stroke="var(--accent)" strokeWidth="1.5"/>
+      <line x1="90" y1="29" x2="94" y2="33" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+      <text x="86" y="27.5" textAnchor="middle" fontSize="5.5" fill="var(--accent)" fontWeight="800">?</text>
+    </svg>
+  ),
+  cagnottes: (
+    <svg viewBox="0 0 120 90" width="110" height="82">
+      <ellipse cx="58" cy="52" rx="28" ry="22" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5"/>
+      <ellipse cx="84" cy="46" rx="6"  ry="5"  fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5"/>
+      <ellipse cx="58" cy="28" rx="7"  ry="3"  fill="var(--warning)" opacity=".9"/>
+      <line x1="58" y1="31" x2="58" y2="36" stroke="var(--warning)" strokeWidth="1.5" strokeDasharray="2,2"/>
+      <rect x="51" y="30" width="14" height="2.5" rx="1.25" fill="var(--border)"/>
+      <circle cx="50" cy="48" r="2.5" fill="var(--accent)"/>
+      <circle cx="64" cy="48" r="2.5" fill="var(--accent)"/>
+      <path d="M50 56 Q57 62 66 56" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round"/>
+      <rect x="42" y="70" width="6" height="8" rx="3" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.2"/>
+      <rect x="52" y="70" width="6" height="8" rx="3" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.2"/>
+      <rect x="62" y="70" width="6" height="8" rx="3" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.2"/>
+      <rect x="72" y="70" width="6" height="8" rx="3" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.2"/>
+      <path d="M86 54 Q96 50 94 58 Q92 66 86 62" fill="none" stroke="var(--border)" strokeWidth="1.5" strokeLinecap="round"/>
+    </svg>
+  ),
+  fixes: (
+    <svg viewBox="0 0 120 90" width="110" height="82">
+      <rect x="20" y="22" width="80" height="58" rx="8" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5"/>
+      <rect x="20" y="22" width="80" height="18" rx="8" fill="var(--surface3)"/>
+      <rect x="20" y="30" width="80" height="10" fill="var(--surface3)"/>
+      <rect x="38" y="16" width="5" height="12" rx="2.5" fill="var(--accent2)"/>
+      <rect x="77" y="16" width="5" height="12" rx="2.5" fill="var(--accent2)"/>
+      <text x="60" y="36" textAnchor="middle" fontSize="6" fill="var(--text)" fontWeight="700">MENSUEL</text>
+      {[0,1,2,3,4,5,6].map(i => (
+        <rect key={i} x={27+i*10} y="48" width="7" height="7" rx="2"
+          fill={i===0 ? "var(--accent)" : "var(--border-soft)"} opacity={i===0?1:.7}/>
+      ))}
+      {[0,1,2,3,4,5,6].map(i => (
+        <rect key={i} x={27+i*10} y="59" width="7" height="7" rx="2" fill="var(--border-soft)" opacity=".5"/>
+      ))}
+      <circle cx="90" cy="22" r="10" fill="var(--bg)" stroke="var(--accent2)" strokeWidth="1.5"/>
+      <text x="90" y="26" textAnchor="middle" fontSize="11">📌</text>
+    </svg>
+  ),
+  historique: (
+    <svg viewBox="0 0 120 90" width="110" height="82">
+      <rect x="18" y="15" width="84" height="62" rx="9" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5"/>
+      {[0,1,2,3].map(i => (
+        <g key={i}>
+          <rect x="28" y={26+i*12} width="32" height="4" rx="2" fill="var(--border)" opacity={1-.15*i}/>
+          <rect x="28" y={31+i*12} width="22" height="3" rx="1.5" fill="var(--border-soft)" opacity={.7-.1*i}/>
+          <rect x="82" y={26+i*12} width="14" height="4" rx="2" fill={i===0?"var(--success)":i===1?"var(--danger)":"var(--border)"} opacity={i<2?".4":".25"}/>
+        </g>
+      ))}
+      <circle cx="92" cy="18" r="11" fill="var(--bg)" stroke="var(--warning)" strokeWidth="1.5"/>
+      <text x="92" y="22.5" textAnchor="middle" fontSize="11">📋</text>
+    </svg>
+  ),
+  operations: (
+    <svg viewBox="0 0 120 90" width="110" height="82">
+      <rect x="10" y="25" width="100" height="16" rx="8" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5" opacity=".9"/>
+      <rect x="10" y="46" width="100" height="16" rx="8" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5" opacity=".65"/>
+      <rect x="10" y="67" width="100" height="16" rx="8" fill="var(--surface2)" stroke="var(--border)" strokeWidth="1.5" opacity=".35"/>
+      <circle cx="25" cy="33" r="5" fill="var(--border)"/>
+      <rect x="35" y="29" width="28" height="3.5" rx="1.75" fill="var(--border)"/>
+      <rect x="35" y="35" width="18" height="2.5" rx="1.25" fill="var(--border-soft)"/>
+      <rect x="88" y="30" width="16" height="5" rx="2.5" fill="var(--border)"/>
+      <text x="60" y="10" textAnchor="middle" fontSize="14">💸</text>
+    </svg>
+  ),
+};
+
+function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaColor = "var(--accent)" }) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", alignItems: "center",
+      padding: "28px 20px 24px", textAlign: "center",
+      animation: "fade-in .35s ease",
+    }}>
+      <div style={{ marginBottom: 14, filter: "drop-shadow(0 0 14px rgba(126,207,255,.1))" }}>
+        {EMPTY_SVG[type] || EMPTY_SVG.transactions}
+      </div>
+      <div style={{ fontSize: ".85rem", fontWeight: 800, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+      {sub && <div style={{ fontSize: ".7rem", color: "var(--text2)", lineHeight: 1.5, maxWidth: 220, marginBottom: cta ? 16 : 0 }}>{sub}</div>}
+      {cta && (
+        <button onClick={onCta} style={{
+          background: "transparent", border: `1.5px solid ${ctaColor}`,
+          borderRadius: 10, padding: "8px 22px",
+          color: ctaColor, fontWeight: 700, fontSize: ".78rem", cursor: "pointer",
+        }}>{cta}</button>
+      )}
     </div>
   );
 }
@@ -83,36 +287,62 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       )}
 
-      {/* ── Carte solde : fond violet/bleu, texte blanc dynamique ── */}
+      {/* ── Carte solde animée ── */}
       <div
         className="hero-card"
         style={{
           background: "linear-gradient(135deg, #1e2d3d 0%, #2d3d52 100%)",
           border: "none",
           boxShadow: "0 4px 24px rgba(126,207,255,.2)",
+          overflow: "hidden",
         }}
       >
-        <div className="hero-indicator" />
-        <div
-          className="hero-label"
-          style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}
-        >
+        {/* Shimmer */}
+        <div style={{
+          position: "absolute", inset: 0, pointerEvents: "none",
+          background: "linear-gradient(105deg, transparent 35%, rgba(255,255,255,.06) 50%, transparent 65%)",
+          backgroundSize: "200% 100%",
+          animation: "hero-shimmer 3s ease-in-out infinite",
+        }} />
+        {/* Orbes */}
+        <div style={{
+          position: "absolute", top: -30, right: -30, width: 130, height: 130,
+          borderRadius: "50%", pointerEvents: "none",
+          background: "radial-gradient(circle, rgba(126,207,255,.15) 0%, transparent 70%)",
+          animation: "pulse-orb 3.5s ease-in-out infinite",
+        }} />
+        <div style={{
+          position: "absolute", bottom: -20, left: 10, width: 90, height: 90,
+          borderRadius: "50%", pointerEvents: "none",
+          background: "radial-gradient(circle, rgba(192,132,252,.1) 0%, transparent 70%)",
+          animation: "pulse-orb 4.5s ease-in-out infinite reverse",
+        }} />
+
+        {/* Indicateur Smart */}
+        <SmartIndicator
+          balance={balance}
+          curMonthInc={curMonth.inc}
+          curMonthExp={curMonth.exp}
+          lastBackupDate={data.lastBackupDate}
+          onSwitchTab={onSwitchTab}
+        />
+
+        <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative" }}>
           Solde Bancaire Estimé
         </div>
-        <div className="hero-value" style={{ color: balanceColor }}>
-          {fmt(balance)}
+        <div className="hero-value" style={{ color: balanceColor, position: "relative" }}>
+          <CountUp target={balance} color={balanceColor} duration={1000} />
         </div>
         {provTotal > 0 && (
-          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2, position: "relative" }}>
             <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
               Après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
             </div>
             <div style={{
               fontFamily: "var(--mono)", fontSize: "1.25rem", fontWeight: 700,
-              color: afterProvColor,
-              fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em",
+              color: afterProvColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em",
             }}>
-              {fmt(balanceAfterProv)}
+              <CountUp target={balanceAfterProv} color={afterProvColor} duration={1100} />
             </div>
           </div>
         )}
@@ -203,7 +433,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <SectionTitle>5 Dernières opérations</SectionTitle>
       <div className="card" style={{ padding: "0 16px" }}>
         {recent.length === 0
-          ? <div className="empty-state"><div className="empty-icon">💸</div><p>Aucune opération</p></div>
+          ? <EmptyIllustration type="operations" title="Aucune opération" sub="Ajoute un revenu ou une dépense pour commencer" />
           : recent.map(t => (
               <ItemRow key={t.id} t={t}
                 categories={data.categories} cagnottes={cagnottes}
@@ -283,7 +513,7 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
       </div>
 
       {cagnottes.length === 0
-        ? <div className="empty-state"><div className="empty-icon">🐷</div><p>Aucune cagnotte</p></div>
+        ? <EmptyIllustration type="cagnottes" title="Aucune cagnotte" sub="Crée ta première cagnotte pour commencer à épargner" cta="＋ Créer une cagnotte" onCta={onNewCag} ctaColor="var(--success)" />
         : (
           <div className="grid-2">
             {cagnottes.map(c => {
@@ -420,7 +650,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
 
       <div className="card" style={{ padding: "0 16px" }}>
         {filtered.length === 0
-          ? <div className="empty-state"><div className="empty-icon">📭</div><p>Aucun mouvement</p></div>
+          ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
           : filtered.map(t => (
               <ItemRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
                 onEdit={onEditTrans} onDelete={onDeleteTrans} />
@@ -512,7 +742,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
       {/* ── Grille 4 colonnes — frais fixes ── */}
       {fixedExpenses.length === 0
-        ? <div className="empty-state"><div className="empty-icon">📌</div><p>Aucun frais fixe</p></div>
+        ? <EmptyIllustration type="fixes" title="Aucun frais fixe" sub="Ajoute tes charges récurrentes pour les déduire automatiquement" cta="+ Ajouter" onCta={onNewFixed} ctaColor="var(--accent2)" />
         : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 16 }}>
             {fixedExpenses.map((f, idx) => {
@@ -979,7 +1209,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       </div>
       <div className="cat-grid">
         {filtered.length === 0
-          ? <div className="empty-state" style={{ gridColumn:"1/-1" }}><div className="empty-icon">📂</div><p>Aucune catégorie</p></div>
+          ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
           : filtered.map(c => (
               <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
                 <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%",

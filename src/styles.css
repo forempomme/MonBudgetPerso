@@ -101,6 +101,36 @@ body {
   background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@keyframes hero-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-orb {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%       { transform: scale(1.18); opacity: .65; }
+}
+@keyframes pulse-indicator {
+  0%, 100% { opacity: 1;  box-shadow: 0 0 8px var(--ind-glow, rgba(74,222,128,.5)); }
+  50%       { opacity: .5; box-shadow: 0 0 4px var(--ind-glow, rgba(74,222,128,.3)); }
+}
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes cascade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Tap feedback sur toutes les cartes cliquables */
+.stat-mini:active, .cag-card:active, .card:active { transform: scale(.97); }
+
+/* Entrée animée des sections */
+.section-enter { animation: fade-in .35s ease both; }
 
 /* ── Stat mini cards ────────────────────────────────────────── */
 .stat-mini {
