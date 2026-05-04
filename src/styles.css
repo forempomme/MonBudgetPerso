@@ -2,17 +2,17 @@
 
 /* ── Variables ──────────────────────────────────────────────── */
 :root {
-  --bg: #080a05; --surface: #0f120a; --surface2: #161c0f; --surface3: #1d2514;
-  --border: #2e3a1c; --border-soft: #212e14;
-  --text: #f2e8c0; --text2: #8fa86a; --text3: #485a2c;
-  --accent: #a8c840; --accent-glow: rgba(168,200,64,.14);
-  --accent2: #c89828; --accent2-glow: rgba(200,152,40,.12);
-  --success: #6ecf70; --success-glow: rgba(110,207,112,.12);
-  --warning: #d4a030; --warning-glow: rgba(212,160,48,.12);
-  --danger: #d05840;  --danger-glow:  rgba(208,88,64,.12);
-  --khaki: #b8d060;   --khaki-glow:   rgba(184,208,96,.12);
-  --sapin: #5ab050;   --sapin-glow:   rgba(90,176,80,.15);
-  --radius: 18px; --radius-sm: 10px;
+  --bg: #060810; --surface: #0b0f1c; --surface2: #101828; --surface3: #162030;
+  --border: #1e2e48; --border-soft: #162238;
+  --text: #e8f0e8; --text2: #7090a0; --text3: #385060;
+  --accent: #70b8e0; --accent-glow: rgba(112,184,224,.15);
+  --accent2: #88c880; --accent2-glow: rgba(136,200,128,.1);
+  --success: #68d498; --success-glow: rgba(104,212,152,.12);
+  --warning: #c8b860; --warning-glow: rgba(200,184,96,.12);
+  --danger: #c87070;  --danger-glow:  rgba(200,112,112,.12);
+  --khaki: #a0d898;   --khaki-glow:   rgba(160,216,152,.12);
+  --sapin: #58c090;   --sapin-glow:   rgba(88,192,144,.15);
+  --radius: 15px; --radius-sm: 9px;
   --mono: 'DM Sans', sans-serif;
   --ui:   'DM Sans', sans-serif;
   --display: 'Georgia', serif;
@@ -40,8 +40,8 @@ body {
   padding-bottom: 135px;
   min-height: 100vh;
   background-image:
-    radial-gradient(ellipse at 20% 0%, rgba(168,200,64,.04) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 100%, rgba(200,152,40,.04) 0%, transparent 60%);
+    radial-gradient(ellipse at 20% 0%, rgba(112,184,224,.04) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 100%, rgba(136,200,128,.04) 0%, transparent 60%);
 }
 
 /* ── Layout ─────────────────────────────────────────────────── */
@@ -208,8 +208,8 @@ body {
 /* ── Navigation ─────────────────────────────────────────────── */
 .tabs {
   position: fixed; bottom: 0; width: 100%;
-  background: linear-gradient(180deg, #121808 0%, #080a05 100%);
-  border-top: 1.5px solid rgba(168,200,64,.22);
+  background: linear-gradient(180deg, #0e1428 0%, #060810 100%);
+  border-top: 1.5px solid rgba(112,184,224,.22);
   border-radius: 18px 18px 0 0;
   display: flex; justify-content: space-around; align-items: flex-end;
   padding: 16px 4px 20px;
@@ -237,7 +237,7 @@ body {
 .tab-icon { font-size: 1.45rem; line-height: 1; transition: font-size .15s, filter .15s; }
 .tab-btn.active .tab-icon {
   font-size: 1.75rem;
-  filter: drop-shadow(0 0 6px rgba(168,200,64,.55));
+  filter: drop-shadow(0 0 6px rgba(112,184,224,.55));
 }
 
 /* ── FAB ────────────────────────────────────────────────────── */

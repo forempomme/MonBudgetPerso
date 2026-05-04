@@ -291,9 +291,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <div
         className="hero-card"
         style={{
-          background: "linear-gradient(135deg, #3a5520 0%, #507028 50%, #403a14 100%)",
+          background: "linear-gradient(135deg, #0c1830 0%, #182a48 45%, #101e38 100%)",
           border: "none",
-          boxShadow: "0 4px 24px rgba(168,200,64,.4)",
+          boxShadow: "0 4px 24px rgba(112,184,224,.2)",
           overflow: "hidden",
         }}
       >
@@ -308,13 +308,13 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         <div style={{
           position: "absolute", top: -30, right: -30, width: 130, height: 130,
           borderRadius: "50%", pointerEvents: "none",
-          background: "radial-gradient(circle, rgba(168,220,80,.28) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(112,184,224,.2) 0%, transparent 70%)",
           animation: "pulse-orb 3.5s ease-in-out infinite",
         }} />
         <div style={{
           position: "absolute", bottom: -20, left: 10, width: 90, height: 90,
           borderRadius: "50%", pointerEvents: "none",
-          background: "radial-gradient(circle, rgba(220,180,60,.2) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(136,200,128,.12) 0%, transparent 70%)",
           animation: "pulse-orb 4.5s ease-in-out infinite reverse",
         }} />
 
@@ -706,10 +706,10 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
     <div>
       {/* ── Carte récap totaux ── */}
       <div style={{
-        background: "linear-gradient(135deg, #1e2d3d 0%, #2d3d52 100%)",
+        background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
         borderRadius: 14, padding: "13px 16px", marginBottom: 12,
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        boxShadow: "0 4px 18px rgba(126,207,255,.15)",
+        boxShadow: "0 4px 18px rgba(112,184,224,.15)",
       }}>
         <div>
           <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
