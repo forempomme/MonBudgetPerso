@@ -291,16 +291,16 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <div
         className="hero-card"
         style={{
-          background: "linear-gradient(135deg, #1e2d3d 0%, #2d3d52 100%)",
+          background: "linear-gradient(135deg, #3a5520 0%, #507028 50%, #403a14 100%)",
           border: "none",
-          boxShadow: "0 4px 24px rgba(126,207,255,.2)",
+          boxShadow: "0 4px 24px rgba(168,200,64,.4)",
           overflow: "hidden",
         }}
       >
         {/* Shimmer */}
         <div style={{
           position: "absolute", inset: 0, pointerEvents: "none",
-          background: "linear-gradient(105deg, transparent 35%, rgba(255,255,255,.06) 50%, transparent 65%)",
+          background: "linear-gradient(105deg, transparent 35%, rgba(255,255,255,.1) 50%, transparent 65%)",
           backgroundSize: "200% 100%",
           animation: "hero-shimmer 3s ease-in-out infinite",
         }} />
@@ -308,13 +308,13 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         <div style={{
           position: "absolute", top: -30, right: -30, width: 130, height: 130,
           borderRadius: "50%", pointerEvents: "none",
-          background: "radial-gradient(circle, rgba(126,207,255,.15) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(168,220,80,.28) 0%, transparent 70%)",
           animation: "pulse-orb 3.5s ease-in-out infinite",
         }} />
         <div style={{
           position: "absolute", bottom: -20, left: 10, width: 90, height: 90,
           borderRadius: "50%", pointerEvents: "none",
-          background: "radial-gradient(circle, rgba(192,132,252,.1) 0%, transparent 70%)",
+          background: "radial-gradient(circle, rgba(220,180,60,.2) 0%, transparent 70%)",
           animation: "pulse-orb 4.5s ease-in-out infinite reverse",
         }} />
 
