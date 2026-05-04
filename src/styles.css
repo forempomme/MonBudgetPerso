@@ -217,17 +217,22 @@ body {
   z-index: 100;
 }
 .tab-btn {
-  flex: 1; border: none; background: none;
+  flex: 1; border: none; background: none; outline: none;
   color: rgba(255,255,255,.45);
   font-size: .7rem; font-family: var(--ui); font-weight: 600;
   display: flex; flex-direction: column; align-items: center;
   cursor: pointer; transition: color .15s, transform .15s;
   gap: 4px; padding: 0;
+  -webkit-tap-highlight-color: transparent;
 }
+.tab-btn:focus,
+.tab-btn:focus-visible,
+.tab-btn:focus-within { outline: none; border: none; box-shadow: none; }
 .tab-btn.active {
   color: var(--accent);
   font-weight: 800;
   transform: translateY(-2px);
+  outline: none; border: none;
 }
 .tab-icon { font-size: 1.45rem; line-height: 1; transition: font-size .15s, filter .15s; }
 .tab-btn.active .tab-icon {
