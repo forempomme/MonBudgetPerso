@@ -53,17 +53,28 @@ jobs:
 
       # ── 7b. Injection des icônes ─────────────────────────────────
       # Les icônes sont versionnées dans assets/android-icons/.
-      # On les copie dans le bon dossier res/ après cap sync car
-      # cap add android écrase le dossier android/ à chaque build.
+      # On supprime mipmap-anydpi-v26/ (icônes adaptatives XML générées
+      # par Capacitor qui écrasent nos PNG sur Android 8+), puis on
+      # copie nos PNG dans chaque dossier mipmap.
       - name: Inject app icons
         run: |
           SRC="assets/android-icons"
           DEST="android/app/src/main/res"
+
+          # Supprime les icônes adaptatives XML — elles ont priorité sur les PNG
+          rm -rf "$DEST/mipmap-anydpi-v26"
+          rm -rf "$DEST/mipmap-anydpi-v31"
+
+          # Copie nos PNG dans chaque dossier mipmap
           for dir in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
             mkdir -p "$DEST/$dir"
+            # Supprime les éventuels .webp générés par Capacitor
+            rm -f "$DEST/$dir/"*.webp
             cp "$SRC/$dir/"*.png "$DEST/$dir/"
           done
+
           echo "✅ Icons injected"
+          ls "$DEST/mipmap-xxhdpi/"
 
       # ── 8. Keystore — décodage depuis GitHub Secrets ─────────────
       # Le keystore est stocké en base64 dans KEYSTORE_BASE64.
