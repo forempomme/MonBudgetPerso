@@ -249,17 +249,30 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const tf        = useTotalFixes(fixedExpenses);
 
   // Year stats (memoised)
-  const { yInc, yExp, yExpVar, yDecag } = useMemo(() => {
-    let yInc=0, yExp=0, yExpVar=0, yDecag=0;
+  const { yInc, yExp, yExpVar, yDecag, ySav } = useMemo(() => {
+    let yInc=0, yExp=0, yExpVar=0, yDecag=0, ySav=0;
     transactions.filter(t => t.date.startsWith(curY)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
-      if (isIncome(t.type))              { yInc += a; }
-      else if (t.type === "expense")     { yExp += a; yExpVar += a; }
-      else if (t.type === "decagnottage") yDecag += a;
+      if (isIncome(t.type))               { yInc += a; }
+      else if (t.type === "expense")      { yExp += a; yExpVar += a; }
+      else if (t.type === "decagnottage")   yDecag += a;
+      else if (t.type === "epargne")        ySav   += a;
     });
     yExp += tf;
-    return { yInc, yExp, yExpVar, yDecag };
+    return { yInc, yExp, yExpVar, yDecag, ySav };
   }, [transactions, curY, tf]);
+
+  // Épargne mois en cours
+  const savMonth = useMemo(() =>
+    transactions.filter(t => t.date.startsWith(curM) && t.type === "epargne")
+      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0),
+    [transactions, curM]
+  );
+  const prevSavMonth = useMemo(() =>
+    transactions.filter(t => t.date.startsWith(prevM) && t.type === "epargne")
+      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0),
+    [transactions, prevM]
+  );
 
   const pyStats = usePriorYearStats(transactions, fixedExpenses);
   const cagTotal = useMemo(() => cagnottes.reduce((s,c) => s + c.current, 0), [cagnottes]);
@@ -355,38 +368,50 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <div className="grid-2">
         <div className="stat-mini dash-cagnotte" onClick={() => onShowDetail("cagnottes", "all")}>
           <div className="stat-label">🐷 Cagnottes</div>
-          <div className="stat-val" style={{ color: "var(--khaki)" }}>{fmt(cagTotal)}</div>
+          <div className="stat-val" style={{ color: "var(--purple)" }}>{fmt(cagTotal)}</div>
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-fixe">
           <div className="stat-label">📌 Fixes / mois</div>
-          <div className="stat-val" style={{ color: "var(--accent2)" }}>{fmt(tf)}</div>
+          <div className="stat-val" style={{ color: "var(--warning)" }}>{fmt(tf)}</div>
         </div>
       </div>
 
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}>
-          <div className="stat-label">Revenus</div>
+          <div className="stat-label">💰 Revenus</div>
           <div className="stat-val type-income">{fmt(curMonth.inc)}</div>
-          <Delta cur={curMonth.inc}    prev={prevMonth.inc}    />
+          <Delta cur={curMonth.inc} prev={prevMonth.inc} />
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "month")}>
-          <div className="stat-label">Dépenses</div>
+          <div className="stat-label">💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(curMonth.exp)}</div>
-          <Delta cur={curMonth.exp}    prev={prevMonth.exp}    />
+          <Delta cur={curMonth.exp} prev={prevMonth.exp} inverted />
           <span className="stat-arrow">›</span>
         </div>
-        <div className="stat-mini dash-decag" onClick={() => onShowDetail("decagnottage", "month")}>
-          <div className="stat-label">Décagnottages</div>
-          <div className="stat-val" style={{ color: "var(--sapin)" }}>{fmt(curMonth.decag)}</div>
-          <span className="stat-arrow">›</span>
+
+        {/* Option B — Épargne + Retraits sur une carte */}
+        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)" }}>
+          <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
+            <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
+            <div style={{ textAlign: "right" }}>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--purple)", fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(savMonth)}</span>
+              <div><Delta cur={savMonth} prev={prevSavMonth} /></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↩️ Retiré</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--coral)", fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(curMonth.decag)}</span>
+          </div>
         </div>
+
         <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "month")}>
-          <div className="stat-label">Dép. hors fixes</div>
-          <div className="stat-val" style={{ color: "var(--warning)" }}>{fmt(curMonth.expVar)}</div>
-          <Delta cur={curMonth.expVar} prev={prevMonth.expVar} />
+          <div className="stat-label">📊 Dép. variables</div>
+          <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(curMonth.expVar)}</div>
+          <Delta cur={curMonth.expVar} prev={prevMonth.expVar} inverted />
           <span className="stat-arrow">›</span>
         </div>
       </div>
@@ -394,27 +419,38 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       <SectionTitle>📅 Année en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "year")}>
-          <div className="stat-label">Revenus</div>
+          <div className="stat-label">💰 Revenus</div>
           <div className="stat-val type-income">{fmt(yInc)}</div>
-          <Delta cur={yInc}    prev={pyStats.inc}    />
+          <Delta cur={yInc} prev={pyStats.inc} />
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "year")}>
-          <div className="stat-label">Dépenses</div>
+          <div className="stat-label">💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(yExp)}</div>
-          <Delta cur={yExp}    prev={pyStats.exp}    />
+          <Delta cur={yExp} prev={pyStats.exp} inverted />
           <span className="stat-arrow">›</span>
         </div>
-        <div className="stat-mini dash-decag" onClick={() => onShowDetail("decagnottage", "year")}>
-          <div className="stat-label">Décagnottages</div>
-          <div className="stat-val" style={{ color: "var(--sapin)" }}>{fmt(yDecag)}</div>
-          <Delta cur={yDecag}  prev={pyStats.decag}  />
-          <span className="stat-arrow">›</span>
+
+        {/* Option B — Épargne + Retraits année */}
+        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)" }}>
+          <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
+            <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
+            <div style={{ textAlign: "right" }}>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--purple)", fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(ySav)}</span>
+              <div><Delta cur={ySav} prev={pyStats.sav ?? 0} /></div>
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↩️ Retiré</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--coral)", fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(yDecag)}</span>
+          </div>
         </div>
+
         <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "year")}>
-          <div className="stat-label">Dép. hors fixes</div>
-          <div className="stat-val" style={{ color: "var(--warning)" }}>{fmt(yExpVar)}</div>
-          <Delta cur={yExpVar} prev={pyStats.expVar} />
+          <div className="stat-label">📊 Dép. variables</div>
+          <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(yExpVar)}</div>
+          <Delta cur={yExpVar} prev={pyStats.expVar} inverted />
           <span className="stat-arrow">›</span>
         </div>
       </div>
