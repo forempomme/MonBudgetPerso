@@ -1187,22 +1187,86 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
 
 // ─────────────────────────────────────────────────────────────────
+//  RAPPORT — helpers locaux
+// ─────────────────────────────────────────────────────────────────
+function RapportDonut({ inc, exp, sav }) {
+  const total = inc + exp + sav || 1;
+  const R = 38, cx = 46, cy = 46, stroke = 11, size = 92;
+  const circ = 2 * Math.PI * R;
+  let offset = 0;
+  const segs = [
+    { pct: inc/total, c: "var(--success)" },
+    { pct: exp/total, c: "var(--danger)"  },
+    { pct: sav/total, c: "var(--purple)"  },
+  ].map(s => {
+    const dash = s.pct * circ, gap = circ - dash;
+    const rot  = offset * 360 - 90;
+    offset    += s.pct;
+    return { ...s, dash, gap, rot };
+  });
+  const net = inc - exp;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={R} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth={stroke}/>
+        {segs.map((s, i) => (
+          <circle key={i} cx={cx} cy={cy} r={R} fill="none"
+            stroke={s.c} strokeWidth={stroke}
+            strokeDasharray={`${s.dash} ${s.gap}`}
+            transform={`rotate(${s.rot} ${cx} ${cy})`}/>
+        ))}
+        <text x={cx} y={cy-4} textAnchor="middle" fontSize="7.5" fill="rgba(255,255,255,.5)" fontWeight="700">NET</text>
+        <text x={cx} y={cy+8} textAnchor="middle" fontSize="9" fill={net>=0?"#68d498":"#c87070"} fontWeight="800">
+          {net>=0?"+":""}{net>=1000||net<=-1000 ? (net/1000).toFixed(1)+"k" : Math.round(net)}€
+        </text>
+      </svg>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+        {[
+          { l: "💰 Revenus",  v: inc, c: "var(--success)" },
+          { l: "💸 Dépenses", v: exp, c: "var(--danger)"  },
+          { l: "🐷 Épargne",  v: sav, c: "var(--purple)"  },
+          { l: "📊 Solde",    v: net, c: net>=0?"var(--success)":"var(--danger)" },
+        ].map(s => (
+          <div key={s.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)" }}>{s.l}</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.c, fontSize: ".68rem", fontVariantNumeric: "tabular-nums" }}>
+              {s.l==="📊 Solde"&&s.v>=0?"+":""}{fmt(s.v)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
 export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail }) {
   const { transactions, categories, fixedExpenses } = data;
-  const months = useYearMonths(transactions, fixedExpenses, currentYear);
-  const yearly = useYearTotals(transactions, fixedExpenses, currentYear);
-  const prevY  = useYearTotals(transactions, fixedExpenses, currentYear - 1);
+  const months  = useYearMonths(transactions, fixedExpenses, currentYear);
+  const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
+  const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1);
+  const [chartFilter, setChartFilter] = useState("all");
+  const [savGoal,     setSavGoal]     = useState(0);
+  const [editGoal,    setEditGoal]    = useState(false);
+  const [goalInput,   setGoalInput]   = useState("");
 
   const yInc = yearly.inc, yExp = yearly.exp, ySav = yearly.sav;
-  const yNet  = yInc - yExp;
-  const savRate = yInc > 0 ? Math.min(100, (ySav / yInc) * 100) : 0;
+  const yNet = yInc - yExp;
 
-  const active = useMemo(() => months.filter(m => m.inc > 0 || m.exp > 0), [months]);
-  const sorted = useMemo(() => [...active].sort((a, b) => b.net - a.net), [active]);
-  const best   = sorted[0];
-  const worst  = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+  // Moyennes
+  const active  = useMemo(() => months.filter(m => m.inc > 0 || m.exp > 0), [months]);
+  const n       = active.length || 1;
+  const avgInc  = active.reduce((s,m) => s + m.inc, 0) / n;
+  const avgExp  = active.reduce((s,m) => s + m.exp, 0) / n;
+  const avgNet  = active.reduce((s,m) => s + m.net, 0) / n;
+
+  // Classement mois
+  const ranked  = useMemo(() =>
+    [...active].sort((a, b) => b.net - a.net),
+    [active]
+  );
 
   const { top5, topTotal } = useMemo(() => {
     const tf    = fixedExpenses.reduce((s, f) => s + f.amount, 0);
@@ -1221,101 +1285,159 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   }, [transactions, fixedExpenses, currentYear]);
 
   const compRows = [
-    { label: "💰 Revenus",   v1: yInc,  v0: prevY.inc,           color: "var(--success)", higherIsBetter: true  },
-    { label: "💸 Dépenses",  v1: yExp,  v0: prevY.exp,           color: "var(--danger)",  higherIsBetter: false },
-    { label: "🎯 Épargne",   v1: ySav,  v0: prevY.sav,           color: "var(--khaki)",   higherIsBetter: true  },
-    { label: "📊 Solde net", v1: yNet,  v0: prevY.inc - prevY.exp, color: "var(--accent)", higherIsBetter: true  },
+    { label: "💰 Revenus",   v1: yInc,  v0: prevY.inc,             color: "var(--success)", higherIsBetter: true  },
+    { label: "💸 Dépenses",  v1: yExp,  v0: prevY.exp,             color: "var(--danger)",  higherIsBetter: false },
+    { label: "🐷 Épargne",   v1: ySav,  v0: prevY.sav,             color: "var(--purple)",  higherIsBetter: true  },
+    { label: "📊 Solde net", v1: yNet,  v0: prevY.inc - prevY.exp, color: "var(--accent)",  higherIsBetter: true  },
   ];
 
   return (
     <div>
-      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      {/* ── Navigation année ── */}
+      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => y - 1)}>◀</button>
         <span style={{ fontFamily: "var(--display)", fontSize: "1.3rem", fontWeight: 800 }}>{currentYear}</span>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => y + 1)}>▶</button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <div className="stat-mini dash-revenu">
-          <div className="stat-label">Revenus</div>
-          <div className="stat-val type-income" style={{ fontSize: ".82rem" }}>{fmt(yInc)}</div>
+      {/* ① Hero card avec donut */}
+      <div style={{
+        background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
+        borderRadius: "var(--radius)", padding: 16, marginBottom: 12,
+        boxShadow: "0 4px 24px rgba(112,184,224,.15)", position: "relative", overflow: "hidden",
+      }}>
+        <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"radial-gradient(circle, rgba(112,184,224,.15) 0%, transparent 70%)", pointerEvents:"none" }}/>
+        <div style={{ position:"absolute", bottom:-30, left:10, width:100, height:100, borderRadius:"50%", background:"radial-gradient(circle, rgba(176,144,224,.1) 0%, transparent 70%)", pointerEvents:"none" }}/>
+        <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 12, position: "relative" }}>
+          📊 Bilan {currentYear}
         </div>
-        <div className="stat-mini dash-depense">
-          <div className="stat-label">Dépenses</div>
-          <div className="stat-val type-expense" style={{ fontSize: ".82rem" }}>{fmt(yExp)}</div>
-        </div>
-        <div className="stat-mini" style={{ borderLeft: `3px solid ${yNet >= 0 ? "var(--success)" : "var(--danger)"}`, background: yNet >= 0 ? "var(--success-glow)" : "var(--danger-glow)" }}>
-          <div className="stat-label">Solde net</div>
-          <div className="stat-val" style={{ fontSize: ".82rem", color: yNet >= 0 ? "var(--success)" : "var(--danger)" }}>
-            {yNet >= 0 ? "+" : ""}{fmt(yNet)}
-          </div>
+        <div style={{ position: "relative" }}>
+          <RapportDonut inc={yInc} exp={yExp} sav={ySav} />
         </div>
       </div>
 
-      <div className="card" style={{ padding: 14 }}>
-        {ySav === 0 ? (
-          <div style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "4px 0 8px" }}>
-            Aucune épargne enregistrée sur {currentYear}
-          </div>
-        ) : (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div>
-              <div className="stat-label">Taux d'épargne</div>
-              <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: "1.1rem", color: "var(--khaki)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-                {savRate.toFixed(1)}%
-              </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <div className="stat-label">Épargne totale</div>
-              <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".9rem", color: "var(--khaki)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-                {fmt(ySav)}
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="savings-bar-bg"><div className="savings-bar-fill" style={{ width: `${savRate}%` }} /></div>
-      </div>
-
-      {active.length > 0 && (
-        <div className={worst ? "grid-2" : ""}>
+      {/* ④ Moyennes mensuelles */}
+      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+        <SectionTitle style={{ marginBottom: 10 }}>📈 Moyennes / mois ({n} mois actifs)</SectionTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
           {[
-            { label: "🏆 Meilleur mois", m: best,  bgVar: "var(--success-glow)", borderVar: "var(--success)", color: "var(--success)" },
-            worst ? { label: "📉 Pire mois", m: worst, bgVar: "var(--danger-glow)",  borderVar: "var(--danger)",  color: "var(--danger)"  } : null,
-          ].filter(Boolean).map(({ label, m, bgVar, borderVar, color }) => (
-            <div key={label}
-              className="stat-mini"
-              style={{ borderLeft: `3px solid ${borderVar}`, background: bgVar, cursor: "pointer" }}
-              onClick={() => onShowMonthDetail(currentYear, m.idx)}>
-              <div className="stat-label">{label}</div>
-              <div style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: ".9rem", marginTop: 6 }}>{m.label}</div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", color, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
-                {m.net >= 0 ? "+" : ""}{fmt(m.net)}
+            { l: "💰 Revenu",  v: avgInc, c: "var(--success)" },
+            { l: "💸 Dépense", v: avgExp, c: "var(--danger)"  },
+            { l: "📊 Solde",   v: avgNet, c: avgNet>=0?"var(--success)":"var(--danger)" },
+          ].map(s => (
+            <div key={s.l} style={{ background: "var(--surface2)", borderRadius: "var(--radius-sm)", padding: "10px 8px", textAlign: "center", borderTop: `2.5px solid ${s.c}` }}>
+              <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5, lineHeight: 1.3 }}>{s.l}</div>
+              <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.c, fontSize: ".72rem", fontVariantNumeric: "tabular-nums" }}>
+                {s.l==="📊 Solde"&&s.v>=0?"+":""}{fmt(s.v)}
               </div>
-              <span className="stat-arrow">›</span>
             </div>
           ))}
         </div>
-      )}
+      </div>
 
-      <div className="card" style={{ padding: 14 }}>
-        <div className="stat-label" style={{ marginBottom: 10 }}>Flux mensuels — clique sur un mois</div>
-        <ChartSVG months={months} chartFilter="all" onMonthClick={i => onShowMonthDetail(currentYear, i)} />
+      {/* ② Graphique avec filtre */}
+      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div className="stat-label">Flux mensuels — tape un mois</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {[["all","Tout"],["inc","💰"],["exp","💸"]].map(([k,l]) => (
+              <button key={k} onClick={() => setChartFilter(k)} style={{
+                background: chartFilter===k ? "var(--accent-glow)" : "transparent",
+                border: `1px solid ${chartFilter===k ? "var(--accent)" : "var(--border)"}`,
+                borderRadius: 7, padding: "4px 9px",
+                color: chartFilter===k ? "var(--accent)" : "var(--text3)",
+                fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+              }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <ChartSVG months={months} chartFilter={chartFilter} onMonthClick={i => onShowMonthDetail(currentYear, i)} />
         <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ color: "var(--success)" }}>■ Revenus</span>
-          <span style={{ color: "var(--danger)"  }}>■ Dépenses</span>
-          <span style={{ color: "var(--accent)"  }}>— Solde net</span>
+          {chartFilter !== "exp" && <span style={{ color: "var(--success)" }}>■ Revenus</span>}
+          {chartFilter !== "inc" && <span style={{ color: "var(--danger)"  }}>■ Dépenses</span>}
+          {chartFilter === "all" && <span style={{ color: "var(--accent)"  }}>— Solde net</span>}
         </div>
       </div>
 
+      {/* ③ Classement des mois */}
+      {ranked.length > 0 && (
+        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <SectionTitle style={{ marginBottom: 10 }}>🏆 Classement des mois</SectionTitle>
+          {ranked.map((m, i) => {
+            const maxAbs = Math.max(...ranked.map(r => Math.abs(r.net)), 1);
+            const pct    = (Math.abs(m.net) / maxAbs) * 100;
+            const medal  = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+            const color  = m.net >= 0 ? "var(--success)" : "var(--danger)";
+            return (
+              <div key={m.label}
+                style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: "pointer" }}
+                onClick={() => onShowMonthDetail(currentYear, m.idx)}>
+                <span style={{ fontSize: medal ? ".9rem" : ".65rem", width: 22, textAlign: "center", color: "var(--text3)", fontWeight: 700, flexShrink: 0 }}>
+                  {medal || `${i+1}`}
+                </span>
+                <span style={{ fontSize: ".72rem", fontWeight: 700, width: 30, flexShrink: 0 }}>{m.label}</span>
+                <div style={{ flex: 1, height: 5, background: "var(--surface3)", borderRadius: 99 }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 99 }}/>
+                </div>
+                <span style={{ fontFamily: "var(--mono)", fontSize: ".68rem", fontWeight: 800, color, width: 75, textAlign: "right", fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+                  {m.net >= 0 ? "+" : ""}{fmt(m.net)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ⑤ Objectif épargne annuel */}
+      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <SectionTitle>🎯 Objectif épargne {currentYear}</SectionTitle>
+          <button onClick={() => { setGoalInput(String(savGoal)); setEditGoal(e => !e); }} style={{
+            background: "var(--accent-glow)", border: "1px solid var(--accent-glow)",
+            borderRadius: 7, padding: "4px 10px", color: "var(--accent)",
+            fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
+          }}>{editGoal ? "✓ OK" : "✏️"}</button>
+        </div>
+        {editGoal && (
+          <input type="number" value={goalInput} min="0" step="100"
+            onChange={e => setGoalInput(e.target.value)}
+            onBlur={() => { setSavGoal(parseFloat(goalInput)||0); setEditGoal(false); }}
+            placeholder="Ex : 5000"
+            style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: ".9rem", fontFamily: "var(--mono)", boxSizing: "border-box", marginBottom: 10 }}
+            autoFocus/>
+        )}
+        {savGoal > 0 ? (() => {
+          const pct   = Math.min(100, (ySav / savGoal) * 100);
+          const color = pct >= 100 ? "var(--success)" : pct >= 60 ? "var(--accent)" : "var(--warning)";
+          return (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".62rem", color: "var(--text2)", marginBottom: 5 }}>
+                <span>{fmt(ySav)} épargné</span>
+                <span style={{ color, fontWeight: 800 }}>{pct.toFixed(0)}%</span>
+              </div>
+              <div style={{ height: 8, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, var(--accent), ${color})`, borderRadius: 99, transition: "width .5s" }}/>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "var(--text3)", marginTop: 4 }}>
+                <span>0 €</span><span>Objectif : {fmt(savGoal)}</span>
+              </div>
+            </>
+          );
+        })() : (
+          <div style={{ fontSize: ".72rem", color: "var(--text3)", textAlign: "center", padding: "8px 0" }}>
+            Tape ✏️ pour définir un objectif d'épargne annuel
+          </div>
+        )}
+      </div>
+
+      {/* Top 5 dépenses */}
       <SectionTitle>Top 5 dépenses</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         {top5.length === 0
           ? <p style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "12px 0" }}>Aucune dépense enregistrée</p>
           : top5.map(([id, val], i) => {
               const cat  = categories.find(c => c.id === id);
-              const name = id === "__fixes__"  ? "🔄 Frais fixes"
-                         : id === "__other__"  ? "❓ Sans catégorie"
-                         : `${cat?.icon ?? ""} ${cat?.name ?? id}`;
+              const name = id === "__fixes__" ? "📌 Frais fixes" : id === "__other__" ? "❓ Sans catégorie" : `${cat?.icon ?? ""} ${cat?.name ?? id}`;
               const pct  = (val / topTotal * 100).toFixed(0);
               const rank = ["🥇","🥈","🥉","4️⃣","5️⃣"][i];
               return (
@@ -1337,6 +1459,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         }
       </div>
 
+      {/* Évolution solde net */}
       <SectionTitle>Évolution du solde net</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         <PatrimoineSVG months={months} />
@@ -1346,6 +1469,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </div>
       </div>
 
+      {/* Comparaison annuelle */}
       <SectionTitle>Comparaison Annuelle</SectionTitle>
       <div className="card" style={{ padding: 10 }}>
         <table className="comp-table">
@@ -1511,14 +1635,97 @@ function AnalysteLocal({ data, currentYear, months }) {
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset }) {
-  const [catFilter,   setCatFilter]   = useState("all");
+  const [catFilter, setCatFilter] = useState("all");
   const filtered = useMemo(
     () => data.categories.filter(c => catFilter === "all" || c.type === catFilter),
     [data.categories, catFilter]
   );
 
+  // ⑦ Stats globales
+  const globalStats = useMemo(() => {
+    const txs = data.transactions;
+    if (!txs.length) return null;
+    const earliest = txs.reduce((min, t) => t.date < min ? t.date : min, txs[0].date);
+    const totalGere = txs.reduce((s, t) => s + (parseFloat(t.amount)||0), 0);
+    return { count: txs.length, earliest, totalGere };
+  }, [data.transactions]);
+
+  // ⑩ Compteur d'usage par catégorie
+  const catUsage = useMemo(() => {
+    const map = {};
+    data.transactions.forEach(t => {
+      if (t.categoryId) map[t.categoryId] = (map[t.categoryId] || 0) + 1;
+    });
+    return map;
+  }, [data.transactions]);
+
+  // ⑧ Jours depuis dernière sauvegarde
+  const daysSinceBackup = data.lastBackupDate
+    ? Math.floor((Date.now() - new Date(data.lastBackupDate)) / 86400000)
+    : null;
+  const backupOk = daysSinceBackup !== null && daysSinceBackup <= 7;
+
   return (
     <div>
+
+      {/* ⑦ Stats globales */}
+      {globalStats && (
+        <div style={{
+          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
+          borderRadius: "var(--radius)", padding: "14px 16px", marginBottom: 14,
+          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
+        }}>
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
+            📊 Statistiques globales
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { icon: "📋", label: "Transactions",       value: globalStats.count },
+              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
+              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
+              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
+            ].map(s => (
+              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ⑧ Sauvegarde avec date visible */}
+      <div className="card" style={{
+        borderLeft: `3px solid ${backupOk ? "var(--success)" : "var(--danger)"}`,
+        background: backupOk ? "var(--success-glow)" : "var(--danger-glow)",
+        marginBottom: 14,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
+            background: backupOk ? "var(--success)" : "var(--danger)",
+            boxShadow: `0 0 8px ${backupOk ? "rgba(104,212,152,.6)" : "rgba(200,112,112,.6)"}`,
+          }}/>
+          <div>
+            <div style={{ fontSize: ".72rem", fontWeight: 700, color: backupOk ? "var(--success)" : "var(--danger)" }}>
+              {daysSinceBackup === null
+                ? "⚠️ Aucune sauvegarde enregistrée"
+                : backupOk
+                  ? `✅ Sauvegardé il y a ${daysSinceBackup} jour${daysSinceBackup > 1 ? "s" : ""}`
+                  : `⚠️ Dernière sauvegarde il y a ${daysSinceBackup} jours`
+              }
+            </div>
+            {data.lastBackupDate && (
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 2 }}>{data.lastBackupDate}</div>
+            )}
+          </div>
+        </div>
+        <div className="grid-2">
+          <button className="btn btn-primary" onClick={onExport}>⬇ Exporter JSON</button>
+          <button className="btn btn-outline"  onClick={onImport}>⬆ Importer JSON</button>
+        </div>
+      </div>
+
+      {/* ⑩ Catégories avec compteur d'usage — layout grille conservé */}
       <SectionTitle>Gestion Catégories</SectionTitle>
       <div className="filter-row">
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (
@@ -1528,38 +1735,40 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       <div className="cat-grid">
         {filtered.length === 0
           ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
-          : filtered.map(c => (
-              <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
-                <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%",
-                  background: c.type==="expense" ? "var(--danger)" : "var(--success)" }} />
-                <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
-                <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
-                <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"1px 4px", marginTop:2, lineHeight:1.4 }}
-                  onClick={e => { e.stopPropagation(); onDeleteCat(c.id); }}>✕</button>
-              </div>
-            ))
+          : filtered.map(c => {
+              const usage = catUsage[c.id] || 0;
+              return (
+                <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
+                  {/* Point couleur type */}
+                  <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%",
+                    background: c.type==="expense" ? "var(--danger)" : "var(--success)" }} />
+                  {/* Badge usage */}
+                  <div style={{
+                    position:"absolute", top:4, right:4,
+                    fontSize:".48rem", fontWeight:800, lineHeight:1,
+                    color: usage === 0 ? "var(--danger)" : "var(--text3)",
+                    background: usage === 0 ? "var(--danger-glow)" : "var(--surface3)",
+                    padding:"2px 4px", borderRadius:4,
+                  }}>
+                    {usage === 0 ? "✕" : usage}
+                  </div>
+                  <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
+                  <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
+                  <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"1px 4px", marginTop:2, lineHeight:1.4 }}
+                    onClick={e => { e.stopPropagation(); onDeleteCat(c.id); }}>✕</button>
+                </div>
+              );
+            })
         }
       </div>
       <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
 
-      <SectionTitle style={{ marginTop: 20 }}>Sauvegarde & Sécurité</SectionTitle>
-      <div className="grid-2">
-        <button className="btn btn-primary"  onClick={onExport}>⬇ Exporter JSON</button>
-        <button className="btn btn-outline"  onClick={onImport}>⬆ Importer JSON</button>
-      </div>
-      <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:12 }} onClick={onReset}>
+      <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>
         ⚠️ Réinitialiser toutes les données
       </button>
 
-      {/* ── Version ── */}
-      <div style={{
-        marginTop: 32,
-        textAlign: "center",
-        color: "var(--text3)",
-        fontSize: ".65rem",
-        letterSpacing: ".06em",
-        fontWeight: 600,
-      }}>
+      {/* Version */}
+      <div style={{ marginTop: 32, textAlign: "center", color: "var(--text3)", fontSize: ".65rem", letterSpacing: ".06em", fontWeight: 600 }}>
         {APP_NAME} — v{APP_VERSION}
       </div>
     </div>
