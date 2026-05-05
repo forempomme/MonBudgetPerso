@@ -51,17 +51,29 @@ export default function App() {
   // ── Navigation avec historique ───────────────────────────────
   const [tabHistory, setTabHistory] = useState(["accueil"]);
   const tab = tabHistory[tabHistory.length - 1];
+  const [slideDir, setSlideDir]     = useState(0); // -1 gauche, 1 droite
+  const [animKey,  setAnimKey]      = useState(0);
+
+  const TAB_ORDER = ["accueil","cagnottes","historique","fixes","rapport","options"];
 
   // Naviguer vers un onglet : empiler si différent du courant
   const navigateTo = useCallback((newTab) => {
     setTabHistory(prev => {
-      if (prev[prev.length - 1] === newTab) return prev;
-      // Éviter les doublons consécutifs
+      const cur = prev[prev.length - 1];
+      if (cur === newTab) return prev;
+      const curIdx = TAB_ORDER.indexOf(cur);
+      const newIdx = TAB_ORDER.indexOf(newTab);
+      setSlideDir(newIdx > curIdx ? 1 : -1);
+      setAnimKey(k => k + 1);
       return [...prev, newTab];
     });
   }, []);
 
   // Retour arrière : dépiler
+  const saveMonthNote = useCallback((ym, note) => {
+    dispatch({ type: A.SAVE_MONTH_NOTE, ym, note });
+  }, []);
+
   const goBack = useCallback(() => {
     setTabHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
   }, []);
@@ -357,6 +369,8 @@ export default function App() {
     rapport: (
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
+        monthNotes={data.monthNotes || {}}
+        onSaveMonthNote={saveMonthNote}
       />
     ),
     options: (
@@ -391,7 +405,9 @@ export default function App() {
       </header>
 
       {/* ── Main content ── */}
-      <div className="container">{views[tab]}</div>
+      <div className="container" key={animKey} style={{
+        animation: slideDir !== 0 ? `tab-slide-${slideDir > 0 ? "right" : "left"} .28s ease both` : "none",
+      }}>{views[tab]}</div>
 
       {/* ── Tab bar ── */}
       <div className="tabs">

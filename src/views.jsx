@@ -1187,6 +1187,164 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
 
 // ─────────────────────────────────────────────────────────────────
+//  RAPPORT — Comparaison de deux périodes
+// ─────────────────────────────────────────────────────────────────
+function PeriodCompare({ transactions, fixedExpenses }) {
+  const now = new Date();
+  const [p1, setP1] = useState(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+  const [p2, setP2] = useState(() => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+  const tf    = useTotalFixes(fixedExpenses);
+  const curYM = currentYM();
+
+  const months = useMemo(() => {
+    const list = [];
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      list.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+    }
+    return list;
+  }, []);
+
+  function stats(ym) {
+    let inc = 0, exp = 0, sav = 0;
+    transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
+      const a = parseFloat(t.amount) || 0;
+      if (isIncome(t.type))          inc += a;
+      else if (t.type === "expense") exp += a;
+      else if (t.type === "epargne") sav += a;
+    });
+    if (ym === curYM) exp += tf;
+    return { inc, exp, sav, net: inc - exp };
+  }
+
+  const d1 = stats(p1), d2 = stats(p2);
+  const rows = [
+    { label: "💰 Revenus",  v1: d1.inc, v2: d2.inc, higher: true  },
+    { label: "💸 Dépenses", v1: d1.exp, v2: d2.exp, higher: false },
+    { label: "🐷 Épargne",  v1: d1.sav, v2: d2.sav, higher: true  },
+    { label: "📊 Solde",    v1: d1.net, v2: d2.net, higher: true  },
+  ];
+
+  return (
+    <div className="card" style={{ padding: 14 }}>
+      <SectionTitle style={{ marginBottom: 12 }}>🔀 Comparaison de périodes</SectionTitle>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+        {[[p1,setP1,"var(--accent)","Période A"],[p2,setP2,"var(--purple)","Période B"]].map(([val,setter,col,lbl]) => (
+          <div key={lbl}>
+            <div style={{ fontSize:".58rem", color:col, fontWeight:800, textTransform:"uppercase", letterSpacing:".08em", marginBottom:5 }}>{lbl}</div>
+            <select value={val} onChange={e => setter(e.target.value)} style={{
+              width:"100%", background:"var(--bg)", border:`1.5px solid ${col}`,
+              borderRadius:9, padding:"7px 10px", color:"var(--text)", fontSize:".7rem", fontFamily:"var(--mono)",
+            }}>
+              {months.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+      <div style={{ background:"var(--surface2)", borderRadius:10, overflow:"hidden", marginBottom:12 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", background:"var(--surface3)", padding:"7px 12px", borderBottom:`1px solid var(--border)` }}>
+          {[["Poste","var(--text3)","left"],["p1","var(--accent)","right"],["p2","var(--purple)","right"],["Écart","var(--text3)","right"]].map(([l,c,a],i) => (
+            <div key={i} style={{ fontSize:".55rem", color:c, fontWeight:800, textTransform:"uppercase", textAlign:a }}>
+              {l==="p1"?p1:l==="p2"?p2:l}
+            </div>
+          ))}
+        </div>
+        {rows.map((r,i) => {
+          const diff  = r.v1 - r.v2;
+          const pct   = r.v2 !== 0 ? Math.abs((diff/Math.abs(r.v2))*100).toFixed(0) : "—";
+          const good  = Math.abs(diff)<0.01 ? null : r.higher ? diff>0 : diff<0;
+          const col   = good===null ? "var(--text3)" : good ? "var(--success)" : "var(--danger)";
+          const arrow = diff>0?"▲":diff<0?"▼":"—";
+          const net   = r.label.includes("Solde");
+          return (
+            <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr 1fr", padding:"9px 12px", borderBottom:i<rows.length-1?"1px solid var(--border-soft)":"none", alignItems:"center" }}>
+              <div style={{ fontSize:".68rem", fontWeight:700 }}>{r.label}</div>
+              <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:"var(--accent)", fontSize:".65rem", textAlign:"right", fontVariantNumeric:"tabular-nums" }}>{net&&r.v1>=0?"+":""}{fmt(r.v1)}</div>
+              <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:"var(--purple)", fontSize:".65rem", textAlign:"right", fontVariantNumeric:"tabular-nums" }}>{net&&r.v2>=0?"+":""}{fmt(r.v2)}</div>
+              <div style={{ textAlign:"right" }}><span style={{ fontSize:".6rem", fontWeight:800, color:col }}>{arrow} {pct}%</span></div>
+            </div>
+          );
+        })}
+      </div>
+      {rows.slice(0,2).map(r => {
+        const max = Math.max(r.v1, r.v2, 1);
+        return (
+          <div key={r.label} style={{ marginBottom:8 }}>
+            <div style={{ fontSize:".58rem", color:"var(--text3)", fontWeight:700, marginBottom:4 }}>{r.label}</div>
+            {[[r.v1,"var(--accent)",p1],[r.v2,"var(--purple)",p2]].map(([v,c,l]) => (
+              <div key={l} style={{ display:"flex", alignItems:"center", gap:6, marginBottom:3 }}>
+                <span style={{ fontSize:".52rem", color:c, width:52, flexShrink:0 }}>{l}</span>
+                <div style={{ flex:1, height:5, background:"var(--surface3)", borderRadius:99 }}>
+                  <div style={{ width:`${(v/max)*100}%`, height:"100%", background:c, borderRadius:99, transition:"width .4s" }}/>
+                </div>
+                <span style={{ fontFamily:"var(--mono)", fontSize:".55rem", color:c, width:58, textAlign:"right", fontVariantNumeric:"tabular-nums" }}>{fmt(v)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  RAPPORT — Notes sur les mois
+// ─────────────────────────────────────────────────────────────────
+function MonthNotes({ currentYear, monthNotes, onSave }) {
+  const [editing, setEditing] = useState(null);
+  const [draft,   setDraft]   = useState("");
+  const now   = new Date();
+  const maxMo = currentYear === now.getFullYear() ? now.getMonth() : 11;
+  const months = Array.from({ length: maxMo + 1 }, (_, i) => {
+    const m = maxMo - i;
+    return `${currentYear}-${String(m + 1).padStart(2, "0")}`;
+  });
+  return (
+    <div className="card" style={{ padding: 14 }}>
+      <SectionTitle style={{ marginBottom: 12 }}>📝 Notes sur les mois</SectionTitle>
+      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+        {months.map(ym => {
+          const note   = monthNotes[ym] || "";
+          const isEdit = editing === ym;
+          const label  = new Date(ym + "-01T12:00:00")
+            .toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+          return (
+            <div key={ym} style={{ background:"var(--surface2)", borderRadius:10, padding:"10px 12px", borderLeft:`3px solid ${note?"var(--accent)":"var(--border)"}` }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:(isEdit||note)?8:0 }}>
+                <span style={{ fontSize:".7rem", fontWeight:800, color:note?"var(--accent)":"var(--text3)", textTransform:"capitalize" }}>{label}</span>
+                {!isEdit && (
+                  <button onClick={() => { setDraft(note); setEditing(ym); }} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"3px 8px", color:"var(--text2)", fontSize:".6rem", cursor:"pointer" }}>
+                    {note?"✏️ Modifier":"+ Note"}
+                  </button>
+                )}
+              </div>
+              {isEdit ? (
+                <div>
+                  <textarea value={draft} onChange={e => setDraft(e.target.value)}
+                    placeholder="Ex : Vacances Italie, prime exceptionnelle..."
+                    rows={2} style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"7px 10px", color:"var(--text)", fontSize:".72rem", resize:"none", fontFamily:"inherit", boxSizing:"border-box" }} autoFocus/>
+                  <div style={{ display:"flex", gap:6, marginTop:6 }}>
+                    <button onClick={() => setEditing(null)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"6px 0", color:"var(--text2)", fontSize:".65rem", fontWeight:700, cursor:"pointer" }}>Annuler</button>
+                    <button onClick={() => { onSave(ym, draft); setEditing(null); }} style={{ flex:1, background:"var(--accent)", border:"none", borderRadius:7, padding:"6px 0", color:"var(--bg)", fontSize:".65rem", fontWeight:800, cursor:"pointer" }}>Enregistrer</button>
+                  </div>
+                </div>
+              ) : note ? (
+                <div style={{ fontSize:".7rem", color:"var(--text)", lineHeight:1.5 }}>💬 {note}</div>
+              ) : (
+                <div style={{ fontSize:".62rem", color:"var(--text3)", fontStyle:"italic" }}>Aucune note</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  RAPPORT — helpers locaux
 // ─────────────────────────────────────────────────────────────────
 function RapportDonut({ inc, exp, sav }) {
@@ -1242,7 +1400,7 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail }) {
+export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote }) {
   const { transactions, categories, fixedExpenses } = data;
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
@@ -1501,6 +1659,8 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         </table>
       </div>
       <AnalysteLocal data={data} currentYear={currentYear} months={months} />
+      <PeriodCompare transactions={data.transactions} fixedExpenses={data.fixedExpenses} />
+      <MonthNotes currentYear={currentYear} monthNotes={monthNotes} onSave={onSaveMonthNote} />
     </div>
   );
 }

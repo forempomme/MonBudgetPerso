@@ -34,12 +34,15 @@ import { uid, todayISO } from "./utils.js";
  * @property {number}  amount
  * @property {string}  [categoryId]
  *
+ * @property {Object.<string,string>} monthNotes   – clé "YYYY-MM", valeur texte libre
+ *
  * @typedef {Object} AppData
  * @property {Transaction[]}   transactions
  * @property {Category[]}      categories
  * @property {Cagnotte[]}      cagnottes
  * @property {FixedExpense[]}  fixedExpenses
  * @property {string|null}     lastBackupDate
+ * @property {Object.<string,string>} monthNotes
  */
 
 // ─────────────────────────────────────────────────────────────────
@@ -58,6 +61,7 @@ export const A = /** @type {const} */ ({
   SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   SET_BACKUP_DATE:   "SET_BACKUP_DATE",
+  SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
   IMPORT_DATA:       "IMPORT_DATA",
   RESET:             "RESET",
 });
@@ -77,6 +81,7 @@ export const DEFAULT_DATA = {
   fixedExpenses: [],
   provisionalExpenses: [],
   lastBackupDate: null,
+  monthNotes: {},
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -277,6 +282,16 @@ export function reducer(state, action) {
     // ── Misc ──────────────────────────────────────────────────────
     case A.SET_BACKUP_DATE:
       return { ...state, lastBackupDate: action.date };
+
+    case A.SAVE_MONTH_NOTE: {
+      const notes = { ...(state.monthNotes || {}) };
+      if (action.note.trim()) {
+        notes[action.ym] = action.note.trim();
+      } else {
+        delete notes[action.ym];
+      }
+      return { ...state, monthNotes: notes };
+    }
 
     case A.IMPORT_DATA:
       return { ...DEFAULT_DATA, ...action.data };

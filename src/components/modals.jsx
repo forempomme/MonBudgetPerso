@@ -35,9 +35,23 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
   const [cagId,  setCagId]  = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
   const [note,   setNote]   = useState(tx?.note         || "");
   const [errors, setErrors] = useState({});
+  const [dupWarning, setDupWarning] = useState(null); // transaction doublon détectée
 
   const isCag = type === "epargne" || type === "decagnottage";
   const cats  = categories.filter(c => type === "income" ? c.type === "income" : c.type === "expense");
+
+  // Détecte un doublon potentiel : même montant + même catégorie dans les 7 derniers jours
+  function findDuplicate(amt, catId, txDate, txType) {
+    if (!amt || editingId) return null;
+    const d = new Date(txDate + "T12:00:00");
+    return transactions.find(t => {
+      if (t.type !== txType) return false;
+      if (Math.abs((parseFloat(t.amount)||0) - parseFloat(amt)) > 0.01) return false;
+      if (t.categoryId !== catId) return false;
+      const td = new Date(t.date + "T12:00:00");
+      return Math.abs((d - td) / 86400000) <= 7;
+    }) || null;
+  }
 
   function validate() {
     const e = {};
@@ -53,9 +67,21 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
     return Object.keys(e).length === 0;
   }
 
-  function handleSave() {
+  function handleSave(force = false) {
     if (!validate()) return;
     const parsedAmt = parseFloat(amount);
+
+    // Vérification doublon (seulement à la première tentative)
+    if (!force && !isCag) {
+      const dup = findDuplicate(amount, catId, date, type);
+      if (dup) {
+        const cat = categories.find(c => c.id === dup.categoryId);
+        setDupWarning({ tx: dup, catName: cat?.name || "—" });
+        return;
+      }
+    }
+    setDupWarning(null);
+
     onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note });
     if (isCag) {
       const cag = cagnottes.find(x => x.id === cagId);
@@ -122,10 +148,38 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
         <input type="text" placeholder="Description…" value={note} onChange={e => setNote(e.target.value)} />
       </Field>
 
+      {/* ── Alerte doublon ── */}
+      {dupWarning && (
+        <div style={{ background: "rgba(200,184,96,.1)", border: "1.5px solid rgba(200,184,96,.4)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: "1rem" }}>⚠️</span>
+            <div>
+              <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--warning)" }}>Transaction similaire détectée</div>
+              <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
+                {dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}
+              </div>
+            </div>
+          </div>
+          <div style={{ fontSize: ".65rem", color: "var(--text2)", marginBottom: 10, lineHeight: 1.5 }}>
+            Une transaction identique existe déjà dans les 7 derniers jours. S'agit-il d'un doublon ?
+          </div>
+          <div className="grid-2" style={{ marginBottom: 0 }}>
+            <button className="btn btn-outline" style={{ width: "100%" }} onClick={() => setDupWarning(null)}>
+              ✕ Annuler
+            </button>
+            <button className="btn btn-primary" style={{ width: "100%", background: "var(--warning)", color: "#060810" }} onClick={() => handleSave(true)}>
+              ✓ Ajouter quand même
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!dupWarning && (
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>Valider</button>
+        <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => handleSave()}>Valider</button>
       </div>
+      )}
     </Modal>
   );
 }
