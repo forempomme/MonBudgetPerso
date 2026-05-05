@@ -4,11 +4,17 @@ import { fmt, txLabel, txTypeClass, txSign, deltaInfo } from "../utils.js";
 // ─────────────────────────────────────────────────────────────────
 //  Delta badge
 // ─────────────────────────────────────────────────────────────────
-/** @param {{ cur: number, prev: number }} */
-export function Delta({ cur, prev }) {
+/** @param {{ cur: number, prev: number, inverted?: boolean }} */
+export function Delta({ cur, prev, inverted = false }) {
   const d = deltaInfo(cur, prev);
   if (!d) return null;
-  return <span className={d.cls}>{d.text}</span>;
+  // Pour les dépenses : la hausse est mauvaise → inverser les couleurs
+  let cls = d.cls;
+  if (inverted) {
+    if (cls === "delta-pos") cls = "delta-neg";
+    else if (cls === "delta-neg") cls = "delta-pos";
+  }
+  return <span className={cls}>{d.text}</span>;
 }
 
 // ─────────────────────────────────────────────────────────────────
