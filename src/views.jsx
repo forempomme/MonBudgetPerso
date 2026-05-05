@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { ItemRow, Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION } from "./utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
   useBalance, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes,
@@ -592,19 +592,231 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  HISTORIQUE
+//  HISTORIQUE — helpers locaux
+// ─────────────────────────────────────────────────────────────────
+const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+
+function groupByDate(txs) {
+  const groups = {};
+  txs.forEach(t => { if (!groups[t.date]) groups[t.date] = []; groups[t.date].push(t); });
+  return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+}
+
+function dateLabel(dateStr) {
+  const today = new Date();
+  const d     = new Date(dateStr + "T12:00:00");
+  const diff  = Math.floor((today.setHours(0,0,0,0) - d.setHours(0,0,0,0)) / 86400000);
+  if (diff === 0) return "Aujourd'hui";
+  if (diff === 1) return "Hier";
+  return new Date(dateStr + "T12:00:00")
+    .toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+// 1. Mini Donut
+function HistDonut({ inc, exp, sav }) {
+  const total = inc + exp + sav || 1;
+  const R = 36, cx = 44, cy = 44, stroke = 10;
+  const circ = 2 * Math.PI * R;
+  let offset = 0;
+  const segs = [
+    { pct: inc / total, color: "var(--success)" },
+    { pct: exp / total, color: "var(--danger)"  },
+    { pct: sav / total, color: "var(--purple)"  },
+  ].map(s => {
+    const dash = s.pct * circ, gap = circ - dash;
+    const rot  = offset * 360 - 90;
+    offset    += s.pct;
+    return { ...s, dash, gap, rot };
+  });
+  const net = inc - exp;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <svg width="88" height="88" viewBox="0 0 88 88" style={{ flexShrink: 0 }}>
+        <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--surface3)" strokeWidth={stroke}/>
+        {segs.map((s, i) => (
+          <circle key={i} cx={cx} cy={cy} r={R} fill="none"
+            stroke={s.color} strokeWidth={stroke}
+            strokeDasharray={`${s.dash} ${s.gap}`}
+            transform={`rotate(${s.rot} ${cx} ${cy})`}/>
+        ))}
+        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="8"  fill="var(--text3)" fontWeight="700">NET</text>
+        <text x={cx} y={cy + 7} textAnchor="middle" fontSize="9.5" fill={net >= 0 ? "var(--success)" : "var(--danger)"} fontWeight="800">
+          {net >= 0 ? "+" : ""}{Math.round(net)}€
+        </text>
+      </svg>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
+        {[
+          { l: "💰 Revenus",  v: inc, c: "var(--success)" },
+          { l: "💸 Dépenses", v: exp, c: "var(--danger)"  },
+          { l: "🐷 Épargne",  v: sav, c: "var(--purple)"  },
+        ].map(s => (
+          <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 7, height: 7, borderRadius: "50%", background: s.c, flexShrink: 0 }}/>
+            <span style={{ fontSize: ".6rem", color: "var(--text2)", flex: 1 }}>{s.l}</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: ".63rem", fontWeight: 800, color: s.c, fontVariantNumeric: "tabular-nums" }}>{fmt(s.v)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// 3. Barre budget
+function BudgetBar({ exp, inc }) {
+  const pct   = inc > 0 ? Math.min(100, (exp / inc) * 100) : 0;
+  const color = pct > 90 ? "var(--danger)" : pct > 70 ? "var(--warning)" : "var(--success)";
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: ".6rem", color: "var(--text2)", fontWeight: 700 }}>
+        <span>Budget consommé</span>
+        <span style={{ color }}>{pct.toFixed(0)}%</span>
+      </div>
+      <div style={{ height: 6, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, var(--success), ${color})`, borderRadius: 99, transition: "width .5s ease" }}/>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, fontSize: ".55rem", color: "var(--text3)" }}>
+        <span>0 €</span><span>{fmt(inc)}</span>
+      </div>
+    </div>
+  );
+}
+
+// 4. SwipeRow
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
+  const [offset,   setOffset]   = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const startX = useRef(null);
+  const cat    = categories.find(c => c.id === t.categoryId);
+  const { label, cls, sign } = (() => {
+    const l = txLabel(t, categories, cagnottes);
+    return { label: l, cls: txTypeClass(t.type), sign: txSign(t.type) };
+  })();
+  const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid var(--border-soft)" }}>
+      {/* Actions cachées */}
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 110, display: "flex" }}>
+        <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
+          style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
+        <div onClick={() => { setOffset(0); setRevealed(false); onDelete?.(t.id); }}
+          style={{ width: 55, height: "100%", background: "rgba(200,112,112,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>🗑️</div>
+      </div>
+      {/* Ligne */}
+      <div
+        onTouchStart={e => { startX.current = e.touches[0].clientX; }}
+        onTouchMove={e => {
+          const dx = e.touches[0].clientX - startX.current;
+          if (dx < 0) setOffset(Math.max(-110, dx));
+          else if (revealed) setOffset(Math.min(0, -110 + dx));
+        }}
+        onTouchEnd={() => {
+          if (offset < -55) { setOffset(-110); setRevealed(true); }
+          else { setOffset(0); setRevealed(false); }
+        }}
+        onClick={() => { if (revealed) { setOffset(0); setRevealed(false); } }}
+        style={{
+          transform: `translateX(${offset}px)`,
+          transition: (offset === 0 || offset === -110) ? "transform .2s" : "none",
+          background: "var(--bg)",
+          display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+          cursor: "pointer",
+        }}>
+        <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--surface2)", border: `1.5px solid var(--border)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>
+          {icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</div>
+        </div>
+        <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
+          {sign}{fmt(t.amount)}
+        </div>
+        <span style={{ color: "var(--text3)", fontSize: ".7rem", marginLeft: 2 }}>‹</span>
+      </div>
+    </div>
+  );
+}
+
+// 6. Répartition catégories
+function CatBreakdown({ txs, categories }) {
+  const bycat = {};
+  const totalExp = txs.filter(t => t.type === "expense").reduce((s, t) => s + (parseFloat(t.amount)||0), 0) || 1;
+  txs.filter(t => t.type === "expense").forEach(t => {
+    const c   = categories.find(c => c.id === t.categoryId);
+    const key = c?.id || "__other__";
+    if (!bycat[key]) bycat[key] = { name: c?.name||"Sans catégorie", icon: c?.icon||"❓", color: c?.color||"var(--text3)", total: 0, count: 0 };
+    bycat[key].total += parseFloat(t.amount)||0;
+    bycat[key].count++;
+  });
+  const sorted = Object.values(bycat).sort((a,b) => b.total - a.total);
+  if (sorted.length === 0) return (
+    <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text3)", fontSize: ".75rem" }}>Aucune dépense ce mois</div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {sorted.map(c => (
+        <div key={c.name} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)", padding: "10px 12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ fontSize: ".75rem", fontWeight: 700 }}>{c.icon} {c.name}</span>
+            <div style={{ textAlign: "right" }}>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: c.color, fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(c.total)}</span>
+              <span style={{ fontSize: ".58rem", color: "var(--text3)", marginLeft: 5 }}>{c.count} op.</span>
+            </div>
+          </div>
+          <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99 }}>
+            <div style={{ width: `${(c.total / totalExp * 100).toFixed(0)}%`, height: "100%", background: c.color, borderRadius: 99 }}/>
+          </div>
+          <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2, textAlign: "right" }}>{(c.total / totalExp * 100).toFixed(0)}% des dépenses</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  HISTORIQUE — vue principale
 // ─────────────────────────────────────────────────────────────────
 export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
-  const [month,  setMonth]  = useState(() => currentYM());
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [sort,   setSort]   = useState("date");
-  const [catId,  setCatId]  = useState("");
+  const now = new Date();
+  const [year,     setYear]     = useState(now.getFullYear());
+  const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  const [search,   setSearch]   = useState("");
+  const [filter,   setFilter]   = useState("all");
+  const [sort,     setSort]     = useState("date");
+  const [catId,    setCatId]    = useState("");
+  const [viewMode, setViewMode] = useState("list"); // "list" | "cats"
+  const [minAmt,   setMinAmt]   = useState("");
+  const [maxAmt,   setMaxAmt]   = useState("");
+  const [showAmtFilter, setShowAmtFilter] = useState(false);
+
+  // 5. Navigation mois — dériver "YYYY-MM" depuis year+monthIdx
+  const month = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+
+  function prevMonth() {
+    if (monthIdx === 0) { setYear(y => y - 1); setMonthIdx(11); }
+    else setMonthIdx(m => m - 1);
+    setCatId("");
+  }
+  function nextMonth() {
+    const curYM = currentYM();
+    const nextYM = monthIdx === 11 ? `${year + 1}-01` : `${year}-${String(monthIdx + 2).padStart(2, "0")}`;
+    if (nextYM > curYM) return; // pas dans le futur
+    if (monthIdx === 11) { setYear(y => y + 1); setMonthIdx(0); }
+    else setMonthIdx(m => m + 1);
+    setCatId("");
+  }
+  const isCurrentMonth = month === currentYM();
 
   const { transactions, categories, cagnottes, fixedExpenses } = data;
-  const tf      = useTotalFixes(fixedExpenses);
-  const isCurM  = month === currentYM();
-  const mStats  = useMonthStats(transactions, fixedExpenses, month);
+  const mStats = useMonthStats(transactions, fixedExpenses, month);
+
+  // Épargne du mois
+  const savMonth = useMemo(() =>
+    transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
+      .reduce((s, t) => s + (parseFloat(t.amount)||0), 0),
+    [transactions, month]
+  );
 
   const usedCats = useMemo(() =>
     [...new Set(transactions.filter(t => t.date.startsWith(month)).map(t => t.categoryId).filter(Boolean))]
@@ -625,21 +837,40 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
       const q = search.toLowerCase();
       list = list.filter(t => {
         const cat = categories.find(c => c.id === t.categoryId);
-        return (t.note || "").toLowerCase().includes(q) || (cat?.name || "").toLowerCase().includes(q);
+        return (t.note||"").toLowerCase().includes(q) || (cat?.name||"").toLowerCase().includes(q);
       });
     }
-    if (sort === "date")  list.sort((a,b) => new Date(b.date)    - new Date(a.date));
+    // 7. Filtre montant
+    if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
+    if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
+    if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
     return list;
-  }, [transactions, categories, month, filter, catId, search, sort]);
+  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt]);
 
-  const net = mStats.inc - mStats.exp;
+  const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
   return (
     <div>
-      <div className="card">
-        <input type="month" value={month} onChange={e => { setMonth(e.target.value); setCatId(""); }} style={{ marginBottom: 8 }} />
+      {/* ── 5. Navigation mois ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "10px 16px", marginBottom: 10 }}>
+        <button onClick={prevMonth} style={{ background: "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: "var(--accent)", fontSize: "1.1rem", cursor: "pointer" }}>◀</button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800 }}>{MONTHS_FR[monthIdx]}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{year}</div>
+        </div>
+        <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
+      </div>
+
+      {/* ── 1. Donut + 3. Barre budget ── */}
+      <div className="card" style={{ padding: 14, marginBottom: 10 }}>
+        <HistDonut inc={mStats.inc} exp={mStats.exp} sav={savMonth} />
+        <BudgetBar exp={mStats.exp} inc={mStats.inc} />
+      </div>
+
+      {/* ── Filtres ── */}
+      <div className="card" style={{ marginBottom: 10 }}>
         <div className="hist-search-wrap">
           <span className="hist-search-icon">🔍</span>
           <input className="hist-search" type="text" placeholder="Rechercher…"
@@ -655,44 +886,95 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
           <div className="filter-row" style={{ marginBottom: 6 }}>
             {usedCats.map(c => (
               <div key={c.id} className={`filter-chip${catId===c.id?" active":""}`}
-                style={{ fontSize: ".62rem" }}
+                style={{ fontSize: ".6rem" }}
                 onClick={() => setCatId(catId === c.id ? "" : c.id)}>
                 {c.icon} {c.name}
               </div>
             ))}
           </div>
         )}
-        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
           <span style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tri :</span>
           {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
             <span key={k} className={`sort-chip${sort===k?" active":""}`} onClick={() => setSort(k)}>{l}</span>
           ))}
+          {/* 7. Bouton filtre montant */}
+          <span
+            className={`sort-chip${showAmtFilter?" active":""}`}
+            onClick={() => setShowAmtFilter(s => !s)}
+            style={{ marginLeft: "auto" }}>
+            💶 {(minAmt||maxAmt) ? "Montant ✦" : "Montant"}
+          </span>
         </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
-        <div style={{ background: "var(--success-glow)", border: "1px solid rgba(52,211,153,.25)", borderRadius: "var(--radius-sm)", padding: "10px 12px" }}>
-          <div className="stat-label">Revenus</div>
-          <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--success)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(mStats.inc)}</div>
-        </div>
-        <div style={{ background: "var(--danger-glow)", border: "1px solid rgba(248,113,113,.25)", borderRadius: "var(--radius-sm)", padding: "10px 12px" }}>
-          <div className="stat-label" style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Dépenses</span>
-            <span style={{ color: net >= 0 ? "var(--success)" : "var(--danger)", fontSize: ".6rem" }}>{net >= 0 ? "+" : ""}{fmt(net)}</span>
+        {/* 7. Filtre montant expandable */}
+        {showAmtFilter && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+            {[["Min (€)", minAmt, setMinAmt],["Max (€)", maxAmt, setMaxAmt]].map(([label, val, setter]) => (
+              <div key={label}>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 3 }}>{label}</div>
+                <input type="number" value={val} min="0" step="10"
+                  onChange={e => setter(e.target.value)}
+                  style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".75rem", fontFamily: "var(--mono)", boxSizing: "border-box" }}/>
+              </div>
+            ))}
+            {(minAmt||maxAmt) && (
+              <button onClick={() => { setMinAmt(""); setMaxAmt(""); }}
+                style={{ gridColumn: "span 2", background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px", color: "var(--text3)", fontSize: ".65rem", cursor: "pointer" }}>
+                ✕ Effacer le filtre montant
+              </button>
+            )}
           </div>
-          <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--danger)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(mStats.exp)}</div>
-        </div>
+        )}
       </div>
 
-      <div className="card" style={{ padding: "0 16px" }}>
-        {filtered.length === 0
-          ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
-          : filtered.map(t => (
-              <ItemRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
-                onEdit={onEditTrans} onDelete={onDeleteTrans} />
-            ))
-        }
+      {/* ── Toggle Liste / Catégories ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+        {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
+          <button key={k} onClick={() => setViewMode(k)} style={{
+            background: viewMode===k ? "var(--accent-glow)" : "transparent",
+            border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
+            borderRadius: "var(--radius-sm)", padding: "9px 0",
+            color: viewMode===k ? "var(--accent)" : "var(--text2)",
+            fontWeight: 700, fontSize: ".72rem", cursor: "pointer",
+          }}>{l}</button>
+        ))}
       </div>
+
+      {/* ── 6. Vue Catégories ── */}
+      {viewMode === "cats" && (
+        <CatBreakdown txs={filtered} categories={categories} />
+      )}
+
+      {/* ── 2. Vue Liste groupée par date avec swipe ── */}
+      {viewMode === "list" && (
+        filtered.length === 0
+          ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
+          : (
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {grouped.map(([date, txs]) => {
+                const dayNet = txs.reduce((s, t) =>
+                  isIncome(t.type) ? s + (parseFloat(t.amount)||0) : s - (parseFloat(t.amount)||0), 0);
+                return (
+                  <div key={date}>
+                    {/* En-tête groupe date */}
+                    <div style={{ padding: "7px 14px", background: "var(--surface2)", fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-soft)" }}>
+                      <span>{dateLabel(date)}</span>
+                      <span style={{ color: dayNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
+                        {dayNet >= 0 ? "+" : ""}{fmt(dayNet)}
+                      </span>
+                    </div>
+                    {/* 4. Lignes swipables */}
+                    {txs.map(t => (
+                      <SwipeRow key={t.id} t={t}
+                        categories={categories} cagnottes={cagnottes}
+                        onEdit={onEditTrans} onDelete={onDeleteTrans} />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )
+      )}
     </div>
   );
 }
