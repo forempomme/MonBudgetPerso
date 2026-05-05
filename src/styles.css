@@ -12,6 +12,8 @@
   --danger: #c87070;  --danger-glow:  rgba(200,112,112,.12);
   --khaki: #a0d898;   --khaki-glow:   rgba(160,216,152,.12);
   --sapin: #58c090;   --sapin-glow:   rgba(88,192,144,.15);
+  --purple: #b090e0; --purple-glow: rgba(176,144,224,.12);
+  --coral:  #e08870; --coral-glow:  rgba(224,136,112,.12);
   --radius: 15px; --radius-sm: 9px;
   --mono: 'DM Sans', sans-serif;
   --ui:   'DM Sans', sans-serif;
