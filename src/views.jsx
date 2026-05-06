@@ -685,7 +685,9 @@ function BudgetBar({ exp, inc }) {
 function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const startX = useRef(null);
+  const startX  = useRef(null);
+  const startY  = useRef(null);
+  const isHoriz = useRef(false); // vrai si le geste est horizontal
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
@@ -704,13 +706,28 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
       </div>
       {/* Ligne */}
       <div
-        onTouchStart={e => { startX.current = e.touches[0].clientX; }}
+        onTouchStart={e => {
+          startX.current  = e.touches[0].clientX;
+          startY.current  = e.touches[0].clientY;
+          isHoriz.current = false; // réinitialise à chaque toucher
+        }}
         onTouchMove={e => {
           const dx = e.touches[0].clientX - startX.current;
+          const dy = e.touches[0].clientY - startY.current;
+
+          // Détermine la direction dominante au premier mouvement significatif
+          if (!isHoriz.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+            isHoriz.current = Math.abs(dx) > Math.abs(dy);
+          }
+
+          // Ne déplace que si le geste est majoritairement horizontal
+          if (!isHoriz.current) return;
+
           if (dx < 0) setOffset(Math.max(-110, dx));
           else if (revealed) setOffset(Math.min(0, -110 + dx));
         }}
         onTouchEnd={() => {
+          if (!isHoriz.current) return; // scroll vertical : rien à faire
           if (offset < -55) { setOffset(-110); setRevealed(true); }
           else { setOffset(0); setRevealed(false); }
         }}
@@ -739,13 +756,13 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
 }
 
 // 6. Répartition catégories
-function CatBreakdown({ txs, categories }) {
+function CatBreakdown({ txs, categories, onSelectCat }) {
   const bycat = {};
   const totalExp = txs.filter(t => t.type === "expense").reduce((s, t) => s + (parseFloat(t.amount)||0), 0) || 1;
   txs.filter(t => t.type === "expense").forEach(t => {
     const c   = categories.find(c => c.id === t.categoryId);
     const key = c?.id || "__other__";
-    if (!bycat[key]) bycat[key] = { name: c?.name||"Sans catégorie", icon: c?.icon||"❓", color: c?.color||"var(--text3)", total: 0, count: 0 };
+    if (!bycat[key]) bycat[key] = { id: c?.id || null, name: c?.name||"Sans catégorie", icon: c?.icon||"❓", color: c?.color||"var(--text3)", total: 0, count: 0 };
     bycat[key].total += parseFloat(t.amount)||0;
     bycat[key].count++;
   });
@@ -756,12 +773,20 @@ function CatBreakdown({ txs, categories }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {sorted.map(c => (
-        <div key={c.name} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)", padding: "10px 12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <div key={c.name}
+          onClick={() => c.id && onSelectCat?.(c.id)}
+          style={{
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)",
+            padding: "10px 12px", cursor: c.id ? "pointer" : "default",
+            position: "relative",
+          }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
             <span style={{ fontSize: ".75rem", fontWeight: 700 }}>{c.icon} {c.name}</span>
-            <div style={{ textAlign: "right" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: c.color, fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(c.total)}</span>
-              <span style={{ fontSize: ".58rem", color: "var(--text3)", marginLeft: 5 }}>{c.count} op.</span>
+              <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{c.count} op.</span>
+              {c.id && <span style={{ color: "var(--text3)", fontSize: ".75rem" }}>›</span>}
             </div>
           </div>
           <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99 }}>
@@ -882,23 +907,11 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
               onClick={() => { setFilter(k); setCatId(""); }}>{l}</div>
           ))}
         </div>
-        {usedCats.length > 0 && (
-          <div className="filter-row" style={{ marginBottom: 6 }}>
-            {usedCats.map(c => (
-              <div key={c.id} className={`filter-chip${catId===c.id?" active":""}`}
-                style={{ fontSize: ".6rem" }}
-                onClick={() => setCatId(catId === c.id ? "" : c.id)}>
-                {c.icon} {c.name}
-              </div>
-            ))}
-          </div>
-        )}
         <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
           <span style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tri :</span>
           {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
             <span key={k} className={`sort-chip${sort===k?" active":""}`} onClick={() => setSort(k)}>{l}</span>
           ))}
-          {/* 7. Bouton filtre montant */}
           <span
             className={`sort-chip${showAmtFilter?" active":""}`}
             onClick={() => setShowAmtFilter(s => !s)}
@@ -906,7 +919,6 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
             💶 {(minAmt||maxAmt) ? "Montant ✦" : "Montant"}
           </span>
         </div>
-        {/* 7. Filtre montant expandable */}
         {showAmtFilter && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
             {[["Min (€)", minAmt, setMinAmt],["Max (€)", maxAmt, setMaxAmt]].map(([label, val, setter]) => (
@@ -942,8 +954,22 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans }) {
 
       {/* ── 6. Vue Catégories ── */}
       {viewMode === "cats" && (
-        <CatBreakdown txs={filtered} categories={categories} />
+        <CatBreakdown txs={filtered} categories={categories}
+          onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("list"); }} />
       )}
+
+      {/* Filtre catégorie actif en mode liste */}
+      {viewMode === "list" && catId && (() => {
+        const activeCat = categories.find(c => c.id === catId);
+        return activeCat ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)" }}>
+            <span style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--accent)", flex: 1 }}>
+              {activeCat.icon} {activeCat.name}
+            </span>
+            <button onClick={() => setCatId("")} style={{ background: "transparent", border: "none", color: "var(--accent)", fontSize: ".8rem", cursor: "pointer", padding: "0 4px" }}>✕</button>
+          </div>
+        ) : null;
+      })()}
 
       {/* ── 2. Vue Liste groupée par date avec swipe ── */}
       {viewMode === "list" && (
