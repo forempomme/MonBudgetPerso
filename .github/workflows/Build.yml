@@ -51,6 +51,31 @@ jobs:
       - name: Capacitor sync
         run: npx cap sync android
 
+      # ── 7b. Fix dépôts Maven (403 sur Maven Central depuis GitHub Actions) ──
+      # Maven Central bloque les requêtes directes depuis GitHub Actions.
+      # On surcharge settings.gradle pour forcer les dépôts Google + Maven via HTTPS.
+      - name: Override Gradle repositories
+        run: |
+          cat > android/settings.gradle << 'EOF'
+          pluginManagement {
+            repositories {
+              gradlePluginPortal()
+              google()
+              mavenCentral()
+            }
+          }
+          dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+              google()
+              mavenCentral()
+              maven { url = uri("https://jitpack.io") }
+            }
+          }
+          rootProject.name = "android"
+          include ':app'
+          EOF
+
       # ── 7b. Injection des icônes ─────────────────────────────────
       - name: Inject app icons
         run: |
