@@ -259,29 +259,57 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
   // ── Rapprochement bancaire ────────────────────────────────────
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
+    // Premier mois d'utilisation
+    const startYM = transactions.length
+      ? transactions.reduce((min, t) => t.date < min ? t.date : min, transactions[0].date).slice(0, 7)
+      : curM;
+
+    // Tous les mois depuis le démarrage jusqu'au mois courant
+    function monthRange(start, end) {
+      const list = [];
+      let [y, m] = start.split('-').map(Number);
+      const [ey, em] = end.split('-').map(Number);
+      while (y < ey || (y === ey && m <= em)) {
+        list.push(`${y}-${String(m).padStart(2,'0')}`);
+        if (++m > 12) { m = 1; y++; }
+      }
+      return list;
+    }
+    const allMonths = monthRange(startYM, curM);
+
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
+
+    // Transactions (toutes périodes)
     transactions.filter(t => isPointable(t.type)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });
-    fixedExpenses.forEach(f => {
-      const a = f.amount || 0;
-      const isPointed = !!f.pointedMonths?.[curM];
-      if (isPointed) ptExp   += a;
-      else           noPtExp += a;
+
+    // Frais fixes — un état de pointage par mois
+    allMonths.forEach(ym => {
+      fixedExpenses.forEach(f => {
+        const ov = f.monthlyOverrides?.[ym];
+        const a  = (ov?.amount ?? f.amount) || 0;
+        if (f.pointedMonths?.[ym]) ptExp   += a;
+        else                       noPtExp += a;
+      });
     });
+
     const pointableTxs = transactions.filter(t => isPointable(t.type));
-    const nbPt  = pointableTxs.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointedMonths?.[curM]).length;
-    const total = pointableTxs.length + fixedExpenses.length;
+    const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
+    const nbPtFix = allMonths.reduce((n, ym) =>
+      n + fixedExpenses.filter(f => f.pointedMonths?.[ym]).length, 0);
+    const totalFix = allMonths.length * fixedExpenses.length;
+
     return {
       soldePointe:    ptInc  - ptExp,
       soldeAttente:   noPtInc - noPtExp,
-      nbPointed:      nbPt,
-      totalPointable: total,
+      nbPointed:      nbPtTx + nbPtFix,
+      totalPointable: pointableTxs.length + totalFix,
     };
-  }, [transactions, fixedExpenses]);
+  }, [transactions, fixedExpenses, curM]);
 
   // Year stats (memoised)
   const { yInc, yExp, yExpVar, yDecag, ySav } = useMemo(() => {
