@@ -62,6 +62,8 @@ export const A = /** @type {const} */ ({
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   SET_BACKUP_DATE:   "SET_BACKUP_DATE",
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
+  TOGGLE_POINT_TX:   "TOGGLE_POINT_TX",
+  TOGGLE_POINT_FIX:  "TOGGLE_POINT_FIX",
   IMPORT_DATA:       "IMPORT_DATA",
   RESET:             "RESET",
 });
@@ -283,7 +285,21 @@ export function reducer(state, action) {
     case A.SET_BACKUP_DATE:
       return { ...state, lastBackupDate: action.date };
 
-    case A.SAVE_MONTH_NOTE: {
+    case A.TOGGLE_POINT_TX:
+      return {
+        ...state,
+        transactions: state.transactions.map(t =>
+          t.id === action.id ? { ...t, pointed: !t.pointed } : t
+        ),
+      };
+
+    case A.TOGGLE_POINT_FIX:
+      return {
+        ...state,
+        fixedExpenses: state.fixedExpenses.map(f =>
+          f.id === action.id ? { ...f, pointed: !f.pointed } : f
+        ),
+      };
       const notes = { ...(state.monthNotes || {}) };
       if (action.note.trim()) {
         notes[action.ym] = action.note.trim();
