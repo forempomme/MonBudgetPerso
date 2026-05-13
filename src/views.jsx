@@ -236,7 +236,7 @@ function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaC
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
 // ─────────────────────────────────────────────────────────────────
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional }) {
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique }) {
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -247,6 +247,30 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
   const prevMonth = useMonthStats(transactions, fixedExpenses, prevM);
   const tf        = useTotalFixes(fixedExpenses);
+
+  // ── Rapprochement bancaire ────────────────────────────────────
+  const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
+    let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
+    transactions.forEach(t => {
+      const a = parseFloat(t.amount) || 0;
+      const isInc = isIncome(t.type);
+      if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
+      else           { if (isInc) noPtInc += a; else noPtExp += a; }
+    });
+    fixedExpenses.forEach(f => {
+      const a = f.amount || 0;
+      if (f.pointed) ptExp   += a;
+      else           noPtExp += a;
+    });
+    const nbPt   = transactions.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointed).length;
+    const total  = transactions.length + fixedExpenses.length;
+    return {
+      soldePointe:    ptInc  - ptExp,
+      soldeAttente:   noPtInc - noPtExp,
+      nbPointed:      nbPt,
+      totalPointable: total,
+    };
+  }, [transactions, fixedExpenses]);
 
   // Year stats (memoised)
   const { yInc, yExp, yExpVar, yDecag, ySav } = useMemo(() => {
@@ -308,6 +332,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           border: "none",
           boxShadow: "0 4px 24px rgba(112,184,224,.2)",
           overflow: "hidden",
+          paddingBottom: 18,
         }}
       >
         {/* Shimmer */}
@@ -331,7 +356,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           animation: "pulse-orb 4.5s ease-in-out infinite reverse",
         }} />
 
-        {/* Indicateur Smart */}
+        {/* SmartIndicator */}
         <SmartIndicator
           balance={balance}
           curMonthInc={curMonth.inc}
@@ -340,27 +365,69 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           onSwitchTab={onSwitchTab}
         />
 
-        <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative" }}>
-          Solde Bancaire Estimé
-        </div>
-        <div className="hero-value" style={{ color: balanceColor, position: "relative" }}>
-          <CountUp target={balance} color={balanceColor} duration={1000} />
-        </div>
-        {provTotal > 0 && (
-          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2, position: "relative" }}>
-            <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
-              Après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
-            </div>
-            <div style={{
-              fontFamily: "var(--mono)", fontSize: "1.25rem", fontWeight: 700,
-              color: afterProvColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em",
-            }}>
-              <CountUp target={balanceAfterProv} color={afterProvColor} duration={1100} />
-            </div>
+        <div style={{ position: "relative" }}>
+          <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}>
+            Solde Bancaire Estimé
           </div>
-        )}
-        <div style={{ position: "absolute", bottom: 14, right: 16, opacity: .45, pointerEvents: "none" }}>
-          <Sparkline transactions={transactions} fixedExpenses={fixedExpenses} />
+          <div className="hero-value" style={{ color: balanceColor }}>
+            <CountUp target={balance} color={balanceColor} duration={1000} />
+          </div>
+          {provTotal > 0 && (
+            <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
+                Après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
+              </div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "1.1rem", fontWeight: 700, color: afterProvColor, fontVariantNumeric: "tabular-nums" }}>
+                <CountUp target={balanceAfterProv} color={afterProvColor} duration={1100} />
+              </div>
+            </div>
+          )}
+
+          {/* ── Séparateur ── */}
+          <div style={{ height: 1, background: "rgba(255,255,255,.1)", margin: "12px 0" }} />
+
+          {/* ── Rapprochement bancaire ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            {[
+              { label: "✓ Solde pointé",  value: soldePointe,  color: "var(--success)", bg: "rgba(104,212,152,.12)", bord: "rgba(104,212,152,.25)", filter: "pointed",   sub: `${nbPointed} op. confirmées` },
+              { label: "⏳ En attente",   value: soldeAttente, color: "var(--warning)",  bg: "rgba(200,184,96,.08)",  bord: "rgba(200,184,96,.25)",  filter: "unpointed", sub: `${totalPointable - nbPointed} op. restantes` },
+            ].map(s => (
+              <div key={s.label}
+                onClick={() => onGoToHistorique?.(s.filter)}
+                style={{
+                  background: s.bg, borderRadius: 9, padding: "8px 10px",
+                  border: `1px solid ${s.bord}`, cursor: "pointer",
+                  transition: "opacity .15s",
+                }}>
+                <div style={{ fontSize: ".55rem", color: s.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 3 }}>
+                  {s.label} ›
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.color, fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>
+                  {s.value >= 0 ? "+" : ""}{fmt(s.value)}
+                </div>
+                <div style={{ fontSize: ".52rem", color: "rgba(255,255,255,.35)", marginTop: 2 }}>{s.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Barre de progression rapprochement ── */}
+          {totalPointable > 0 && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginBottom: 4 }}>
+                <span>Rapprochement</span>
+                <span style={{ color: nbPointed === totalPointable ? "var(--success)" : "rgba(255,255,255,.5)", fontWeight: 700 }}>
+                  {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
+                </span>
+              </div>
+              <div style={{ height: 5, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden" }}>
+                <div style={{
+                  width: `${(nbPointed / totalPointable) * 100}%`, height: "100%",
+                  background: "linear-gradient(90deg, var(--success), var(--accent))",
+                  borderRadius: 99, transition: "width .4s ease",
+                }} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -592,7 +659,340 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  HISTORIQUE — helpers locaux
+//  HISTORIQUE — ligne pointable
+// ─────────────────────────────────────────────────────────────────
+function PointRow({ item, onToggle, isFixed = false }) {
+  const isInc = item.type === "income" || item.type === "dissolution_cagnotte";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+      borderBottom: "1px solid var(--border-soft)",
+      background: item.pointed ? "rgba(104,212,152,.04)" : "transparent",
+      transition: "background .2s",
+    }}>
+      {/* Bouton pointage */}
+      <button onClick={() => onToggle(item.id)} style={{
+        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+        background: item.pointed ? "var(--success)" : "transparent",
+        border: `2px solid ${item.pointed ? "var(--success)" : "var(--border)"}`,
+        color: item.pointed ? "var(--bg)" : "var(--text3)",
+        fontSize: ".82rem", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "all .15s",
+      }}>{item.pointed ? "✓" : ""}</button>
+
+      <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        {item.cat?.icon ?? (isFixed ? "📌" : isInc ? "💰" : "💸")}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--text)", opacity: item.pointed ? 1 : .75, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {item.name || item.note || "—"}
+          </span>
+          {isFixed && (
+            <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>FIXE</span>
+          )}
+        </div>
+        {item.date && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{item.date.slice(8)}/{item.date.slice(5,7)}</div>}
+      </div>
+
+      <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isFixed || !isInc ? "var(--danger)" : "var(--success)", opacity: item.pointed ? 1 : .55, flexShrink: 0 }}>
+        {isInc && !isFixed ? "+" : "−"}{fmt(item.amount)}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  HISTORIQUE
+// ─────────────────────────────────────────────────────────────────
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, initPointFilter = "all", onClearPointFilter }) {
+  const now = new Date();
+  const [year,     setYear]     = useState(now.getFullYear());
+  const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  const [search,   setSearch]   = useState("");
+  const [filter,   setFilter]   = useState("all");
+  const [sort,     setSort]     = useState("date");
+  const [catId,    setCatId]    = useState("");
+  const [viewMode, setViewMode] = useState("list");
+  const [minAmt,   setMinAmt]   = useState("");
+  const [maxAmt,   setMaxAmt]   = useState("");
+  const [showAmtFilter, setShowAmtFilter] = useState(false);
+
+  // Filtre pointage — initialisé depuis la hero card
+  const [pointFilter, setPointFilter] = useState(initPointFilter);
+  // Sync si la prop change (navigation depuis hero card)
+  useEffect(() => { setPointFilter(initPointFilter); }, [initPointFilter]);
+
+  const month = `${year}-${String(monthIdx + 1).padStart(2, "0")}`;
+
+  function prevMonth() {
+    if (monthIdx === 0) { setYear(y => y - 1); setMonthIdx(11); }
+    else setMonthIdx(m => m - 1);
+    setCatId("");
+  }
+  function nextMonth() {
+    const nextYM = monthIdx === 11 ? `${year + 1}-01` : `${year}-${String(monthIdx + 2).padStart(2, "0")}`;
+    if (nextYM > currentYM()) return;
+    if (monthIdx === 11) { setYear(y => y + 1); setMonthIdx(0); }
+    else setMonthIdx(m => m + 1);
+    setCatId("");
+  }
+  const isCurrentMonth = month === currentYM();
+
+  const { transactions, categories, cagnottes, fixedExpenses } = data;
+  const mStats = useMonthStats(transactions, fixedExpenses, month);
+  const savMonth = useMemo(() =>
+    transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
+      .reduce((s, t) => s + (parseFloat(t.amount)||0), 0), [transactions, month]);
+
+  // Frais fixes du mois courant (pour la section pointage)
+  const monthFixes = useMemo(() =>
+    month === currentYM() ? fixedExpenses : [],
+    [fixedExpenses, month]
+  );
+
+  // Rapprochement du mois affiché
+  const { soldePointe, nbPointed, totalPointable } = useMemo(() => {
+    const txPt    = transactions.filter(t => t.date.startsWith(month) && t.pointed);
+    const txNoPt  = transactions.filter(t => t.date.startsWith(month) && !t.pointed);
+    const fixPt   = monthFixes.filter(f => f.pointed);
+    let pt = 0;
+    txPt.forEach(t => { const a = parseFloat(t.amount)||0; pt += isIncome(t.type) ? a : -a; });
+    fixPt.forEach(f => { pt -= (f.amount||0); });
+    return {
+      soldePointe:    pt,
+      nbPointed:      txPt.length + fixPt.length,
+      totalPointable: transactions.filter(t => t.date.startsWith(month)).length + monthFixes.length,
+    };
+  }, [transactions, fixedExpenses, month, monthFixes]);
+
+  const filtered = useMemo(() => {
+    let list = transactions.filter(t => t.date.startsWith(month));
+    if (filter !== "all") list = list.filter(t => {
+      if (filter === "income")  return isIncome(t.type);
+      if (filter === "expense") return t.type === "expense";
+      if (filter === "savings") return ["epargne","decagnottage","transfer"].includes(t.type);
+      return true;
+    });
+    if (catId)  list = list.filter(t => t.categoryId === catId);
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(t => {
+        const cat = categories.find(c => c.id === t.categoryId);
+        return (t.note||"").toLowerCase().includes(q) || (cat?.name||"").toLowerCase().includes(q);
+      });
+    }
+    if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
+    if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
+    // Filtre pointage
+    if (pointFilter === "pointed")   list = list.filter(t =>  t.pointed);
+    if (pointFilter === "unpointed") list = list.filter(t => !t.pointed);
+    if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
+    if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
+    if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
+    return list;
+  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter]);
+
+  const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+
+  return (
+    <div>
+      {/* ── 5. Navigation mois ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "10px 16px", marginBottom: 10 }}>
+        <button onClick={prevMonth} style={{ background: "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: "var(--accent)", fontSize: "1.1rem", cursor: "pointer" }}>◀</button>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800 }}>{MONTHS_FR[monthIdx]}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{year}</div>
+        </div>
+        <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
+      </div>
+
+      {/* ── Donut + barre budget ── */}
+      <div className="card" style={{ padding: 14, marginBottom: 10 }}>
+        <HistDonut inc={mStats.inc} exp={mStats.exp} sav={savMonth} />
+        <BudgetBar exp={mStats.exp} inc={mStats.inc} />
+      </div>
+
+      {/* ── Mini récap rapprochement ── */}
+      {totalPointable > 0 && (
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
+            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em" }}>Rapprochement</div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: ".68rem", fontWeight: 800, color: "var(--success)" }}>
+                {soldePointe >= 0 ? "+" : ""}{fmt(soldePointe)}
+              </span>
+              <span style={{ fontSize: ".6rem", color: nbPointed === totalPointable ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>
+                {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
+              </span>
+            </div>
+          </div>
+          <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
+            <div style={{ width: `${totalPointable > 0 ? (nbPointed / totalPointable) * 100 : 0}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .3s" }} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Filtres ── */}
+      <div className="card" style={{ marginBottom: 10 }}>
+        <div className="hist-search-wrap">
+          <span className="hist-search-icon">🔍</span>
+          <input className="hist-search" type="text" placeholder="Rechercher…"
+            value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="filter-row">
+          {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
+            <div key={k} className={`filter-chip${filter===k?" active":""}`}
+              onClick={() => { setFilter(k); setCatId(""); }}>{l}</div>
+          ))}
+        </div>
+
+        {/* ── Filtre pointage ── */}
+        <div className="filter-row" style={{ marginBottom: 6 }}>
+          {[
+            ["all",      "Toutes",       ""],
+            ["pointed",  "✓ Pointées",   "var(--success)"],
+            ["unpointed","⏳ En attente", "var(--warning)"],
+          ].map(([k, l, col]) => (
+            <div key={k}
+              className={`filter-chip${pointFilter===k?" active":""}`}
+              style={{ color: pointFilter===k && col ? col : undefined }}
+              onClick={() => { setPointFilter(k); onClearPointFilter?.(); }}>
+              {l}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
+          <span style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tri :</span>
+          {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
+            <span key={k} className={`sort-chip${sort===k?" active":""}`} onClick={() => setSort(k)}>{l}</span>
+          ))}
+          <span className={`sort-chip${showAmtFilter?" active":""}`} onClick={() => setShowAmtFilter(s => !s)} style={{ marginLeft: "auto" }}>
+            💶 {(minAmt||maxAmt) ? "Montant ✦" : "Montant"}
+          </span>
+        </div>
+        {showAmtFilter && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+            {[["Min (€)", minAmt, setMinAmt],["Max (€)", maxAmt, setMaxAmt]].map(([label, val, setter]) => (
+              <div key={label}>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 3 }}>{label}</div>
+                <input type="number" value={val} min="0" step="10"
+                  onChange={e => setter(e.target.value)}
+                  style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".75rem", fontFamily: "var(--mono)", boxSizing: "border-box" }}/>
+              </div>
+            ))}
+            {(minAmt||maxAmt) && (
+              <button onClick={() => { setMinAmt(""); setMaxAmt(""); }}
+                style={{ gridColumn: "span 2", background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px", color: "var(--text3)", fontSize: ".65rem", cursor: "pointer" }}>
+                ✕ Effacer le filtre montant
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Toggle Liste / Catégories ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+        {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
+          <button key={k} onClick={() => setViewMode(k)} style={{
+            background: viewMode===k ? "var(--accent-glow)" : "transparent",
+            border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
+            borderRadius: "var(--radius-sm)", padding: "9px 0",
+            color: viewMode===k ? "var(--accent)" : "var(--text2)",
+            fontWeight: 700, fontSize: ".72rem", cursor: "pointer",
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── 6. Vue Catégories ── */}
+      {viewMode === "cats" && (
+        <CatBreakdown txs={filtered} categories={categories}
+          onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("list"); }} />
+      )}
+
+      {/* Filtre catégorie actif */}
+      {viewMode === "list" && catId && (() => {
+        const activeCat = categories.find(c => c.id === catId);
+        return activeCat ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)" }}>
+            <span style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--accent)", flex: 1 }}>{activeCat.icon} {activeCat.name}</span>
+            <button onClick={() => setCatId("")} style={{ background: "transparent", border: "none", color: "var(--accent)", fontSize: ".8rem", cursor: "pointer" }}>✕</button>
+          </div>
+        ) : null;
+      })()}
+
+      {/* ── Liste avec pointage ── */}
+      {viewMode === "list" && (
+        filtered.length === 0
+          ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
+          : (
+            <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
+              {grouped.map(([date, dayTxs]) => {
+                const allPointed = dayTxs.every(t => t.pointed);
+                const dayNet = dayTxs.reduce((s, t) => isIncome(t.type) ? s + (parseFloat(t.amount)||0) : s - (parseFloat(t.amount)||0), 0);
+                return (
+                  <div key={date}>
+                    <div style={{ padding: "7px 14px", background: "var(--surface2)", fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-soft)" }}>
+                      <span>{dateLabel(date)}</span>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {allPointed && <span style={{ color: "var(--success)" }}>✓</span>}
+                        <span style={{ color: dayNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
+                          {dayNet >= 0 ? "+" : ""}{fmt(dayNet)}
+                        </span>
+                      </div>
+                    </div>
+                    {pointFilter === "all"
+                      ? dayTxs.map(t => (
+                          <SwipeRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
+                            onEdit={onEditTrans} onDelete={onDeleteTrans}
+                            onTogglePoint={onTogglePointTx} />
+                        ))
+                      : dayTxs.map(t => (
+                          <PointRow key={t.id}
+                            item={{ ...t, name: txLabel(t, categories, cagnottes), cat: categories.find(c => c.id === t.categoryId) }}
+                            onToggle={onTogglePointTx} />
+                        ))
+                    }
+                  </div>
+                );
+              })}
+            </div>
+          )
+      )}
+
+      {/* ── Section frais fixes du mois ── */}
+      {viewMode === "list" && month === currentYM() && fixedExpenses.length > 0 && pointFilter !== "pointed" && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--warning)", textTransform: "uppercase", letterSpacing: ".08em" }}>📌 Frais fixes du mois</div>
+              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils débitent sur ton compte</div>
+            </div>
+            <span style={{ fontSize: ".62rem", color: fixedExpenses.every(f => f.pointed) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
+              {fixedExpenses.filter(f => f.pointed).length}/{fixedExpenses.length}
+            </span>
+          </div>
+          {(pointFilter === "unpointed" ? fixedExpenses.filter(f => !f.pointed) : fixedExpenses).map(f => {
+            const cat = (data.categories || []).find(c => c.id === f.categoryId);
+            return (
+              <PointRow key={f.id}
+                item={{ ...f, name: f.name, cat, date: null }}
+                onToggle={onTogglePointFix}
+                isFixed={true} />
+            );
+          })}
+          <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
+            <span style={{ color: "var(--text3)" }}>Total fixes</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(fixedExpenses.reduce((s,f) => s+(f.amount||0), 0))}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 // ─────────────────────────────────────────────────────────────────
 const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
@@ -681,8 +1081,8 @@ function BudgetBar({ exp, inc }) {
   );
 }
 
-// 4. SwipeRow
-function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
+// 4. SwipeRow — avec bouton pointage intégré
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
@@ -736,9 +1136,23 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete }) {
           transform: `translateX(${offset}px)`,
           transition: (offset === 0 || offset === -110) ? "transform .2s" : "none",
           background: "var(--bg)",
-          display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+          display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
+        {/* Bouton pointage */}
+        {onTogglePoint && (
+          <button
+            onClick={e => { e.stopPropagation(); onTogglePoint(t.id); }}
+            style={{
+              width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+              background: t.pointed ? "var(--success)" : "transparent",
+              border: `2px solid ${t.pointed ? "var(--success)" : "var(--border)"}`,
+              color: t.pointed ? "var(--bg)" : "var(--text3)",
+              fontSize: ".78rem", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all .15s",
+            }}>{t.pointed ? "✓" : ""}</button>
+        )}
         <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--surface2)", border: `1.5px solid var(--border)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>
           {icon}
         </div>
