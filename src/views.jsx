@@ -8,6 +8,15 @@ import {
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
+//  Pointage — types exclus du rapprochement bancaire
+//  decagnottage et transfer sont des mouvements internes
+//  entre cagnottes : ils n'apparaissent pas sur un relevé.
+// ─────────────────────────────────────────────────────────────────
+function isPointable(type) {
+  return type !== "decagnottage" && type !== "transfer";
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  SectionTitle — police renforcée, appliquée partout
 // ─────────────────────────────────────────────────────────────────
 function SectionTitle({ children, style }) {
@@ -251,7 +260,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   // ── Rapprochement bancaire ────────────────────────────────────
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
-    transactions.forEach(t => {
+    transactions.filter(t => isPointable(t.type)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
@@ -262,8 +271,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       if (f.pointed) ptExp   += a;
       else           noPtExp += a;
     });
-    const nbPt   = transactions.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointed).length;
-    const total  = transactions.length + fixedExpenses.length;
+    const pointableTxs = transactions.filter(t => isPointable(t.type));
+    const nbPt  = pointableTxs.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointed).length;
+    const total = pointableTxs.length + fixedExpenses.length;
     return {
       soldePointe:    ptInc  - ptExp,
       soldeAttente:   noPtInc - noPtExp,
@@ -761,7 +771,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
 
   // Rapprochement du mois affiché
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
-    const txMonth = transactions.filter(t => t.date.startsWith(month));
+    const txMonth = transactions.filter(t => t.date.startsWith(month) && isPointable(t.type));
     let pt = 0, noPt = 0;
     txMonth.forEach(t => {
       const a = parseFloat(t.amount) || 0;
@@ -800,9 +810,9 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
-    // Filtre pointage
-    if (pointFilter === "pointed")   list = list.filter(t =>  t.pointed);
-    if (pointFilter === "unpointed") list = list.filter(t => !t.pointed);
+    // Filtre pointage — exclut decagnottage et transfer (mouvements internes)
+    if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
+    if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
     if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
@@ -1172,8 +1182,8 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint })
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
-        {/* Bouton pointage */}
-        {onTogglePoint && (
+        {/* Bouton pointage — masqué pour decagnottage et transfer */}
+        {onTogglePoint && isPointable(t.type) && (
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
