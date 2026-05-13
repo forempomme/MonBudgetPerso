@@ -75,7 +75,8 @@ export default function App() {
   }, []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
-  const togglePointFix = useCallback(id => dispatch({ type: A.TOGGLE_POINT_FIX, id }), []);
+  const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
+  const overrideFixMonth  = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_FIX_MONTH, id, ym, override }), []);
 
   // Filtre pointage partagé entre AccueilView et HistoriqueView
   const [histPointFilter, setHistPointFilter] = useState("all");
@@ -369,6 +370,7 @@ export default function App() {
         onDeleteTrans={deleteTransaction}
         onTogglePointTx={togglePointTx}
         onTogglePointFix={togglePointFix}
+        onOverrideFixMonth={overrideFixMonth}
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}
       />

@@ -268,11 +268,12 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
     });
     fixedExpenses.forEach(f => {
       const a = f.amount || 0;
-      if (f.pointed) ptExp   += a;
+      const isPointed = !!f.pointedMonths?.[curM];
+      if (isPointed) ptExp   += a;
       else           noPtExp += a;
     });
     const pointableTxs = transactions.filter(t => isPointable(t.type));
-    const nbPt  = pointableTxs.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointed).length;
+    const nbPt  = pointableTxs.filter(t => t.pointed).length + fixedExpenses.filter(f => f.pointedMonths?.[curM]).length;
     const total = pointableTxs.length + fixedExpenses.length;
     return {
       soldePointe:    ptInc  - ptExp,
@@ -669,53 +670,110 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  HISTORIQUE — ligne pointable
+//  HISTORIQUE — ligne pointable (transactions + frais fixes)
 // ─────────────────────────────────────────────────────────────────
-function PointRow({ item, onToggle, isFixed = false }) {
+function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
+  const [editing,     setEditing]     = useState(false);
+  const [draftName,   setDraftName]   = useState("");
+  const [draftAmount, setDraftAmount] = useState("");
   const isInc = item.type === "income" || item.type === "dissolution_cagnotte";
+
+  function startEdit() {
+    setDraftName(item.name || "");
+    setDraftAmount(String(item.amount || ""));
+    setEditing(true);
+  }
+  function saveEdit() {
+    const a = parseFloat(draftAmount);
+    if (!isNaN(a) && a > 0) onEditFixed?.(item.id, { name: draftName.trim() || item.name, amount: a });
+    setEditing(false);
+  }
+
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-      borderBottom: "1px solid var(--border-soft)",
-      background: item.pointed ? "rgba(104,212,152,.04)" : "transparent",
-      transition: "background .2s",
-    }}>
-      {/* Bouton pointage */}
-      <button
-        onTouchStart={e => e.stopPropagation()}
-        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onToggle(item.id); }}
-        onClick={e => e.stopPropagation()}
-        style={{
-          width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
-          background: item.pointed ? "var(--success)" : "transparent",
-          border: `2px solid ${item.pointed ? "var(--success)" : "var(--border)"}`,
-          color: item.pointed ? "var(--bg)" : "var(--text3)",
-          fontSize: ".88rem", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all .15s",
-          touchAction: "manipulation",
-          WebkitTapHighlightColor: "transparent",
-        }}>{item.pointed ? "✓" : ""}</button>
+    <div>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
+        borderBottom: editing ? "none" : "1px solid var(--border-soft)",
+        background: item.pointed ? "rgba(104,212,152,.04)" : "transparent",
+        transition: "background .2s",
+      }}>
+        {/* Bouton pointage */}
+        <button
+          onTouchStart={e => e.stopPropagation()}
+          onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onToggle(item.id); }}
+          onClick={e => e.stopPropagation()}
+          style={{
+            width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+            background: item.pointed ? "var(--success)" : "transparent",
+            border: `2px solid ${item.pointed ? "var(--success)" : "var(--border)"}`,
+            color: item.pointed ? "var(--bg)" : "var(--text3)",
+            fontSize: ".88rem", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "all .15s", touchAction: "manipulation",
+            WebkitTapHighlightColor: "transparent",
+          }}>{item.pointed ? "✓" : ""}</button>
 
-      <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-        {item.cat?.icon ?? (isFixed ? "📌" : isInc ? "💰" : "💸")}
-      </div>
+        <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          {item.cat?.icon ?? (isFixed ? "📌" : isInc ? "💰" : "💸")}
+        </div>
 
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--text)", opacity: item.pointed ? 1 : .75, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {item.name || item.note || "—"}
-          </span>
-          {isFixed && (
-            <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>FIXE</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--text)", opacity: item.pointed ? 1 : .75, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {item.name || item.note || "—"}
+            </span>
+            {isFixed && <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>FIXE</span>}
+            {isFixed && item.isOverridden && <span style={{ fontSize: ".5rem", background: "var(--accent-glow)", color: "var(--accent)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>modifié</span>}
+          </div>
+          {item.date && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{item.date.slice(8)}/{item.date.slice(5,7)}</div>}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isFixed || !isInc ? "var(--danger)" : "var(--success)", opacity: item.pointed ? 1 : .55 }}>
+            {isInc && !isFixed ? "+" : "−"}{fmt(item.amount)}
+          </div>
+          {isFixed && onEditFixed && (
+            <button
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); startEdit(); }}
+              onClick={e => { e.stopPropagation(); startEdit(); }}
+              style={{
+                background: "var(--accent-glow)", border: "1px solid var(--border)",
+                borderRadius: 7, padding: "4px 7px", color: "var(--accent)",
+                fontSize: ".7rem", cursor: "pointer",
+                touchAction: "manipulation", WebkitTapHighlightColor: "transparent",
+              }}>✏️</button>
           )}
         </div>
-        {item.date && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{item.date.slice(8)}/{item.date.slice(5,7)}</div>}
       </div>
 
-      <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isFixed || !isInc ? "var(--danger)" : "var(--success)", opacity: item.pointed ? 1 : .55, flexShrink: 0 }}>
-        {isInc && !isFixed ? "+" : "−"}{fmt(item.amount)}
-      </div>
+      {/* Formulaire édition inline — ce mois uniquement */}
+      {editing && (
+        <div style={{ padding: "10px 14px 12px", background: "rgba(112,184,224,.06)", borderBottom: "1px solid var(--border-soft)", borderLeft: "3px solid var(--accent)" }}>
+          <div style={{ fontSize: ".6rem", color: "var(--accent)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
+            ✏️ Modifier pour ce mois uniquement
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 8, marginBottom: 8 }}>
+            <input type="text" value={draftName} onChange={e => setDraftName(e.target.value)} placeholder="Nom"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 10px", color: "var(--text)", fontSize: ".75rem", fontFamily: "inherit" }}/>
+            <input type="number" value={draftAmount} min="0" step="0.01" onChange={e => setDraftAmount(e.target.value)} placeholder="Montant"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 8px", color: "var(--text)", fontSize: ".75rem", fontFamily: "var(--mono)" }}/>
+          </div>
+          <div style={{ display: "flex", gap: 7 }}>
+            <button onClick={() => setEditing(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"7px", color:"var(--text2)", fontSize:".7rem", fontWeight:700, cursor:"pointer" }}>
+              Annuler
+            </button>
+            {item.isOverridden && (
+              <button onClick={() => { onEditFixed?.(item.id, null); setEditing(false); }} style={{ flex:1, background:"transparent", border:"1px solid var(--warning)", borderRadius:8, padding:"7px", color:"var(--warning)", fontSize:".7rem", fontWeight:700, cursor:"pointer" }}>
+                ↺ Réinitialiser
+              </button>
+            )}
+            <button onClick={saveEdit} style={{ flex:1, background:"var(--accent)", border:"none", borderRadius:8, padding:"7px", color:"var(--bg)", fontSize:".7rem", fontWeight:800, cursor:"pointer" }}>
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -723,7 +781,7 @@ function PointRow({ item, onToggle, isFixed = false }) {
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -763,11 +821,27 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
     transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
       .reduce((s, t) => s + (parseFloat(t.amount)||0), 0), [transactions, month]);
 
-  // Frais fixes du mois courant (pour la section pointage)
+  // Premier mois d'utilisation = mois de la première transaction
+  const startYM = useMemo(() => {
+    if (!transactions.length) return currentYM();
+    return transactions.reduce((min, t) => t.date < min ? t.date : min, transactions[0].date).slice(0, 7);
+  }, [transactions]);
+
+  // Frais fixes — visibles uniquement depuis le mois de démarrage
   const monthFixes = useMemo(() =>
-    month === currentYM() ? fixedExpenses : [],
-    [fixedExpenses, month]
+    month >= startYM ? fixedExpenses : [],
+    [fixedExpenses, month, startYM]
   );
+
+  // Handler local : passe le mois courant pour le pointage par mois
+  const handleTogglePointFix = useCallback(id => {
+    onTogglePointFix?.(id, month);
+  }, [onTogglePointFix, month]);
+
+  // Handler édition frais fixe — override pour ce mois uniquement
+  const handleOverrideFix = useCallback((id, override) => {
+    onOverrideFixMonth?.(id, month, override);
+  }, [onOverrideFixMonth, month]);
 
   // Rapprochement du mois affiché
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
@@ -780,14 +854,16 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
       else           noPt += val;
     });
     monthFixes.forEach(f => {
-      const a = f.amount || 0;
-      if (f.pointed) pt   -= a;
+      const ov = f.monthlyOverrides?.[month];
+      const a  = (ov?.amount ?? f.amount) || 0;
+      const isPointed = !!f.pointedMonths?.[month];
+      if (isPointed) pt   -= a;
       else           noPt -= a;
     });
     return {
       soldePointe:    pt,
       soldeAttente:   noPt,
-      nbPointed:      txMonth.filter(t => t.pointed).length + monthFixes.filter(f => f.pointed).length,
+      nbPointed:      txMonth.filter(t => t.pointed).length + monthFixes.filter(f => f.pointedMonths?.[month]).length,
       totalPointable: txMonth.length + monthFixes.length,
     };
   }, [transactions, fixedExpenses, month, monthFixes]);
@@ -1006,30 +1082,43 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
           )
       )}
 
-      {/* ── Section frais fixes du mois ── */}
-      {viewMode === "list" && month === currentYM() && fixedExpenses.length > 0 && pointFilter !== "pointed" && (
+      {/* ── Section frais fixes ── */}
+      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && (
         <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--warning)", textTransform: "uppercase", letterSpacing: ".08em" }}>📌 Frais fixes du mois</div>
               <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils débitent sur ton compte</div>
             </div>
-            <span style={{ fontSize: ".62rem", color: fixedExpenses.every(f => f.pointed) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
-              {fixedExpenses.filter(f => f.pointed).length}/{fixedExpenses.length}
+            <span style={{ fontSize: ".62rem", color: monthFixes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
+              {monthFixes.filter(f => f.pointedMonths?.[month]).length}/{monthFixes.length}
             </span>
           </div>
-          {(pointFilter === "unpointed" ? fixedExpenses.filter(f => !f.pointed) : fixedExpenses).map(f => {
+          {(pointFilter === "unpointed"
+            ? monthFixes.filter(f => !f.pointedMonths?.[month])
+            : monthFixes
+          ).map(f => {
             const cat = (data.categories || []).find(c => c.id === f.categoryId);
+            const ov  = f.monthlyOverrides?.[month];  // override du mois si existe
             return (
               <PointRow key={f.id}
-                item={{ ...f, name: f.name, cat, date: null }}
-                onToggle={onTogglePointFix}
+                item={{
+                  ...f,
+                  name:        ov?.name   ?? f.name,
+                  amount:      ov?.amount ?? f.amount,
+                  cat,
+                  date:        null,
+                  pointed:     !!f.pointedMonths?.[month],
+                  isOverridden: !!ov,
+                }}
+                onToggle={handleTogglePointFix}
+                onEditFixed={handleOverrideFix}
                 isFixed={true} />
             );
           })}
           <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
             <span style={{ color: "var(--text3)" }}>Total fixes</span>
-            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(fixedExpenses.reduce((s,f) => s+(f.amount||0), 0))}</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+(f.amount||0), 0))}</span>
           </div>
         </div>
       )}

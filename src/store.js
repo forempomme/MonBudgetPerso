@@ -63,7 +63,8 @@ export const A = /** @type {const} */ ({
   SET_BACKUP_DATE:   "SET_BACKUP_DATE",
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
   TOGGLE_POINT_TX:   "TOGGLE_POINT_TX",
-  TOGGLE_POINT_FIX:  "TOGGLE_POINT_FIX",
+  TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
+  OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   IMPORT_DATA:       "IMPORT_DATA",
   RESET:             "RESET",
 });
@@ -296,12 +297,28 @@ export function reducer(state, action) {
     case A.TOGGLE_POINT_FIX:
       return {
         ...state,
-        fixedExpenses: state.fixedExpenses.map(f =>
-          f.id === action.id ? { ...f, pointed: !f.pointed } : f
-        ),
+        fixedExpenses: state.fixedExpenses.map(f => {
+          if (f.id !== action.id) return f;
+          const pointedMonths = { ...(f.pointedMonths || {}) };
+          pointedMonths[action.ym] = !pointedMonths[action.ym];
+          return { ...f, pointedMonths };
+        }),
       };
 
-    case A.SAVE_MONTH_NOTE: {
+    case A.OVERRIDE_FIX_MONTH:
+      return {
+        ...state,
+        fixedExpenses: state.fixedExpenses.map(f => {
+          if (f.id !== action.id) return f;
+          const monthlyOverrides = { ...(f.monthlyOverrides || {}) };
+          if (action.override) {
+            monthlyOverrides[action.ym] = action.override; // { amount, name }
+          } else {
+            delete monthlyOverrides[action.ym]; // reset → valeur par défaut
+          }
+          return { ...f, monthlyOverrides };
+        }),
+      };
       const notes = { ...(state.monthNotes || {}) };
       if (action.note.trim()) {
         notes[action.ym] = action.note.trim();
