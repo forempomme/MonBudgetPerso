@@ -319,6 +319,8 @@ export function reducer(state, action) {
           return { ...f, monthlyOverrides };
         }),
       };
+
+    case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };
       if (action.note.trim()) {
         notes[action.ym] = action.note.trim();
