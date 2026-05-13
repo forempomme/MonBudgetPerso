@@ -136,8 +136,8 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Tap feedback sur toutes les cartes cliquables */
-.stat-mini:active, .cag-card:active, .card:active { transform: scale(.97); }
+/* Tap feedback — uniquement sur les cartes stat cliquables, pas les listes */
+.stat-mini:active, .cag-card:active { transform: scale(.97); }
 
 /* Entrée animée des sections */
 .section-enter { animation: fade-in .35s ease both; }

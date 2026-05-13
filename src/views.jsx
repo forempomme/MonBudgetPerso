@@ -671,15 +671,21 @@ function PointRow({ item, onToggle, isFixed = false }) {
       transition: "background .2s",
     }}>
       {/* Bouton pointage */}
-      <button onClick={() => onToggle(item.id)} style={{
-        width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
-        background: item.pointed ? "var(--success)" : "transparent",
-        border: `2px solid ${item.pointed ? "var(--success)" : "var(--border)"}`,
-        color: item.pointed ? "var(--bg)" : "var(--text3)",
-        fontSize: ".82rem", cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        transition: "all .15s",
-      }}>{item.pointed ? "✓" : ""}</button>
+      <button
+        onTouchStart={e => e.stopPropagation()}
+        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onToggle(item.id); }}
+        onClick={e => e.stopPropagation()}
+        style={{
+          width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+          background: item.pointed ? "var(--success)" : "transparent",
+          border: `2px solid ${item.pointed ? "var(--success)" : "var(--border)"}`,
+          color: item.pointed ? "var(--bg)" : "var(--text3)",
+          fontSize: ".88rem", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all .15s",
+          touchAction: "manipulation",
+          WebkitTapHighlightColor: "transparent",
+        }}>{item.pointed ? "✓" : ""}</button>
 
       <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
         {item.cat?.icon ?? (isFixed ? "📌" : isInc ? "💰" : "💸")}
@@ -754,17 +760,25 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
   );
 
   // Rapprochement du mois affiché
-  const { soldePointe, nbPointed, totalPointable } = useMemo(() => {
-    const txPt    = transactions.filter(t => t.date.startsWith(month) && t.pointed);
-    const txNoPt  = transactions.filter(t => t.date.startsWith(month) && !t.pointed);
-    const fixPt   = monthFixes.filter(f => f.pointed);
-    let pt = 0;
-    txPt.forEach(t => { const a = parseFloat(t.amount)||0; pt += isIncome(t.type) ? a : -a; });
-    fixPt.forEach(f => { pt -= (f.amount||0); });
+  const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
+    const txMonth = transactions.filter(t => t.date.startsWith(month));
+    let pt = 0, noPt = 0;
+    txMonth.forEach(t => {
+      const a = parseFloat(t.amount) || 0;
+      const val = isIncome(t.type) ? a : -a;
+      if (t.pointed) pt   += val;
+      else           noPt += val;
+    });
+    monthFixes.forEach(f => {
+      const a = f.amount || 0;
+      if (f.pointed) pt   -= a;
+      else           noPt -= a;
+    });
     return {
       soldePointe:    pt,
-      nbPointed:      txPt.length + fixPt.length,
-      totalPointable: transactions.filter(t => t.date.startsWith(month)).length + monthFixes.length,
+      soldeAttente:   noPt,
+      nbPointed:      txMonth.filter(t => t.pointed).length + monthFixes.filter(f => f.pointed).length,
+      totalPointable: txMonth.length + monthFixes.length,
     };
   }, [transactions, fixedExpenses, month, monthFixes]);
 
@@ -818,17 +832,36 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
       {/* ── Mini récap rapprochement ── */}
       {totalPointable > 0 && (
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 5 }}>
-            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em" }}>Rapprochement</div>
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ fontFamily: "var(--mono)", fontSize: ".68rem", fontWeight: 800, color: "var(--success)" }}>
-                {soldePointe >= 0 ? "+" : ""}{fmt(soldePointe)}
-              </span>
-              <span style={{ fontSize: ".6rem", color: nbPointed === totalPointable ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>
-                {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
-              </span>
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em" }}>📊 Rapprochement</div>
+            <span style={{ fontSize: ".6rem", color: nbPointed === totalPointable ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>
+              {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
+            </span>
           </div>
+
+          {/* Deux mini-cartes clickables */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 8 }}>
+            {[
+              { label: "✓ Pointé",     value: soldePointe,  color: "var(--success)", bg: "rgba(104,212,152,.1)", filter: "pointed",   sub: `${nbPointed} op.` },
+              { label: "⏳ En attente", value: soldeAttente, color: "var(--warning)",  bg: "rgba(200,184,96,.08)", filter: "unpointed", sub: `${totalPointable - nbPointed} op.` },
+            ].map(s => (
+              <div key={s.label}
+                onClick={() => setPointFilter(f => f === s.filter ? "all" : s.filter)}
+                style={{
+                  background: s.bg, borderRadius: 8, padding: "7px 9px",
+                  border: `1px solid ${pointFilter === s.filter ? s.color : "transparent"}`,
+                  cursor: "pointer", transition: "border-color .15s",
+                }}>
+                <div style={{ fontSize: ".55rem", color: s.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 3 }}>{s.label}</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.color, fontSize: ".82rem", fontVariantNumeric: "tabular-nums" }}>
+                  {s.value >= 0 ? "+" : ""}{fmt(s.value)}
+                </div>
+                <div style={{ fontSize: ".52rem", color: "var(--text3)", marginTop: 2 }}>{s.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Barre de progression */}
           <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
             <div style={{ width: `${totalPointable > 0 ? (nbPointed / totalPointable) * 100 : 0}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .3s" }} />
           </div>
@@ -1142,15 +1175,19 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint })
         {/* Bouton pointage */}
         {onTogglePoint && (
           <button
-            onClick={e => { e.stopPropagation(); onTogglePoint(t.id); }}
+            onTouchStart={e => e.stopPropagation()}
+            onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
+            onClick={e => { e.stopPropagation(); }}
             style={{
-              width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+              width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
               background: t.pointed ? "var(--success)" : "transparent",
               border: `2px solid ${t.pointed ? "var(--success)" : "var(--border)"}`,
               color: t.pointed ? "var(--bg)" : "var(--text3)",
-              fontSize: ".78rem", cursor: "pointer",
+              fontSize: ".88rem", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "all .15s",
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
             }}>{t.pointed ? "✓" : ""}</button>
         )}
         <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--surface2)", border: `1.5px solid var(--border)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>
