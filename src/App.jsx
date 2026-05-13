@@ -74,6 +74,17 @@ export default function App() {
     dispatch({ type: A.SAVE_MONTH_NOTE, ym, note });
   }, []);
 
+  const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
+  const togglePointFix = useCallback(id => dispatch({ type: A.TOGGLE_POINT_FIX, id }), []);
+
+  // Filtre pointage partagé entre AccueilView et HistoriqueView
+  const [histPointFilter, setHistPointFilter] = useState("all");
+
+  const goToHistoriqueWithFilter = useCallback((filter) => {
+    setHistPointFilter(filter);
+    navigateTo("historique");
+  }, [navigateTo]);
+
   const goBack = useCallback(() => {
     setTabHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
   }, []);
@@ -340,6 +351,7 @@ export default function App() {
         onSwitchTab={navigateTo}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
+        onGoToHistorique={goToHistoriqueWithFilter}
       />
     ),
     cagnottes: (
@@ -355,6 +367,10 @@ export default function App() {
       <HistoriqueView data={data}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
+        onTogglePointTx={togglePointTx}
+        onTogglePointFix={togglePointFix}
+        initPointFilter={histPointFilter}
+        onClearPointFilter={() => setHistPointFilter("all")}
       />
     ),
     fixes: (
