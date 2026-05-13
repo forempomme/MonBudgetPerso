@@ -1,6 +1,9 @@
-# Budget Pro 2026
+# Gestion du budget
 
-Application Android de gestion de budget personnel, développée en React et packagée via Capacitor. Interface entièrement en français, 100% hors-ligne, sans compte ni serveur.
+Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
+Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
+
+**Version actuelle : `1.10.1`** — thème *Aube sur Minas Tirith*, build release signé via GitHub Actions.
 
 ---
 
@@ -8,82 +11,88 @@ Application Android de gestion de budget personnel, développée en React et pac
 
 - [Fonctionnalités](#fonctionnalités)
 - [Stack technique](#stack-technique)
+- [Thème visuel](#thème-visuel)
 - [Arborescence](#arborescence)
 - [Installation locale](#installation-locale)
 - [Build APK](#build-apk)
-- [Intégration GitHub](#intégration-github)
+- [Intégration GitHub Actions](#intégration-github-actions)
 - [Données & sauvegarde](#données--sauvegarde)
 - [Structure du code](#structure-du-code)
+- [Versioning](#versioning)
+- [Changelog](#changelog)
 
 ---
 
 ## Fonctionnalités
 
 ### Onglet Accueil
-- **Hero card** avec le solde bancaire estimé (toutes transactions + frais fixes du mois en cours)
-- **Solde prévisionnel** : si des frais prévisionnels sont définis, une deuxième ligne affiche le solde après ces dépenses (rouge si négatif)
+- **Hero card animée** — solde bancaire estimé avec dégradé, shimmer lumineux continu, orbes de lumière pulsées, compteur qui s'incrémente au chargement
+- **SmartIndicator** — point coloré en haut à droite de la hero card : vert (tout va bien), jaune (solde < 500 € ou dépenses > revenus ou backup > 7 j), rouge (solde négatif / critique ou backup > 14 j). Tap → bulle explicative avec action directe
+- **Solde prévisionnel** — si des frais prévisionnels sont définis, une deuxième ligne affiche le solde après ces dépenses
 - **Sparkline** des 6 derniers mois en superposition
-- Carte total **cagnottes** et **frais fixes mensuels**
-- Stats du **mois en cours** : revenus, dépenses totales, dépenses hors fixes, décagnottages — avec badges delta vs mois précédent
-- Stats de l**'année en cours** avec delta vs année précédente
+- Carte **🐷 Cagnottes** (violet) et **📌 Fixes / mois** (ambre)
+- Stats **🗓️ Mois en cours** : 💰 Revenus, 💸 Dépenses, 🐷 Cagnotte (carte double : épargne violet + retraits corail), 📊 Dép. variables — avec badges delta colorés sémantiquement (rouge si dépenses en hausse, vert si en baisse)
+- Stats **📅 Année en cours** avec même structure et delta vs année précédente
 - **Graphique mensuel cliquable** (ouvre le détail du mois)
-- **5 dernières opérations** avec édition et suppression inline
+- **5 dernières opérations** avec empty state illustré SVG
 
 ### Onglet Cagnottes
-- Projets d'épargne avec nom, solde actuel, objectif (€) et date cible optionnels
-- **Barre de progression** et affichage automatique du montant à épargner par mois
-- **Transfert entre cagnottes**
-- Tap sur une cagnotte → historique complet de ses versements et retraits
-- Dissolution automatique d'une cagnotte (solde crédité comme revenu)
+- **Bloc stats** en haut : épargné ce mois, épargné cette année (vert), décagnottage ce mois, décagnottage cette année (orange)
+- Bouton **🔄 Transfert** et **＋ Nouvelle** cagnotte
+- Projets d'épargne avec barre de progression, objectif € et date cible
+- Affichage automatique du montant à épargner par mois
+- Tap sur une cagnotte → historique complet
 
 ### Onglet Historique
-- Filtres par **mois** (sélecteur natif), **type** (revenus / dépenses / cagnottes), **catégorie**
-- **Recherche textuelle** sur note et catégorie
-- Tri par date (↓), montant (↓ ou ↑)
-- Résumé revenus / dépenses / solde net du mois affiché
-- Édition et suppression de chaque opération
+- **Navigation mois par flèches** ◀ Mai 2026 ▶ (remplace le sélecteur natif Android)
+- **Mini donut** répartition revenus / dépenses / épargne avec solde net au centre
+- **Barre de budget** ratio dépenses/revenus avec couleur dynamique (vert → ambre → rouge)
+- **Groupement par date** — "Aujourd'hui / Hier / Lundi 4 mai…" avec bilan financier du jour
+- **Swipe sur les lignes** — glisser gauche révèle ✏️ et 🗑️ (détection horizontal/vertical : le scroll vertical n'est jamais perturbé)
+- **Toggle Liste / Catégories** — vue catégories avec barres de progression et %, tappable pour filtrer la liste
+- **Filtre montant** min/max expandable dans la barre de tri
+- Recherche textuelle, filtres type, tri date/montant
+- **Détection de doublons** — alerte si même montant + même catégorie dans les 7 derniers jours
 
 ### Onglet Fixes
-- **Frais fixes récurrents** (loyer, abonnements…) — déduits du solde du mois en cours uniquement, affichés en grille 3 colonnes
-- **Frais prévisionnels ponctuels** (réparation, achat prévu…) — visibles sur la hero card de l'Accueil en deuxième solde, supprimés manuellement une fois la dépense réalisée
+- **Carte récap** en haut avec total fixes/mois + total prévisionnels
+- **Grille 4 colonnes** pour les frais fixes — tap sur une carte révèle ✏️ ✕
+- **Frais prévisionnels** en grille 4 colonnes avec bordure orange
 
 ### Onglet Rapport
-- Navigation annuelle ◀ ▶
-- **3 cartes** Revenus / Dépenses / Solde net (coloré dynamiquement)
-- **Taux d'épargne** avec barre de progression (masqué si aucune épargne)
-- **Meilleur et pire mois** cliquables → ouvre le détail du mois (masqué si un seul mois actif)
-- **Graphique barres mensuel** cliquable avec ligne de tendance
-- **Top 5 catégories** de dépenses avec barres et pourcentages
-- **Évolution du solde net** cumulé (graphique aire)
-- **Tableau comparatif** N vs N-1 avec flèches sémantiques (vert/rouge selon le type de poste)
-- **Analyses automatiques locales** (sans internet) :
-  - 🔮 Projection de fin d'année (revenus, dépenses et solde projetés)
-  - 🏦 Bilan des cagnottes (objectifs atteints, montants)
+- **Hero card annuelle** avec donut revenus/dépenses/épargne et 4 lignes de stats
+- **Filtre graphique** — Tout / 💰 / 💸 sur le graphique flux mensuels
+- **Classement des mois** avec 🥇🥈🥉, barres de progression, solde net, tappable
+- **Moyennes mensuelles** sur 3 cartes (revenu moy. / dépense moy. / solde moy.)
+- **Objectif épargne annuel** — barre de progression, modifiable avec ✏️
+- Top 5 dépenses par catégorie
+- Évolution du solde net cumulé (graphique aire)
+- **Tableau comparatif N vs N-1**
+- **Analyses automatiques locales** (projection fin d'année, bilan cagnottes)
+- **Comparaison de deux périodes** — sélectionner 2 mois, tableau + barres visuelles
+- **Notes sur les mois** — mémo textuel par mois persisté (ex : "Vacances Italie"), visible dans le rapport
 
 ### Onglet Options
-- **Gestion des catégories** (icône emoji, nom, type dépense/revenu) — création, édition, suppression
-- **Export JSON** via la feuille de partage Android native (choix de l'emplacement)
-- **Import JSON** depuis le gestionnaire de fichiers
-- **Réinitialisation complète** des données
+- **Carte stats globales** — nb transactions, première opération, total géré, nb catégories
+- **Sauvegarde visible** — point vert/rouge, date lisible, nb de jours depuis le dernier backup
+- **Gestion des catégories** en grille — badge usage (nb de transactions associées), badge "inutilisée" si 0
+- Export JSON, Import JSON, Réinitialisation complète
 
-### Navigation
-- Barre de navigation en bas à 6 onglets
-- **Historique de navigation empilé** : le bouton ‹ dans le header et le bouton physique retour Android ferment d'abord les modals ouverts, puis remontent dans l'historique
+### Navigation & UX
+- **Transitions entre onglets** — glissement horizontal (droite/gauche selon la position)
+- Barre de navigation 6 onglets — emoji agrandi + lueur sur l'onglet actif, texte blanc
+- Historique de navigation empilé, bouton retour Android
+- Empty states illustrés SVG contextuels sur toutes les vues vides
+- **Animations** : cartes en cascade, compteurs qui s'incrémentent, tap feedback
 
 ### Transactions
-Quatre types :
 | Type | Effet |
 |------|-------|
 | `expense` — Dépense | Débite le solde |
 | `income` — Revenu | Crédite le solde |
 | `epargne` — Épargne | Débite le solde, crédite la cagnotte cible |
-| `decagnottage` — Décagnottage | Débite la cagnotte, crédite le solde |
-
-Champs : montant, date, catégorie (optionnelle), cagnotte cible, note libre.
-L'édition recalcule correctement les soldes des cagnottes.
-
-### Thème
-Thème sombre par défaut, thème clair disponible via le bouton ☀️/🌙 dans le header. Préférence sauvegardée en localStorage.
+| `decagnottage` — Décagnottage | Débite la cagnotte, ne crédite pas le solde |
+| `dissolution_cagnotte` | Crédite le solde du solde de la cagnotte |
 
 ---
 
@@ -100,233 +109,253 @@ Thème sombre par défaut, thème clair disponible via le bouton ☀️/🌙 dan
 | `@capacitor/splash-screen` | 6.0 | Écran de démarrage |
 | `@capacitor/status-bar` | 6.0 | Barre de statut Android |
 | `@capacitor/keyboard` | 6.0 | Gestion du clavier virtuel |
-| Syne | Google Fonts | Police d'affichage (titres) |
+| Georgia | Serif | Police d'affichage (titres, thème) |
 | DM Sans | Google Fonts | Police UI |
 
-Pas de librairie UI externe. Tout le CSS est custom avec variables pour les deux thèmes.
+Pas de librairie UI externe. Tout le CSS est custom avec variables CSS pour les thèmes.
+
+---
+
+## Thème visuel
+
+**Aube sur Minas Tirith** — mélange inspiré de la Terre du Milieu entre Minas Tirith (pierre blanche, bleus acier) et la Comté (touches végétales vertes).
+
+| Variable | Valeur | Usage |
+|----------|--------|-------|
+| `--accent` | `#70b8e0` | Bleu acier — actions, liens, accent principal |
+| `--accent2` | `#88c880` | Vert Comté — touches végétales |
+| `--purple` | `#b090e0` | Violet — épargne, cagnottes |
+| `--coral` | `#e08870` | Corail — retraits cagnotte |
+| `--success` | `#68d498` | Vert — revenus, positif |
+| `--danger` | `#c87070` | Rouge — dépenses, négatif |
+| `--warning` | `#c8b860` | Ambre — fixes, vigilance |
+| `--bg` | `#060810` | Fond principal |
+
+La hero card utilise un dégradé `#0c1830 → #182a48 → #101e38` avec shimmer animé et deux orbes pulsées (bleu + vert).
 
 ---
 
 ## Arborescence
 
 ```
-budget-pro-2026/
+gestion-du-budget/
 ├── .github/
 │   └── workflows/
-│       └── build-apk.yml       # CI/CD : build APK automatique sur push
+│       └── build.yml              # CI/CD : build APK release signé
+├── assets/
+│   └── android-icons/             # Icônes Android pré-générées (5 densités)
+│       ├── mipmap-mdpi/
+│       ├── mipmap-hdpi/
+│       ├── mipmap-xhdpi/
+│       ├── mipmap-xxhdpi/
+│       └── mipmap-xxxhdpi/
 ├── src/
-│   ├── main.jsx                # Point d'entrée React
-│   ├── App.jsx                 # Racine : useReducer, thème, toasts, modals, navigation
-│   ├── store.js                # Reducer, actions (A.*), DEFAULT_DATA, types JSDoc
-│   ├── hooks.js                # Hooks useMemo : useBalance, useMonthStats, useYearMonths…
-│   ├── context.js              # ToastCtx + useToast()
-│   ├── utils.js                # fmt, uid, polar, deltaInfo, txLabel, PALETTE…
-│   ├── views.jsx               # 6 vues : AccueilView, CagnottesView, HistoriqueView,
-│   │                           #          FixesView, RapportView, OptionsView
-│   │                           #          + AnalysteLocal (analyses locales)
-│   ├── styles.css              # Tout le CSS (variables, layout, composants, thèmes)
+│   ├── main.jsx                   # Point d'entrée React
+│   ├── App.jsx                    # Racine : useReducer, thème, navigation, transitions
+│   ├── store.js                   # Reducer, actions (A.*), DEFAULT_DATA
+│   ├── hooks.js                   # useBalance, useMonthStats, useYearMonths, useSpark…
+│   ├── context.js                 # ToastCtx + useToast()
+│   ├── utils.js                   # fmt, uid, APP_NAME, APP_VERSION, currentYM (UTC-safe)…
+│   ├── views.jsx                  # 6 vues + composants locaux (SwipeRow, HistDonut…)
+│   ├── styles.css                 # CSS complet (variables thème, animations, layout)
 │   └── components/
-│       ├── index.jsx           # ItemRow, Delta, Sparkline, ToastContainer, Modal
-│       ├── charts.jsx          # ChartSVG, PatrimoineSVG (SVG inline)
-│       └── modals.jsx          # TransModal, FixedModal, CagModal, TransferModal,
-│                               # CatModal, ConfirmModal, DetailModal,
-│                               # MonthDetailModal, CagHistModal
+│       ├── index.jsx              # ItemRow, Delta (prop inverted), Sparkline, Modal…
+│       ├── charts.jsx             # ChartSVG, PatrimoineSVG
+│       └── modals.jsx             # TransModal (détection doublons), FixedModal, CagModal…
 ├── public/
-│   ├── icon.svg                # Icône source (SVG)
-│   ├── manifest.json           # PWA manifest
-│   └── icons/                  # PNG générés par generate_icons.py (72→512px)
-│       └── .gitkeep
-├── index.html                  # HTML racine (point d'entrée Vite)
-├── vite.config.js              # Config Vite (base: "./", chunks react)
-├── capacitor.config.js         # Config Capacitor (appId, plugins)
-├── package.json                # Dépendances + scripts npm
-├── generate_icons.py           # Génère les PNG depuis icon.svg (cairosvg + pillow)
-├── build-apk.sh                # Script de build APK interactif
-├── .gitignore
+│   └── icons/
+├── index.html
+├── vite.config.js
+├── capacitor.config.js
+├── package.json                   # version: 1.10.1
 └── README.md
 ```
-
-> **Note :** les dossiers `android/`, `dist/`, `node_modules/` sont générés automatiquement et exclus du dépôt git.
 
 ---
 
 ## Installation locale
 
 ### Prérequis
-- Node.js 18+
+- Node.js 20+
 - Java JDK 17+
-- Android Studio (avec SDK Android 34)
-
-### Variables d'environnement Android
-```bash
-# macOS / Linux (~/.zshrc ou ~/.bashrc)
-export ANDROID_HOME=$HOME/Android/Sdk  # macOS: $HOME/Library/Android/sdk
-export PATH=$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/tools
-
-# Windows (variables système)
-ANDROID_HOME = C:\Users\<toi>\AppData\Local\Android\Sdk
-```
+- Android Studio (SDK Android 34+)
 
 ### Installation
 ```bash
-git clone https://github.com/<ton-compte>/budget-pro-2026.git
-cd budget-pro-2026
+git clone https://github.com/<compte>/gestion-du-budget.git
+cd gestion-du-budget
 npm install
 ```
 
-### Développement web (navigateur)
+### Développement web
 ```bash
 npm run dev
 # → http://localhost:5173
 ```
 
-### Build APK debug
+### Build APK local
 ```bash
-npm run build          # Compile React → dist/
-npx cap add android    # Ajoute la plateforme Android (première fois)
-npx cap sync android   # Synchronise dist/ → android/
-cd android
-./gradlew assembleDebug
-# APK → android/app/build/outputs/apk/debug/app-debug.apk
-```
-
-Ou en une commande avec le script interactif :
-```bash
-chmod +x build-apk.sh
-./build-apk.sh
-```
-
-### Générer les icônes (optionnel)
-```bash
-pip install cairosvg pillow
-python3 generate_icons.py
+npm run build
+npm run cap:init    # première fois uniquement
+npm run cap:add     # première fois uniquement
+npm run cap:sync
+cd android && ./gradlew assembleRelease \
+  -Pandroid.injected.signing.store.file=../budgetpro.keystore \
+  -Pandroid.injected.signing.store.password=BudgetPro2026! \
+  -Pandroid.injected.signing.key.alias=budgetpro \
+  -Pandroid.injected.signing.key.password=BudgetPro2026!
 ```
 
 ---
 
 ## Build APK
 
-### Debug (usage personnel)
-```bash
-npm run android:debug
-# APK → android/app/build/outputs/apk/debug/app-debug.apk
-```
+### Via GitHub Actions (méthode principale)
 
-### Release (distribution)
-```bash
-# 1. Créer un keystore (une seule fois)
-keytool -genkey -v -keystore budgetpro.keystore \
-  -alias budgetpro -keyalg RSA -keysize 2048 -validity 10000
+Le build est déclenché manuellement :
+**Actions → Build APK → Run workflow**
 
-# 2. Build signé
-cd android
-./gradlew assembleRelease \
-  -Pandroid.injected.signing.store.file=../budgetpro.keystore \
-  -Pandroid.injected.signing.store.password=MOT_DE_PASSE \
-  -Pandroid.injected.signing.key.alias=budgetpro \
-  -Pandroid.injected.signing.key.password=MOT_DE_PASSE
-```
+L'APK produit est nommé `GestionBudget-v{version}.apk` (ex : `GestionBudget-v1.10.1.apk`).
 
-### Installer sur le téléphone
-```bash
-# Via USB (débogage USB activé)
-adb install output/BudgetPro2026-debug.apk
+### Secrets GitHub requis
 
-# Via fichier : copier l'APK sur le téléphone, ouvrir depuis le gestionnaire de fichiers
-# (activer "Sources inconnues" dans Paramètres → Sécurité si demandé)
-```
+| Secret | Description |
+|--------|-------------|
+| `KEYSTORE_BASE64` | Keystore JKS encodé en base64 |
+| `KEYSTORE_PASSWORD` | Mot de passe du keystore |
+| `KEY_ALIAS` | Alias de la clé (`budgetpro`) |
+| `KEY_PASSWORD` | Mot de passe de la clé |
+
+> ⚠️ **Garder le keystore en lieu sûr.** Sans lui, Android refusera toute mise à jour de l'app installée et il faudra désinstaller/réinstaller.
+
+### Étapes du workflow
+
+1. Checkout + Node 20 + Java 17 + Android SDK
+2. `npm install` + `npm run build`
+3. `cap init` + `cap add android` + `cap sync`
+4. **Fix Maven** — init script Gradle qui redirige vers `repo1.maven.org` (contournement du 403 GitHub Actions sur Maven Central)
+5. **Injection icônes** — copie les PNG depuis `assets/android-icons/`, supprime les XML adaptatifs anydpi
+6. Décodage du keystore depuis `KEYSTORE_BASE64`
+7. `./gradlew assembleRelease` avec signing via `-P`
+8. Renommage APK + upload artifact (30 jours)
 
 ---
 
-## Intégration GitHub
+## Intégration GitHub Actions
 
-### 1. Créer le dépôt
-
-Sur [github.com](https://github.com), crée un nouveau dépôt **privé** (tes données financières ne sont pas dans le code, mais c'est une bonne pratique) nommé `budget-pro-2026`.
-
-### 2. Premier push
-
+### Premier push
 ```bash
-cd budget-pro-2026
 git init
 git add .
-git commit -m "feat: initial commit — Budget Pro 2026"
+git commit -m "feat: initial commit — Gestion du budget v1.10.1"
 git branch -M main
-git remote add origin https://github.com/<ton-compte>/budget-pro-2026.git
+git remote add origin https://github.com/<compte>/gestion-du-budget.git
 git push -u origin main
 ```
 
-### 3. Build APK automatique via GitHub Actions
-
-Le fichier `.github/workflows/build-apk.yml` est déjà inclus. À chaque push sur `main`, GitHub va :
-1. Installer Node.js 20 + Java 17 + Android SDK
-2. `npm ci` → `npm run build` → `npx cap sync android`
-3. `./gradlew assembleDebug`
-4. Uploader l'APK comme **artifact téléchargeable** (conservé 30 jours)
-
-**Récupérer l'APK depuis GitHub :**
-- Va sur ton dépôt → onglet **Actions**
-- Clique sur le dernier workflow terminé ✅
-- En bas de la page → section **Artifacts** → télécharge `BudgetPro2026-debug`
-
-**Lancer un build manuellement :**
-- Actions → "Build APK" → bouton **Run workflow** → branche `main`
-
-### 4. Workflow de mise à jour
-
+### Workflow de mise à jour
 ```bash
-# Modifier un fichier source
-git add src/views.jsx
-git commit -m "fix: correction affichage rapport"
+# Modifier les sources
+git add src/views.jsx src/utils.js
+git commit -m "feat: nouvelle fonctionnalité"
 git push
-# → GitHub Actions lance automatiquement le build et produit un nouvel APK
+# → déclencher le build manuellement dans Actions
 ```
 
 ---
 
 ## Données & sauvegarde
 
-Toutes les données sont stockées dans le `localStorage` de la WebView sous la clé `budget_ultimate_2026_v10`.
+Toutes les données sont stockées en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
-### Contenu de la sauvegarde JSON
-| Champ | Description |
-|-------|-------------|
-| `transactions` | Toutes les opérations (revenus, dépenses, épargnes, décagnottages) |
-| `categories` | Catégories personnalisées (nom, icône, type) |
-| `cagnottes` | Cagnottes avec soldes et objectifs |
-| `fixedExpenses` | Frais fixes récurrents |
-| `provisionalExpenses` | Frais prévisionnels ponctuels |
-| `lastBackupDate` | Date de la dernière sauvegarde |
+### Structure JSON
+| Champ | Type | Description |
+|-------|------|-------------|
+| `transactions` | `Transaction[]` | Toutes les opérations |
+| `categories` | `Category[]` | Catégories personnalisées |
+| `cagnottes` | `Cagnotte[]` | Cagnottes avec soldes et objectifs |
+| `fixedExpenses` | `FixedExpense[]` | Frais fixes récurrents |
+| `provisionalExpenses` | `ProvisionalExpense[]` | Frais prévisionnels ponctuels |
+| `lastBackupDate` | `string\|null` | Date ISO de la dernière sauvegarde |
+| `monthNotes` | `Record<string,string>` | Notes texte par mois (`"2026-05": "Vacances"`) |
 
-### Export (Android)
-L'export utilise `@capacitor/filesystem` (écriture en cache) + `@capacitor/share` (feuille de partage Android). L'utilisateur choisit l'emplacement (Téléchargements, Drive, email…).
-
-### Import
-Via le sélecteur de fichiers natif Android. Validation de la structure avant import.
+### Export / Import
+L'export utilise `@capacitor/filesystem` + `@capacitor/share`. L'import valide la structure avant de remplacer les données.
 
 ---
 
 ## Structure du code
 
 ### State management
-`useReducer` dans `App.jsx` avec le reducer centralisé dans `store.js`. Actions typées via la constante `A`. Persistance automatique dans `localStorage` à chaque changement.
+`useReducer` dans `App.jsx`, reducer dans `store.js`. Actions typées via `A.*`. Persistance auto en `localStorage` à chaque changement d'état.
 
 ### Navigation
-Pile d'historique `tabHistory` (tableau de strings). `navigateTo(tab)` empile, `goBack()` dépile. Le bouton retour Android est intercepté via `@capacitor/app` → ferme d'abord les modals, puis dépile les onglets.
+Pile `tabHistory` (tableau de strings) + suivi de direction pour les transitions. `navigateTo(tab)` calcule la direction (gauche/droite selon `TAB_ORDER`) et anime le container. Bouton retour Android intercepté via `@capacitor/app`.
 
 ### Hooks custom (`hooks.js`)
+
 | Hook | Retourne |
 |------|----------|
-| `useBalance` | Solde total toutes périodes |
+| `useBalance` | Solde total = Σ transactions − fixes × mois écoulés |
 | `useMonthStats` | `{ inc, exp, expVar, decag, net }` pour un mois |
-| `useYearMonths` | Tableau 12 mois avec stats |
+| `useYearMonths` | Tableau 12 entrées avec stats mensuelles |
 | `useYearTotals` | Totaux annuels |
 | `usePriorYearStats` | Année précédente (mêmes mois écoulés) |
 | `useSpark` | 6 derniers soldes nets (sparkline) |
-| `useTotalFixes` | Total des frais fixes |
+| `useTotalFixes` | Total frais fixes |
 
-### Frais fixes vs solde
-Les frais fixes sont soustraits du solde **uniquement pour le mois en cours** (`isCur` dans les hooks). Cela évite de les comptabiliser plusieurs fois sur les mois passés.
+### Calcul du solde (`useBalance`)
+```
+solde = Σ(revenus) − Σ(dépenses) − Σ(épargnes) − totalFixes × moisEcoulés
+```
+`moisEcoulés` = nombre de mois entre la première transaction et le mois en cours (inclus). Les frais fixes sont ainsi déduits chaque mois automatiquement sans nécessiter de transaction manuelle.
+
+### Dates et UTC
+`currentYM()` et `todayISO()` utilisent l'heure **locale** (et non `toISOString()` qui est UTC). Cela évite le décalage d'un mois pour les utilisateurs en UTC+ au début de chaque mois.
+
+### Delta coloré (`components/index.jsx`)
+Le composant `<Delta cur prev inverted?>` accepte une prop `inverted` pour les cartes de dépenses : une hausse des dépenses affiche ▲ rouge (mauvais) au lieu de ▲ vert.
+
+### Détection de doublons (`modals.jsx`)
+À la validation d'une transaction, `TransModal` cherche une entrée avec le même montant et la même catégorie dans les 7 derniers jours. Si trouvée, une alerte s'affiche avec la transaction existante — l'utilisateur peut annuler ou forcer l'ajout.
+
+---
+
+## Versioning
+
+Format : **MAJOR.MINOR.PATCH** (Semantic Versioning)
+
+| Type | Condition | Exemple |
+|------|-----------|---------|
+| `PATCH` | Bug fix, retouche visuelle mineure | `1.10.0` → `1.10.1` |
+| `MINOR` | Nouvelle fonctionnalité visible | `1.9.1` → `1.10.0` |
+| `MAJOR` | Refonte structurelle, changement format données | `1.x.x` → `2.0.0` |
+
+La version est définie dans **deux endroits synchronisés** :
+- `src/utils.js` → `APP_VERSION` (affiché dans l'onglet Options)
+- `package.json` → `version` (utilisé pour nommer l'APK)
+
+---
+
+## Changelog
+
+| Version | Type | Description |
+|---------|------|-------------|
+| **1.10.1** | patch | Scroll SwipeRow fluide (détection horizontal/vertical), catégories cliquables → liste filtrée, suppression chips catégories |
+| **1.10.0** | minor | Transitions onglets (slide L/R), comparaison deux périodes, détection doublons, notes sur les mois |
+| **1.9.1** | patch | OptionsView : stats globales, backup visible, compteur usage catégories |
+| **1.9.0** | minor | RapportView : hero donut, filtre graphique, classement mois, moyennes, objectif épargne |
+| **1.8.0** | minor | HistoriqueView refonte complète (donut, barre budget, nav flèches, groupement date, swipe, catégories, filtre montant) |
+| **1.7.0** | minor | CagnottesView stats bloc, FixesView grille 4 colonnes + carte récap |
+| **1.6.0** | minor | AccueilView : emojis, Delta inversé pour dépenses, carte cagnotte option B, cohérence couleurs |
+| **1.5.0** | minor | Empty states SVG illustrés sur toutes les vues |
+| **1.4.0** | minor | Hero card animée (shimmer, orbes, CountUp), SmartIndicator option D |
+| **1.3.0** | minor | Tab bar redesign (hauteur, police blanche, emoji glow), fix focus Android |
+| **1.2.0** | minor | Thème Aube sur Minas Tirith (variables CSS complètes, LotR-inspired) |
+| **1.1.0** | minor | Renommage "Gestion du budget", système versioning, `package.json` |
+| **1.0.2** | patch | Fix `useBalance` — frais fixes × mois écoulés |
+| **1.0.1** | patch | Corrections UTC (`currentYM`, `todayISO`, `useSpark`) |
+| **1.0.0** | — | Version initiale "Budget Pro 2026" |
 
 ---
 
