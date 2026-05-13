@@ -2,7 +2,34 @@ import { useMemo } from "react";
 import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
-//  Primitive hook: total fixed expenses
+//  Helper : montant effectif des frais fixes pour un mois donné
+//  Tient compte des monthlyOverrides (modifications ponctuelles
+//  depuis l'Historique qui n'impactent que ce mois).
+// ─────────────────────────────────────────────────────────────────
+function effectiveFixesForMonth(fixedExpenses, ym) {
+  return fixedExpenses.reduce((s, f) => {
+    const ov = f.monthlyOverrides?.[ym];
+    return s + ((ov?.amount ?? f.amount) || 0);
+  }, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Helper : liste des mois entre deux YYYY-MM (inclus)
+// ─────────────────────────────────────────────────────────────────
+function monthRange(startYM, endYM) {
+  const list = [];
+  let [y, m] = startYM.split("-").map(Number);
+  const [ey, em] = endYM.split("-").map(Number);
+  while (y < ey || (y === ey && m <= em)) {
+    list.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (++m > 12) { m = 1; y++; }
+  }
+  return list;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Primitive hook: total frais fixes (montant de base, sans override)
+//  Utilisé uniquement pour l'affichage de la card récap Fixes.
 // ─────────────────────────────────────────────────────────────────
 export function useTotalFixes(fixedExpenses) {
   return useMemo(
@@ -16,8 +43,6 @@ export function useTotalFixes(fixedExpenses) {
 //  Returns { inc, exp, expVar, decag, net }
 // ─────────────────────────────────────────────────────────────────
 export function useMonthStats(transactions, fixedExpenses, ym) {
-  const totalFixes = useTotalFixes(fixedExpenses);
-
   return useMemo(() => {
     const isCur = ym === currentYM();
     let inc = 0, exp = 0, decag = 0;
@@ -26,12 +51,12 @@ export function useMonthStats(transactions, fixedExpenses, ym) {
       .filter(t => t.date.startsWith(ym))
       .forEach(t => {
         const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))         inc   += a;
-        else if (t.type === "expense") exp   += a;
+        if (isIncome(t.type))               inc   += a;
+        else if (t.type === "expense")      exp   += a;
         else if (t.type === "decagnottage") decag += a;
       });
 
-    const fixContrib = isCur ? totalFixes : 0;
+    const fixContrib = isCur ? effectiveFixesForMonth(fixedExpenses, ym) : 0;
     exp += fixContrib;
 
     return {
@@ -41,15 +66,13 @@ export function useMonthStats(transactions, fixedExpenses, ym) {
       decag,
       net: inc - exp,
     };
-  }, [transactions, fixedExpenses, ym, totalFixes]);
+  }, [transactions, fixedExpenses, ym]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  12-month array for a given year
-//  Each entry: { inc, exp, sav, net, label, mini, idx }
 // ─────────────────────────────────────────────────────────────────
 export function useYearMonths(transactions, fixedExpenses, year) {
-  const totalFixes = useTotalFixes(fixedExpenses);
   const now = new Date();
   const curMonth = now.getMonth();
   const curYear  = now.getFullYear();
@@ -65,91 +88,79 @@ export function useYearMonths(transactions, fixedExpenses, year) {
 
       transactions.filter(t => t.date.startsWith(mStr)).forEach(t => {
         const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))              inc += a;
-        else if (t.type === "expense")     exp += a;
-        else if (t.type === "epargne")     sav += a;
+        if (isIncome(t.type))          inc += a;
+        else if (t.type === "expense") exp += a;
+        else if (t.type === "epargne") sav += a;
       });
 
-      if (isCurYear && i === curMonth) exp += totalFixes;
+      if (isCurYear && i === curMonth) {
+        exp += effectiveFixesForMonth(fixedExpenses, mStr);
+      }
 
-      return {
-        inc, exp, sav,
-        net: inc - exp,
-        label: MONTHS_SHORT[i],
-        mini: MONTHS_MINI[i],
-        idx: i,
-      };
+      return { inc, exp, sav, net: inc - exp, label: MONTHS_SHORT[i], mini: MONTHS_MINI[i], idx: i };
     });
-  }, [transactions, fixedExpenses, year, totalFixes, curYear, curMonth]);
+  }, [transactions, fixedExpenses, year, curYear, curMonth]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  Current balance (all-time)
 // ─────────────────────────────────────────────────────────────────
 export function useBalance(transactions, fixedExpenses) {
-  const totalFixes = useTotalFixes(fixedExpenses);
-
   return useMemo(() => {
     let bal = 0;
     transactions.forEach(t => {
       const a = parseFloat(t.amount) || 0;
-      if (isIncome(t.type))              bal += a;
-      else if (t.type === "expense")     bal -= a;
-      else if (t.type === "epargne")     bal -= a;
+      if (isIncome(t.type))          bal += a;
+      else if (t.type === "expense") bal -= a;
+      else if (t.type === "epargne") bal -= a;
     });
 
-    // ⚠ Correction : les frais fixes sont mensuels, il faut les soustraire
-    // pour chaque mois écoulé depuis la première transaction jusqu'au mois
-    // en cours (inclus). Avant, ils n'étaient soustraits qu'une seule fois.
-    let monthsElapsed = 1;
     if (transactions.length > 0) {
       const earliest = transactions.reduce(
         (min, t) => (t.date < min ? t.date : min),
         transactions[0].date
       );
-      const [ey, em] = earliest.slice(0, 7).split("-").map(Number);
+      const startYM = earliest.slice(0, 7);
       const now = new Date();
-      const [cy, cm] = [now.getFullYear(), now.getMonth() + 1];
-      monthsElapsed = Math.max(1, (cy - ey) * 12 + (cm - em) + 1);
+      const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      monthRange(startYM, endYM).forEach(ym => {
+        bal -= effectiveFixesForMonth(fixedExpenses, ym);
+      });
+    } else {
+      bal -= effectiveFixesForMonth(fixedExpenses, currentYM());
     }
 
-    return bal - totalFixes * monthsElapsed;
-  }, [transactions, totalFixes]);
+    return bal;
+  }, [transactions, fixedExpenses]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  Sparkline: last 6 months net values
 // ─────────────────────────────────────────────────────────────────
 export function useSpark(transactions, fixedExpenses) {
-  const totalFixes = useTotalFixes(fixedExpenses);
   const curYM = currentYM();
 
   return useMemo(() => {
     const now = new Date();
     return Array.from({ length: 6 }, (_, i) => {
       const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-      // ⚠ Correction : utilise l'heure locale au lieu de toISOString() (UTC)
-      // pour éviter que le mois calculé soit décalé d'un mois pour les
-      // utilisateurs en UTC+ (ex. France), notamment en début de mois.
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const isCur = ym === curYM;
       let inc = 0, exp = 0;
       transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
         const a = parseFloat(t.amount) || 0;
         if (isIncome(t.type))          inc += a;
         else if (t.type === "expense") exp += a;
       });
-      if (isCur) exp += totalFixes;
+      if (ym === curYM) exp += effectiveFixesForMonth(fixedExpenses, ym);
       return inc - exp;
     });
-  }, [transactions, totalFixes, curYM]);
+  }, [transactions, fixedExpenses, curYM]);
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Year comparison data
+//  Year totals
 // ─────────────────────────────────────────────────────────────────
 export function useYearTotals(transactions, fixedExpenses, year) {
-  const totalFixes = useTotalFixes(fixedExpenses);
   const now = new Date();
 
   return useMemo(() => {
@@ -161,16 +172,18 @@ export function useYearTotals(transactions, fixedExpenses, year) {
       else if (t.type === "expense") exp += a;
       else if (t.type === "epargne") sav += a;
     });
-    if (isCur) exp += totalFixes;
+    if (isCur) {
+      const curM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      exp += effectiveFixesForMonth(fixedExpenses, curM);
+    }
     return { inc, exp, sav };
-  }, [transactions, fixedExpenses, year, totalFixes]);
+  }, [transactions, fixedExpenses, year]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  Prior year for delta comparison (same elapsed months)
 // ─────────────────────────────────────────────────────────────────
 export function usePriorYearStats(transactions, fixedExpenses) {
-  const totalFixes = useTotalFixes(fixedExpenses);
   const now = new Date();
   const elapsed  = now.getMonth() + 1;
   const prevYear = (now.getFullYear() - 1).toString();
@@ -187,8 +200,11 @@ export function usePriorYearStats(transactions, fixedExpenses) {
         else if (t.type === "expense")     { exp  += a; expVar += a; }
         else if (t.type === "decagnottage") decag += a;
       });
-    exp    += totalFixes;
-    expVar += totalFixes;
+    const prevYMEnd = `${prevYear}-${String(elapsed).padStart(2, "0")}`;
+    const fixTotal = monthRange(`${prevYear}-01`, prevYMEnd)
+      .reduce((s, ym) => s + effectiveFixesForMonth(fixedExpenses, ym), 0);
+    exp    += fixTotal;
+    expVar += fixTotal;
     return { inc, exp, expVar, decag };
-  }, [transactions, totalFixes, prevYear, elapsed]);
+  }, [transactions, fixedExpenses, prevYear, elapsed]);
 }
