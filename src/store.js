@@ -300,6 +300,8 @@ export function reducer(state, action) {
           f.id === action.id ? { ...f, pointed: !f.pointed } : f
         ),
       };
+
+    case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };
       if (action.note.trim()) {
         notes[action.ym] = action.note.trim();
