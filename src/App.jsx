@@ -70,9 +70,9 @@ export default function App() {
   }, []);
 
   // Retour arrière : dépiler
-  const saveMonthNote = useCallback((ym, note) => {
-    dispatch({ type: A.SAVE_MONTH_NOTE, ym, note });
-  }, []);
+  const saveMonthNote   = useCallback((ym, note) => dispatch({ type: A.SAVE_MONTH_NOTE, ym, note }), []);
+  const saveRecurring   = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
+  const deleteRecurring = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -371,6 +371,14 @@ export default function App() {
         onTogglePointTx={togglePointTx}
         onTogglePointFix={togglePointFix}
         onOverrideFixMonth={overrideFixMonth}
+        onDeleteRecurring={deleteRecurring}
+        onConfirmRecurring={(tpl, month) => {
+          dispatch({ type: A.SAVE_TRANSACTION, tx: {
+            type: tpl.type, amount: tpl.amount,
+            date: `${month}-${new Date().getDate().toString().padStart(2,"0")}`,
+            categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
+          }});
+        }}
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}
       />
@@ -451,6 +459,7 @@ export default function App() {
           cagnottes={data.cagnottes}
           editingId={transModal.editingId}
           onSave={tx => { saveTransaction(tx); setTransModal(null); }}
+          onSaveRecurring={tpl => saveRecurring(tpl)}
           onClose={() => setTransModal(null)}
         />
       )}

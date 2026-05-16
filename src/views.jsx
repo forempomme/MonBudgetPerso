@@ -259,12 +259,8 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
   // ── Rapprochement bancaire ────────────────────────────────────
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
-    // Premier mois d'utilisation
-    const startYM = transactions.length
-      ? transactions.reduce((min, t) => t.date < min ? t.date : min, transactions[0].date).slice(0, 7)
-      : curM;
+    if (!transactions.length) return { soldePointe: 0, soldeAttente: 0, nbPointed: 0, totalPointable: 0 };
 
-    // Tous les mois depuis le démarrage jusqu'au mois courant
     function monthRange(start, end) {
       const list = [];
       let [y, m] = start.split('-').map(Number);
@@ -809,7 +805,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -843,7 +839,23 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
   }
   const isCurrentMonth = month === currentYM();
 
+  const [globalSearch, setGlobalSearch] = useState(false);
+
   const { transactions, categories, cagnottes, fixedExpenses } = data;
+  const recurringTemplates = data.recurringTemplates || [];
+
+  // Récurrentes en attente pour le mois affiché
+  const recurringPending = useMemo(() => {
+    if (!recurringTemplates.length) return [];
+    return recurringTemplates.filter(tpl => {
+      if (tpl.frequency === "yearly") {
+        const year = month.slice(0, 4);
+        return !transactions.some(t => t.templateId === tpl.id && t.date.startsWith(year));
+      }
+      // monthly
+      return !transactions.some(t => t.templateId === tpl.id && t.date.startsWith(month));
+    });
+  }, [recurringTemplates, transactions, month]);
   const mStats = useMonthStats(transactions, fixedExpenses, month);
   const savMonth = useMemo(() =>
     transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
@@ -897,15 +909,19 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
   }, [transactions, fixedExpenses, month, monthFixes]);
 
   const filtered = useMemo(() => {
-    let list = transactions.filter(t => t.date.startsWith(month));
+    // Recherche globale : ignore le mois, cherche sur toutes les transactions
+    let list = (globalSearch && search.trim())
+      ? [...transactions]
+      : transactions.filter(t => t.date.startsWith(month));
+
     if (filter !== "all") list = list.filter(t => {
       if (filter === "income")  return isIncome(t.type);
       if (filter === "expense") return t.type === "expense";
       if (filter === "savings") return ["epargne","decagnottage","transfer"].includes(t.type);
       return true;
     });
-    if (catId)  list = list.filter(t => t.categoryId === catId);
-    if (search) {
+    if (catId) list = list.filter(t => t.categoryId === catId);
+    if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(t => {
         const cat = categories.find(c => c.id === t.categoryId);
@@ -914,14 +930,13 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
-    // Filtre pointage — exclut decagnottage et transfer (mouvements internes)
     if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
     if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
     if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
     return list;
-  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter]);
+  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter, globalSearch]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
@@ -982,13 +997,32 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
         </div>
       )}
 
-      {/* ── Filtres ── */}
       <div className="card" style={{ marginBottom: 10 }}>
-        <div className="hist-search-wrap">
-          <span className="hist-search-icon">🔍</span>
-          <input className="hist-search" type="text" placeholder="Rechercher…"
-            value={search} onChange={e => setSearch(e.target.value)} />
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <div className="hist-search-wrap" style={{ flex: 1, marginBottom: 0 }}>
+            <span className="hist-search-icon">🔍</span>
+            <input className="hist-search" type="text" placeholder="Rechercher…"
+              value={search} onChange={e => setSearch(e.target.value)} />
+          </div>
+          {/* Toggle recherche globale */}
+          <button
+            onClick={() => setGlobalSearch(g => !g)}
+            title="Rechercher sur tous les mois"
+            style={{
+              background: globalSearch ? "var(--accent-glow)" : "transparent",
+              border: `1px solid ${globalSearch ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: 8, padding: "7px 10px",
+              color: globalSearch ? "var(--accent)" : "var(--text3)",
+              fontSize: ".65rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+            {globalSearch ? "🌐 Global" : "🌐"}
+          </button>
         </div>
+        {globalSearch && search.trim() && (
+          <div style={{ fontSize: ".6rem", color: "var(--accent)", fontWeight: 700, marginBottom: 6, padding: "4px 8px", background: "var(--accent-glow)", borderRadius: 6 }}>
+            🌐 Recherche sur toutes les périodes — {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
+          </div>
+        )}
         <div className="filter-row">
           {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
             <div key={k} className={`filter-chip${filter===k?" active":""}`}
@@ -1108,6 +1142,52 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
               })}
             </div>
           )
+      )}
+
+      {/* ── Section récurrentes en attente ── */}
+      {viewMode === "list" && recurringPending.length > 0 && !globalSearch && (
+        <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
+          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--accent)", textTransform: "uppercase", letterSpacing: ".08em" }}>🔄 Récurrentes à confirmer</div>
+              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Opérations habituelles non encore saisies ce mois</div>
+            </div>
+            <span style={{ fontSize: ".62rem", color: "var(--text3)" }}>{recurringPending.length}</span>
+          </div>
+          {recurringPending.map(tpl => {
+            const cat = categories.find(c => c.id === tpl.categoryId);
+            const isInc = isIncome(tpl.type);
+            const freqLabel = tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle";
+            return (
+              <div key={tpl.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--border-soft)" }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1rem" }}>
+                  {cat?.icon ?? (isInc ? "💰" : "💸")}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: ".74rem", fontWeight: 700 }}>{tpl.label}</div>
+                  <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>
+                    {cat?.name ?? "—"} · <span style={{ color: "var(--accent)" }}>{freqLabel}</span>
+                  </div>
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink: 0 }}>
+                  {isInc ? "+" : "−"}{fmt(tpl.amount)}
+                </div>
+                <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
+                  <button
+                    onClick={() => onConfirmRecurring?.(tpl, month)}
+                    style={{ background: "var(--success)", border: "none", borderRadius: 7, padding: "5px 10px", color: "var(--bg)", fontSize: ".68rem", fontWeight: 800, cursor: "pointer" }}>
+                    ＋
+                  </button>
+                  <button
+                    onClick={() => onDeleteRecurring?.(tpl.id)}
+                    style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", color: "var(--text3)", fontSize: ".68rem", cursor: "pointer" }}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {/* ── Section frais fixes ── */}
@@ -1803,6 +1883,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
   const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1);
+  const [rapportTab,  setRapportTab]  = useState("bilan");
   const [chartFilter, setChartFilter] = useState("all");
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
@@ -1850,11 +1931,31 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   return (
     <div>
       {/* ── Navigation année ── */}
-      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => y - 1)}>◀</button>
         <span style={{ fontFamily: "var(--display)", fontSize: "1.3rem", fontWeight: 800 }}>{currentYear}</span>
-        <button className="year-nav-btn" onClick={() => setCurrentYear(y => y + 1)}>▶</button>
+        <button className="year-nav-btn" onClick={() => setCurrentYear(y => Math.min(y + 1, new Date().getFullYear()))}>▶</button>
       </div>
+
+      {/* ── Tabs internes ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
+        {[
+          ["bilan",       "📊 Bilan"],
+          ["analyse",     "🔍 Analyse"],
+          ["comparaison", "🔀 Périodes"],
+        ].map(([k, l]) => (
+          <button key={k} onClick={() => setRapportTab(k)} style={{
+            background: rapportTab===k ? "var(--accent-glow)" : "transparent",
+            border: `1.5px solid ${rapportTab===k ? "var(--accent)" : "var(--border)"}`,
+            borderRadius: "var(--radius-sm)", padding: "9px 0",
+            color: rapportTab===k ? "var(--accent)" : "var(--text2)",
+            fontWeight: 700, fontSize: ".7rem", cursor: "pointer",
+          }}>{l}</button>
+        ))}
+      </div>
+
+      {/* ══ BILAN : hero + moyennes + graphique + classement + objectif ══ */}
+      {rapportTab === "bilan" && (<>
 
       {/* ① Hero card avec donut */}
       <div style={{
@@ -1986,7 +2087,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         )}
       </div>
 
-      {/* Top 5 dépenses */}
+      {/* ── Top 5 dépenses ── */}
       <SectionTitle>Top 5 dépenses</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         {top5.length === 0
@@ -2014,51 +2115,85 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             })
         }
       </div>
+      </>)}
 
-      {/* Évolution solde net */}
-      <SectionTitle>Évolution du solde net</SectionTitle>
-      <div className="card" style={{ padding: 14 }}>
-        <PatrimoineSVG months={months} />
-        <div style={{ display: "flex", gap: 12, fontSize: ".58rem", color: "var(--text3)", marginTop: 6, flexWrap: "wrap" }}>
-          <span style={{ color: "var(--success)" }}>■ Positif</span>
-          <span style={{ color: "var(--danger)"  }}>■ Négatif</span>
+      {/* ══ ANALYSE : top 5 + évolution + comparaison N/N-1 + analyses ══ */}
+      {rapportTab === "analyse" && (<>
+        <SectionTitle>Top 5 dépenses</SectionTitle>
+        <div className="card" style={{ padding: 14 }}>
+          {top5.length === 0
+            ? <p style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "12px 0" }}>Aucune dépense enregistrée</p>
+            : top5.map(([id, val], i) => {
+                const cat  = categories.find(c => c.id === id);
+                const name = id === "__fixes__" ? "📌 Frais fixes" : id === "__other__" ? "❓ Sans catégorie" : `${cat?.icon ?? ""} ${cat?.name ?? id}`;
+                const pct  = (val / topTotal * 100).toFixed(0);
+                const rank = ["🥇","🥈","🥉","4️⃣","5️⃣"][i];
+                return (
+                  <div key={id} className="top3-item">
+                    <span className="top3-rank">{rank}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: ".78rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                      <div className="top3-bar-bg" style={{ marginTop: 5 }}>
+                        <div className="top3-bar-fill" style={{ width: `${pct}%`, background: PALETTE[i] }} />
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
+                      <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".78rem", fontVariantNumeric: "tabular-nums", color: PALETTE[i] }}>{fmt(val)}</div>
+                      <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{pct}%</div>
+                    </div>
+                  </div>
+                );
+              })
+          }
         </div>
-      </div>
 
-      {/* Comparaison annuelle */}
-      <SectionTitle>Comparaison Annuelle</SectionTitle>
-      <div className="card" style={{ padding: 10 }}>
-        <table className="comp-table">
-          <thead>
-            <tr>
-              <th>Poste</th>
-              <th style={{ textAlign: "right" }}>{currentYear}</th>
-              <th style={{ textAlign: "right" }}>{currentYear - 1}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {compRows.map(r => {
-              const diff = r.v1 - r.v0;
-              const isGood = diff === 0 ? null : (r.higherIsBetter ? diff > 0 : diff < 0);
-              const arrowColor = isGood === null ? "var(--text3)" : isGood ? "var(--success)" : "var(--danger)";
-              const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "—";
-              return (
-                <tr key={r.label}>
-                  <td style={{ fontWeight: 600, fontSize: ".78rem" }}>{r.label}</td>
-                  <td style={{ color: r.color }}>{fmt(r.v1)}</td>
-                  <td style={{ color: "var(--text2)" }}>
-                    {fmt(r.v0)}{" "}
-                    <span style={{ color: arrowColor, fontSize: ".65rem" }}>{arrow}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <AnalysteLocal data={data} currentYear={currentYear} months={months} />
-      <PeriodCompare transactions={data.transactions} fixedExpenses={data.fixedExpenses} />
-      <MonthNotes currentYear={currentYear} monthNotes={monthNotes} onSave={onSaveMonthNote} />
+        <SectionTitle>Évolution du solde net</SectionTitle>
+        <div className="card" style={{ padding: 14 }}>
+          <PatrimoineSVG months={months} />
+          <div style={{ display: "flex", gap: 12, fontSize: ".58rem", color: "var(--text3)", marginTop: 6, flexWrap: "wrap" }}>
+            <span style={{ color: "var(--success)" }}>■ Positif</span>
+            <span style={{ color: "var(--danger)"  }}>■ Négatif</span>
+          </div>
+        </div>
+
+        <SectionTitle>Comparaison Annuelle</SectionTitle>
+        <div className="card" style={{ padding: 10 }}>
+          <table className="comp-table">
+            <thead>
+              <tr>
+                <th>Poste</th>
+                <th style={{ textAlign: "right" }}>{currentYear}</th>
+                <th style={{ textAlign: "right" }}>{currentYear - 1}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compRows.map(r => {
+                const diff = r.v1 - r.v0;
+                const isGood = diff === 0 ? null : (r.higherIsBetter ? diff > 0 : diff < 0);
+                const arrowColor = isGood === null ? "var(--text3)" : isGood ? "var(--success)" : "var(--danger)";
+                const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "—";
+                return (
+                  <tr key={r.label}>
+                    <td style={{ fontWeight: 600, fontSize: ".78rem" }}>{r.label}</td>
+                    <td style={{ color: r.color }}>{fmt(r.v1)}</td>
+                    <td style={{ color: "var(--text2)" }}>
+                      {fmt(r.v0)}{" "}
+                      <span style={{ color: arrowColor, fontSize: ".65rem" }}>{arrow}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <AnalysteLocal data={data} currentYear={currentYear} months={months} />
+      </>)}
+
+      {/* ══ COMPARAISON : 2 périodes + notes ══ */}
+      {rapportTab === "comparaison" && (<>
+        <PeriodCompare transactions={data.transactions} fixedExpenses={data.fixedExpenses} />
+        <MonthNotes currentYear={currentYear} monthNotes={monthNotes} onSave={onSaveMonthNote} />
+      </>)}
     </div>
   );
 }

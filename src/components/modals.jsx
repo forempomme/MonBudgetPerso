@@ -24,18 +24,20 @@ function Field({ label, error, children }) {
 // ─────────────────────────────────────────────────────────────────
 //  Transaction modal
 // ─────────────────────────────────────────────────────────────────
-export function TransModal({ transactions, categories, cagnottes, editingId, onSave, onClose }) {
+export function TransModal({ transactions, categories, cagnottes, editingId, onSave, onSaveRecurring, onClose }) {
   const toast = useToast();
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
-  const [type,   setType]   = useState(tx?.type        || "expense");
-  const [amount, setAmount] = useState(tx?.amount       || "");
-  const [date,   setDate]   = useState(tx?.date         || todayISO());
-  const [catId,  setCatId]  = useState(tx?.categoryId   || "");
-  const [cagId,  setCagId]  = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
-  const [note,   setNote]   = useState(tx?.note         || "");
-  const [errors, setErrors] = useState({});
-  const [dupWarning, setDupWarning] = useState(null); // transaction doublon détectée
+  const [type,        setType]        = useState(tx?.type        || "expense");
+  const [amount,      setAmount]      = useState(tx?.amount       || "");
+  const [date,        setDate]        = useState(tx?.date         || todayISO());
+  const [catId,       setCatId]       = useState(tx?.categoryId   || "");
+  const [cagId,       setCagId]       = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
+  const [note,        setNote]        = useState(tx?.note         || "");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [frequency,   setFrequency]   = useState("monthly");
+  const [errors,      setErrors]      = useState({});
+  const [dupWarning,  setDupWarning]  = useState(null); // transaction doublon détectée
 
   const isCag = type === "epargne" || type === "decagnottage";
   const cats  = categories.filter(c => type === "income" ? c.type === "income" : c.type === "expense");
@@ -83,6 +85,15 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
     setDupWarning(null);
 
     onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note });
+
+    // Sauvegarde du modèle récurrent si coché
+    if (isRecurring && !editingId && !isCag) {
+      onSaveRecurring?.({
+        type, amount: parsedAmt, categoryId: catId, note,
+        frequency,
+        label: note || (categories.find(c => c.id === catId)?.name) || "Récurrente",
+      });
+    }
     if (isCag) {
       const cag = cagnottes.find(x => x.id === cagId);
       if (cag) {
@@ -147,6 +158,48 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
       <Field label="Note">
         <input type="text" placeholder="Description…" value={note} onChange={e => setNote(e.target.value)} />
       </Field>
+
+      {/* ── Récurrence (uniquement pour dépenses/revenus, pas cagnottes, pas édition) ── */}
+      {!isCag && !editingId && (
+        <div style={{ marginBottom: 12 }}>
+          <div
+            onClick={() => setIsRecurring(r => !r)}
+            style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+              background: isRecurring ? "var(--accent-glow)" : "var(--surface2)",
+              border: `1px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: "var(--radius-sm)", cursor: "pointer",
+            }}>
+            <div style={{
+              width: 20, height: 20, borderRadius: "50%",
+              background: isRecurring ? "var(--accent)" : "transparent",
+              border: `2px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: ".7rem", color: "var(--bg)", flexShrink: 0, transition: "all .15s",
+            }}>{isRecurring ? "✓" : ""}</div>
+            <div>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>
+                🔄 Récurrente
+              </div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
+                Mémorise cette opération pour la retrouver chaque mois
+              </div>
+            </div>
+          </div>
+          {isRecurring && (
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {[["monthly","Mensuelle"],["yearly","Annuelle"]].map(([k,l]) => (
+                <button key={k} onClick={() => setFrequency(k)} style={{
+                  flex: 1, background: frequency===k ? "var(--accent-glow)" : "transparent",
+                  border: `1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
+                  color: frequency===k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
+                }}>{l}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Alerte doublon ── */}
       {dupWarning && (

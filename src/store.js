@@ -62,11 +62,13 @@ export const A = /** @type {const} */ ({
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   SET_BACKUP_DATE:   "SET_BACKUP_DATE",
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
-  TOGGLE_POINT_TX:   "TOGGLE_POINT_TX",
+  TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
-  IMPORT_DATA:       "IMPORT_DATA",
-  RESET:             "RESET",
+  SAVE_RECURRING:      "SAVE_RECURRING",
+  DEL_RECURRING:       "DEL_RECURRING",
+  IMPORT_DATA:         "IMPORT_DATA",
+  RESET:               "RESET",
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -85,6 +87,7 @@ export const DEFAULT_DATA = {
   provisionalExpenses: [],
   lastBackupDate: null,
   monthNotes: {},
+  recurringTemplates: [],
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -319,6 +322,18 @@ export function reducer(state, action) {
           return { ...f, monthlyOverrides };
         }),
       };
+
+    case A.SAVE_RECURRING: {
+      const tpl = action.tpl;
+      const existing = (state.recurringTemplates || []).find(r => r.id === tpl.id);
+      if (existing) {
+        return { ...state, recurringTemplates: state.recurringTemplates.map(r => r.id === tpl.id ? { ...r, ...tpl } : r) };
+      }
+      return { ...state, recurringTemplates: [...(state.recurringTemplates || []), { ...tpl, id: tpl.id || uid("rc") }] };
+    }
+
+    case A.DEL_RECURRING:
+      return { ...state, recurringTemplates: (state.recurringTemplates || []).filter(r => r.id !== action.id) };
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };
