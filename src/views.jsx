@@ -271,6 +271,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       }
       return list;
     }
+    const startYM = transactions.reduce(
+      (min, t) => t.date < min ? t.date : min, transactions[0].date
+    ).slice(0, 7);
     const allMonths = monthRange(startYM, curM);
 
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
