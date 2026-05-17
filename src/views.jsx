@@ -1194,8 +1194,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
       )}
 
       {/* ── Section frais fixes ── */}
-      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && (        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
           <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--warning)", textTransform: "uppercase", letterSpacing: ".08em" }}>📌 Frais fixes du mois</div>
@@ -1208,7 +1207,12 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
           {(pointFilter === "unpointed"
             ? monthFixes.filter(f => !f.pointedMonths?.[month])
             : monthFixes
-          ).map(f => {
+          ).length === 0 && pointFilter === "unpointed"
+            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les frais fixes sont pointés</div>
+            : (pointFilter === "unpointed"
+                ? monthFixes.filter(f => !f.pointedMonths?.[month])
+                : monthFixes
+              ).map(f => {
             const cat = (data.categories || []).find(c => c.id === f.categoryId);
             const ov  = f.monthlyOverrides?.[month];  // override du mois si existe
             return (
@@ -2089,35 +2093,6 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           </div>
         )}
       </div>
-
-      {/* ── Top 5 dépenses ── */}
-      <SectionTitle>Top 5 dépenses</SectionTitle>
-      <div className="card" style={{ padding: 14 }}>
-        {top5.length === 0
-          ? <p style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "12px 0" }}>Aucune dépense enregistrée</p>
-          : top5.map(([id, val], i) => {
-              const cat  = categories.find(c => c.id === id);
-              const name = id === "__fixes__" ? "📌 Frais fixes" : id === "__other__" ? "❓ Sans catégorie" : `${cat?.icon ?? ""} ${cat?.name ?? id}`;
-              const pct  = (val / topTotal * 100).toFixed(0);
-              const rank = ["🥇","🥈","🥉","4️⃣","5️⃣"][i];
-              return (
-                <div key={id} className="top3-item">
-                  <span className="top3-rank">{rank}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: ".78rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                    <div className="top3-bar-bg" style={{ marginTop: 5 }}>
-                      <div className="top3-bar-fill" style={{ width: `${pct}%`, background: PALETTE[i] }} />
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                    <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".78rem", fontVariantNumeric: "tabular-nums", color: PALETTE[i] }}>{fmt(val)}</div>
-                    <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{pct}%</div>
-                  </div>
-                </div>
-              );
-            })
-        }
-      </div>
       </>)}
 
       {/* ══ ANALYSE : top 5 + évolution + comparaison N/N-1 + analyses ══ */}
@@ -2330,7 +2305,7 @@ function AnalysteLocal({ data, currentYear, months }) {
 // ─────────────────────────────────────────────────────────────────
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring }) {
   const [catFilter, setCatFilter] = useState("all");
   const filtered = useMemo(
     () => data.categories.filter(c => catFilter === "all" || c.type === catFilter),
@@ -2421,7 +2396,37 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         </div>
       </div>
 
-      {/* ⑩ Catégories avec compteur d'usage — layout grille conservé */}
+      {/* ── Transactions récurrentes ── */}
+      {(data.recurringTemplates || []).length > 0 && (
+        <>
+          <SectionTitle>🔄 Transactions récurrentes</SectionTitle>
+          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
+            {(data.recurringTemplates || []).map(tpl => {
+              const cat  = data.categories.find(c => c.id === tpl.categoryId);
+              const isInc = isIncome(tpl.type);
+              return (
+                <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+                  <div style={{ width:32, height:32, borderRadius:9, background:"var(--surface2)", border:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:"1rem" }}>
+                    {cat?.icon ?? (isInc ? "💰" : "💸")}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:".74rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tpl.label}</div>
+                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>
+                      {cat?.name ?? "—"} · <span style={{ color:"var(--accent)" }}>{tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle"}</span>
+                    </div>
+                  </div>
+                  <span style={{ fontFamily:"var(--mono)", fontWeight:800, fontSize:".8rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink:0 }}>
+                    {isInc ? "+" : "−"}{fmt(tpl.amount)}
+                  </span>
+                  <button onClick={() => onDeleteRecurring?.(tpl.id)} style={{ background:"rgba(200,112,112,.1)", border:"1px solid rgba(200,112,112,.2)", borderRadius:7, padding:"4px 8px", color:"var(--danger)", fontSize:".7rem", cursor:"pointer", flexShrink:0 }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {/* ── Catégories ── */}
       <SectionTitle>Gestion Catégories</SectionTitle>
       <div className="filter-row">
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (

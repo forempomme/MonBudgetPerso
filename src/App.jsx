@@ -48,7 +48,11 @@ export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
 
-  // ── Navigation avec historique ───────────────────────────────
+  // Scroll en haut à chaque changement d'onglet
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    document.querySelector(".container")?.scrollTo({ top: 0, behavior: "instant" });
+  }, [tab]);
   const [tabHistory, setTabHistory] = useState(["accueil"]);
   const tab = tabHistory[tabHistory.length - 1];
   const [slideDir, setSlideDir]     = useState(0); // -1 gauche, 1 droite
@@ -373,9 +377,12 @@ export default function App() {
         onOverrideFixMonth={overrideFixMonth}
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={(tpl, month) => {
+          const [y, m] = month.split("-").map(Number);
+          const lastDay = new Date(y, m, 0).getDate(); // dernier jour du mois
+          const day = Math.min(new Date().getDate(), lastDay);
           dispatch({ type: A.SAVE_TRANSACTION, tx: {
             type: tpl.type, amount: tpl.amount,
-            date: `${month}-${new Date().getDate().toString().padStart(2,"0")}`,
+            date: `${month}-${String(day).padStart(2,"0")}`,
             categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
           }});
         }}
@@ -407,6 +414,7 @@ export default function App() {
         onExport={handleExport}
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
+        onDeleteRecurring={deleteRecurring}
       />
     ),
   };
