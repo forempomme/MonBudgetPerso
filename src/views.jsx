@@ -854,6 +854,12 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const recurringPending = useMemo(() => {
     if (!recurringTemplates.length) return [];
     return recurringTemplates.filter(tpl => {
+      // Compter les confirmations existantes
+      const confirmed = transactions.filter(t => t.templateId === tpl.id);
+
+      // Si limite d'occurrences atteinte → ne plus afficher
+      if (tpl.occurrences != null && confirmed.length >= tpl.occurrences) return false;
+
       if (tpl.frequency === "yearly") {
         const year = month.slice(0, 4);
         return !transactions.some(t => t.templateId === tpl.id && t.date.startsWith(year));
@@ -1174,6 +1180,11 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                   <div style={{ fontSize: ".74rem", fontWeight: 700 }}>{tpl.label}</div>
                   <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>
                     {cat?.name ?? "—"} · <span style={{ color: "var(--accent)" }}>{freqLabel}</span>
+                    {tpl.occurrences != null && (() => {
+                      const done = transactions.filter(t => t.templateId === tpl.id).length;
+                      const left = tpl.occurrences - done;
+                      return <span style={{ color: left <= 1 ? "var(--warning)" : "var(--text3)" }}> · {done}/{tpl.occurrences} ({left} restant{left > 1 ? "s" : ""})</span>;
+                    })()}
                   </div>
                 </div>
                 <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink: 0 }}>
@@ -2602,6 +2613,9 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     <div style={{ fontSize:".74rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tpl.label}</div>
                     <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>
                       {cat?.name ?? "—"} · <span style={{ color:"var(--accent)" }}>{tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle"}</span>
+                      {tpl.occurrences != null && (
+                        <span> · {(data.transactions||[]).filter(t=>t.templateId===tpl.id).length}/{tpl.occurrences} fois</span>
+                      )}
                     </div>
                   </div>
                   <span style={{ fontFamily:"var(--mono)", fontWeight:800, fontSize:".8rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink:0 }}>
