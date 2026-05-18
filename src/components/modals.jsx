@@ -36,6 +36,7 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
   const [note,        setNote]        = useState(tx?.note         || "");
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency,   setFrequency]   = useState("monthly");
+  const [occurrences, setOccurrences] = useState(""); // vide = illimité
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null); // transaction doublon détectée
 
@@ -91,6 +92,7 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
       onSaveRecurring?.({
         type, amount: parsedAmt, categoryId: catId, note,
         frequency,
+        occurrences: frequency === "monthly" && occurrences !== "" ? parseInt(occurrences, 10) : null,
         label: note || (categories.find(c => c.id === catId)?.name) || "Récurrente",
       });
     }
@@ -187,15 +189,36 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
             </div>
           </div>
           {isRecurring && (
-            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-              {[["monthly","Mensuelle"],["yearly","Annuelle"]].map(([k,l]) => (
-                <button key={k} onClick={() => setFrequency(k)} style={{
-                  flex: 1, background: frequency===k ? "var(--accent-glow)" : "transparent",
-                  border: `1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
-                  borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
-                  color: frequency===k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
-                }}>{l}</button>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                {[["monthly","Mensuelle"],["yearly","Annuelle"]].map(([k,l]) => (
+                  <button key={k} onClick={() => setFrequency(k)} style={{
+                    flex: 1, background: frequency===k ? "var(--accent-glow)" : "transparent",
+                    border: `1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
+                    borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
+                    color: frequency===k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
+                  }}>{l}</button>
+                ))}
+              </div>
+              {/* Nombre de fois — mensuel uniquement */}
+              {frequency === "monthly" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text2)", marginBottom: 2 }}>Nombre de fois</div>
+                    <div style={{ fontSize: ".58rem", color: "var(--text3)" }}>Laisser vide = illimité</div>
+                  </div>
+                  <input
+                    type="number" min="2" max="120" placeholder="∞"
+                    value={occurrences}
+                    onChange={e => setOccurrences(e.target.value)}
+                    style={{
+                      width: 64, background: "var(--bg)", border: `1px solid ${occurrences ? "var(--accent)" : "var(--border)"}`,
+                      borderRadius: 7, padding: "6px 8px", color: "var(--text)",
+                      fontSize: ".85rem", fontFamily: "var(--mono)", textAlign: "center",
+                    }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
