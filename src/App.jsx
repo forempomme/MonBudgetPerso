@@ -48,15 +48,16 @@ export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
 
-  // Scroll en haut à chaque changement d'onglet
+  const [tabHistory, setTabHistory] = useState(["accueil"]);
+  const tab = tabHistory[tabHistory.length - 1];
+  const [slideDir, setSlideDir]     = useState(0);
+  const [animKey,  setAnimKey]      = useState(0);
+
+  // Scroll en haut à chaque changement d'onglet — après la définition de tab
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
     document.querySelector(".container")?.scrollTo({ top: 0, behavior: "instant" });
   }, [tab]);
-  const [tabHistory, setTabHistory] = useState(["accueil"]);
-  const tab = tabHistory[tabHistory.length - 1];
-  const [slideDir, setSlideDir]     = useState(0); // -1 gauche, 1 droite
-  const [animKey,  setAnimKey]      = useState(0);
 
   const TAB_ORDER = ["accueil","cagnottes","historique","fixes","rapport","options"];
 
@@ -75,8 +76,10 @@ export default function App() {
 
   // Retour arrière : dépiler
   const saveMonthNote   = useCallback((ym, note) => dispatch({ type: A.SAVE_MONTH_NOTE, ym, note }), []);
-  const saveRecurring   = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
-  const deleteRecurring = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
+  const saveRecurring      = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
+  const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
+  const saveAlertSettings  = useCallback((enabled, threshold) =>
+    dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -189,6 +192,17 @@ export default function App() {
         addToast("Opération supprimée", "error");
       },
     });
+  }, [addToast]);
+
+  const duplicateTransaction = useCallback((tx) => {
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    dispatch({ type: A.SAVE_TRANSACTION, tx: {
+      type: tx.type, amount: tx.amount,
+      date: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(Math.min(now.getDate(), lastDay)).padStart(2,"0")}`,
+      categoryId: tx.categoryId, note: tx.note,
+    }});
+    addToast("Transaction dupliquée à aujourd'hui", "success");
   }, [addToast]);
 
   const saveCag = useCallback((cag) => {
@@ -357,6 +371,8 @@ export default function App() {
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
         onGoToHistorique={goToHistoriqueWithFilter}
+        alertEnabled={data.alertEnabled}
+        alertThreshold={data.alertThreshold}
       />
     ),
     cagnottes: (
@@ -372,6 +388,7 @@ export default function App() {
       <HistoriqueView data={data}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
+        onDuplicateTrans={duplicateTransaction}
         onTogglePointTx={togglePointTx}
         onTogglePointFix={togglePointFix}
         onOverrideFixMonth={overrideFixMonth}
@@ -415,6 +432,9 @@ export default function App() {
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
+        alertEnabled={data.alertEnabled}
+        alertThreshold={data.alertThreshold}
+        onSaveAlertSettings={saveAlertSettings}
       />
     ),
   };

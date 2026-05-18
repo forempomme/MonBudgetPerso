@@ -63,19 +63,20 @@ function CountUp({ target, duration = 1100, color, style = {} }) {
 // ─────────────────────────────────────────────────────────────────
 //  SmartIndicator — point coloré Option D (priorité descendante)
 // ─────────────────────────────────────────────────────────────────
-function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onSwitchTab }) {
+function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onSwitchTab, alertEnabled, alertThreshold }) {
   const [open, setOpen] = useState(false);
 
   const daysSinceBackup = lastBackupDate
     ? (Date.now() - new Date(lastBackupDate)) / 86400000
     : 999;
 
-  // Priorité : problème le plus urgent en premier
   const status = useMemo(() => {
     if (balance < 0)
       return { color: "#ef4444", glow: "rgba(239,68,68,.5)",   label: "🔴 Solde négatif",              sub: `${fmt(balance)} — revoir les dépenses` };
     if (balance < 100)
       return { color: "#ef4444", glow: "rgba(239,68,68,.4)",   label: "🔴 Solde critique",              sub: `Moins de 100 € restants` };
+    if (alertEnabled && alertThreshold > 0 && balance <= alertThreshold)
+      return { color: "#ef4444", glow: "rgba(239,68,68,.45)",  label: "🔴 Seuil d'alerte atteint",      sub: `Solde (${fmt(balance)}) sous le seuil de ${fmt(alertThreshold)}`, action: "options" };
     if (daysSinceBackup > 14)
       return { color: "#ef4444", glow: "rgba(239,68,68,.35)",  label: "🔴 Sauvegarde urgente",          sub: `${Math.floor(daysSinceBackup)} jours sans backup`, action: "options" };
     if (curMonthExp > curMonthInc && curMonthInc > 0)
@@ -85,7 +86,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     if (daysSinceBackup > 7)
       return { color: "#fbbf24", glow: "rgba(251,191,36,.35)", label: "🟡 Sauvegarde recommandée",      sub: `${Math.floor(daysSinceBackup)} jours sans backup`, action: "options" };
     return   { color: "#4ade80", glow: "rgba(74,222,128,.5)",  label: "🟢 Tout va bien",               sub: `Budget équilibré, solde sain` };
-  }, [balance, curMonthInc, curMonthExp, daysSinceBackup]);
+  }, [balance, curMonthInc, curMonthExp, daysSinceBackup, alertEnabled, alertThreshold]);
 
   return (
     <div style={{ position: "absolute", top: 18, right: 18, zIndex: 10 }}>
@@ -245,7 +246,7 @@ function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaC
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
 // ─────────────────────────────────────────────────────────────────
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique }) {
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold }) {
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -401,6 +402,8 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           curMonthExp={curMonth.exp}
           lastBackupDate={data.lastBackupDate}
           onSwitchTab={onSwitchTab}
+          alertEnabled={alertEnabled}
+          alertThreshold={alertThreshold}
         />
 
         <div style={{ position: "relative" }}>
@@ -808,7 +811,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -1132,7 +1135,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onTogglePoint
                       ? dayTxs.map(t => (
                           <SwipeRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
                             onEdit={onEditTrans} onDelete={onDeleteTrans}
-                            onTogglePoint={onTogglePointTx} />
+                            onTogglePoint={onTogglePointTx}
+                            onDuplicate={onDuplicateTrans} />
                         ))
                       : dayTxs.map(t => (
                           <PointRow key={t.id}
@@ -1329,12 +1333,12 @@ function BudgetBar({ exp, inc }) {
 }
 
 // 4. SwipeRow — avec bouton pointage intégré
-function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint }) {
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
   const startY  = useRef(null);
-  const isHoriz = useRef(false); // vrai si le geste est horizontal
+  const isHoriz = useRef(false);
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
@@ -1342,12 +1346,19 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint })
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
 
+  const PANEL = 165; // 3 × 55px
+
   return (
     <div style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid var(--border-soft)" }}>
-      {/* Actions cachées */}
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 110, display: "flex" }}>
+      {/* Actions cachées — ✏️ 📋 🗑️ */}
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex" }}>
         <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
           style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
+        <div onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }}
+          style={{ width: 55, height: "100%", background: "rgba(104,212,152,.2)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer" }}>
+          <span style={{ fontSize: "1rem" }}>📋</span>
+          <span style={{ fontSize: ".44rem", color: "var(--success)", fontWeight: 700 }}>Dupliquer</span>
+        </div>
         <div onClick={() => { setOffset(0); setRevealed(false); onDelete?.(t.id); }}
           style={{ width: 55, height: "100%", background: "rgba(200,112,112,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>🗑️</div>
       </div>
@@ -1356,32 +1367,27 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint })
         onTouchStart={e => {
           startX.current  = e.touches[0].clientX;
           startY.current  = e.touches[0].clientY;
-          isHoriz.current = false; // réinitialise à chaque toucher
+          isHoriz.current = false;
         }}
         onTouchMove={e => {
           const dx = e.touches[0].clientX - startX.current;
           const dy = e.touches[0].clientY - startY.current;
-
-          // Détermine la direction dominante au premier mouvement significatif
           if (!isHoriz.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
             isHoriz.current = Math.abs(dx) > Math.abs(dy);
           }
-
-          // Ne déplace que si le geste est majoritairement horizontal
           if (!isHoriz.current) return;
-
-          if (dx < 0) setOffset(Math.max(-110, dx));
-          else if (revealed) setOffset(Math.min(0, -110 + dx));
+          if (dx < 0) setOffset(Math.max(-PANEL, dx));
+          else if (revealed) setOffset(Math.min(0, -PANEL + dx));
         }}
         onTouchEnd={() => {
-          if (!isHoriz.current) return; // scroll vertical : rien à faire
-          if (offset < -55) { setOffset(-110); setRevealed(true); }
+          if (!isHoriz.current) return;
+          if (offset < -PANEL / 2) { setOffset(-PANEL); setRevealed(true); }
           else { setOffset(0); setRevealed(false); }
         }}
         onClick={() => { if (revealed) { setOffset(0); setRevealed(false); } }}
         style={{
           transform: `translateX(${offset}px)`,
-          transition: (offset === 0 || offset === -110) ? "transform .2s" : "none",
+          transition: (offset === 0 || offset === -PANEL) ? "transform .2s" : "none",
           background: "var(--bg)",
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
@@ -1830,6 +1836,103 @@ function MonthNotes({ currentYear, monthNotes, onSave }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Modal taux d'épargne
+// ─────────────────────────────────────────────────────────────────
+function SavingsRateModal({ onClose, transactions, fixedExpenses, currentYear }) {
+  const now = new Date();
+
+  // 6 derniers mois
+  const months = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("fr-FR", { month: "short" });
+      let inc = 0, sav = 0;
+      transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
+        const a = parseFloat(t.amount) || 0;
+        if (isIncome(t.type))          inc += a;
+        else if (t.type === "epargne") sav += a;
+      });
+      const rate = inc > 0 ? (sav / inc) * 100 : 0;
+      return { ym, label, inc, sav, rate };
+    });
+  }, [transactions]);
+
+  const curRate  = months[months.length - 1]?.rate ?? 0;
+  const avgRate  = months.reduce((s, m) => s + m.rate, 0) / (months.length || 1);
+  const maxRate  = Math.max(...months.map(m => m.rate), 1);
+  const R = 52, cx = 60, cy = 60, stroke = 12;
+  const circ  = 2 * Math.PI * R;
+  const dash  = Math.min(curRate / 100, 1) * circ;
+  const color = curRate >= 20 ? "var(--success)" : curRate >= 10 ? "var(--warning)" : "var(--danger)";
+
+  return (
+    <div className="modal" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <div className="modal-title">📊 Taux d'épargne</div>
+
+        {/* Jauge + stats */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+          <svg width={120} height={120} viewBox="0 0 120 120" style={{ flexShrink: 0 }}>
+            <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--surface3)" strokeWidth={stroke} />
+            <circle cx={cx} cy={cy} r={R} fill="none"
+              stroke={color} strokeWidth={stroke}
+              strokeDasharray={`${dash} ${circ}`}
+              strokeLinecap="round"
+              transform={`rotate(-90 ${cx} ${cy})`} />
+            <text x={cx} y={cy - 6} textAnchor="middle" fontSize="18" fontWeight="800" fill={color}>{Math.round(curRate)}%</text>
+            <text x={cx} y={cy + 10} textAnchor="middle" fontSize="9" fill="var(--text2)">ce mois</text>
+          </svg>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+            {[
+              { l: "🐷 Épargné ce mois",   v: fmt(months[months.length-1]?.sav ?? 0),   c: "var(--purple)"  },
+              { l: "💰 Revenus ce mois",    v: fmt(months[months.length-1]?.inc ?? 0),   c: "var(--success)" },
+              { l: "📈 Moy. 6 mois",        v: `${avgRate.toFixed(1)}%`,                  c: "var(--accent)"  },
+            ].map(s => (
+              <div key={s.l} style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontSize: ".62rem", color: "var(--text2)" }}>{s.l}</span>
+                <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.c, fontSize: ".68rem" }}>{s.v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Barres par mois */}
+        <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
+          Évolution sur 6 mois
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {months.map(m => {
+            const col = m.rate >= 20 ? "var(--success)" : m.rate >= 10 ? "var(--warning)" : m.rate > 0 ? "var(--danger)" : "var(--border)";
+            return (
+              <div key={m.ym} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: ".65rem", fontWeight: 700, width: 28, flexShrink: 0, textTransform: "capitalize" }}>{m.label}</span>
+                <div style={{ flex: 1, height: 7, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${m.rate > 0 ? (m.rate / Math.max(maxRate, 20)) * 100 : 0}%`, height: "100%", background: col, borderRadius: 99, transition: "width .4s" }} />
+                </div>
+                <span style={{ fontFamily: "var(--mono)", fontSize: ".65rem", fontWeight: 800, color: col, width: 36, textAlign: "right" }}>
+                  {m.rate > 0 ? `${m.rate.toFixed(0)}%` : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Objectif */}
+        <div style={{ marginTop: 14, padding: "10px 12px", background: "var(--surface2)", borderRadius: "var(--radius-sm)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: ".68rem", color: "var(--text2)" }}>🎯 Objectif recommandé</span>
+          <span style={{ fontSize: ".72rem", fontWeight: 800, color: avgRate >= 20 ? "var(--success)" : "var(--warning)" }}>
+            {avgRate >= 20 ? "✅ 20% atteint" : `${(20 - avgRate).toFixed(1)}% à gagner`}
+          </span>
+        </div>
+
+        <button className="btn btn-outline" style={{ width: "100%", marginTop: 12 }} onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  RAPPORT — helpers locaux
 // ─────────────────────────────────────────────────────────────────
 function RapportDonut({ inc, exp, sav }) {
@@ -1890,8 +1993,9 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
   const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1);
-  const [rapportTab,  setRapportTab]  = useState("bilan");
-  const [chartFilter, setChartFilter] = useState("all");
+  const [rapportTab,    setRapportTab]    = useState("bilan");
+  const [chartFilter,   setChartFilter]   = useState("all");
+  const [showSavModal,  setShowSavModal]  = useState(false);
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
   const [goalInput,   setGoalInput]   = useState("");
@@ -1963,6 +2067,33 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
 
       {/* ══ BILAN : hero + moyennes + graphique + classement + objectif ══ */}
       {rapportTab === "bilan" && (<>
+
+        {/* Bouton taux d'épargne */}
+        <button onClick={() => setShowSavModal(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--purple)", borderRadius: "var(--radius-sm)",
+          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "1.1rem" }}>🐷</span>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Taux d'épargne</div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Voir l'évolution et les objectifs</div>
+            </div>
+          </div>
+          <span style={{ color: "var(--purple)", fontSize: ".85rem" }}>›</span>
+        </button>
+
+        {/* Modal taux d'épargne */}
+        {showSavModal && (
+          <SavingsRateModal
+            onClose={() => setShowSavModal(false)}
+            transactions={data.transactions}
+            fixedExpenses={data.fixedExpenses}
+            currentYear={currentYear}
+          />
+        )}
 
       {/* ① Hero card avec donut */}
       <div style={{
@@ -2305,8 +2436,16 @@ function AnalysteLocal({ data, currentYear, months }) {
 // ─────────────────────────────────────────────────────────────────
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings }) {
   const [catFilter, setCatFilter] = useState("all");
+  const [alertOn,   setAlertOn]   = useState(alertEnabled);
+  const [thresh,    setThresh]    = useState(String(alertThreshold));
+
+  function saveAlert(enabled, value) {
+    const t = parseFloat(value) || 0;
+    setAlertOn(enabled); setThresh(String(t));
+    onSaveAlertSettings?.(enabled, t);
+  }
   const filtered = useMemo(
     () => data.categories.filter(c => catFilter === "all" || c.type === catFilter),
     [data.categories, catFilter]
@@ -2365,7 +2504,57 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         </div>
       )}
 
-      {/* ⑧ Sauvegarde avec date visible */}
+      {/* ── Alerte solde bas ── */}
+      <div className="card" style={{ borderLeft: `3px solid ${alertOn ? "var(--warning)" : "var(--border)"}`, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: alertOn ? 12 : 0, cursor: "pointer" }}
+          onClick={() => saveAlert(!alertOn, thresh)}>
+          <div style={{
+            width: 38, height: 22, borderRadius: 11, flexShrink: 0,
+            background: alertOn ? "var(--warning)" : "var(--border)",
+            position: "relative", transition: "background .2s",
+          }}>
+            <div style={{
+              position: "absolute", top: 3, left: alertOn ? 17 : 3,
+              width: 16, height: 16, borderRadius: "50%",
+              background: "#fff", transition: "left .2s",
+            }} />
+          </div>
+          <div>
+            <div style={{ fontSize: ".72rem", fontWeight: 700, color: alertOn ? "var(--warning)" : "var(--text2)" }}>
+              🔔 Alerte solde bas
+            </div>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
+              La pastille passe au rouge quand le solde est sous le seuil
+            </div>
+          </div>
+        </div>
+        {alertOn && (
+          <div>
+            <div style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, marginBottom: 6 }}>Seuil d'alerte (€)</div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              <input type="number" value={thresh} min="0" step="100"
+                onChange={e => setThresh(e.target.value)}
+                onBlur={() => saveAlert(true, thresh)}
+                style={{ flex: 1, background: "var(--bg)", border: "1px solid var(--warning)", borderRadius: 9, padding: "8px 12px", color: "var(--text)", fontSize: ".88rem", fontFamily: "var(--mono)" }} />
+              <button onClick={() => saveAlert(true, thresh)} style={{ background: "var(--warning)", border: "none", borderRadius: 9, padding: "8px 14px", color: "var(--bg)", fontWeight: 800, fontSize: ".75rem", cursor: "pointer" }}>
+                OK
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 5 }}>
+              {[200, 500, 1000].map(v => (
+                <button key={v} onClick={() => saveAlert(true, String(v))} style={{
+                  flex: 1, background: parseFloat(thresh)===v ? "rgba(200,184,96,.15)" : "transparent",
+                  border: `1px solid ${parseFloat(thresh)===v ? "var(--warning)" : "var(--border)"}`,
+                  borderRadius: 7, padding: "5px 0", fontSize: ".68rem", fontWeight: 700,
+                  color: parseFloat(thresh)===v ? "var(--warning)" : "var(--text2)", cursor: "pointer",
+                }}>{fmt(v)}</button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Sauvegarde ── */}
       <div className="card" style={{
         borderLeft: `3px solid ${backupOk ? "var(--success)" : "var(--danger)"}`,
         background: backupOk ? "var(--success-glow)" : "var(--danger-glow)",

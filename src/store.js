@@ -67,6 +67,7 @@ export const A = /** @type {const} */ ({
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
+  SAVE_ALERT_SETTINGS: "SAVE_ALERT_SETTINGS",
   IMPORT_DATA:         "IMPORT_DATA",
   RESET:               "RESET",
 });
@@ -88,6 +89,8 @@ export const DEFAULT_DATA = {
   lastBackupDate: null,
   monthNotes: {},
   recurringTemplates: [],
+  alertEnabled:   false,
+  alertThreshold: 500,
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -334,6 +337,9 @@ export function reducer(state, action) {
 
     case A.DEL_RECURRING:
       return { ...state, recurringTemplates: (state.recurringTemplates || []).filter(r => r.id !== action.id) };
+
+    case A.SAVE_ALERT_SETTINGS:
+      return { ...state, alertEnabled: action.enabled, alertThreshold: action.threshold };
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };
