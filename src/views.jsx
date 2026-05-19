@@ -2774,32 +2774,6 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   return (
     <div>
 
-      {/* ⑦ Stats globales */}
-      {globalStats && (
-        <div style={{
-          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
-          borderRadius: "var(--radius)", padding: "14px 16px", marginBottom: 14,
-          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
-        }}>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
-            📊 Statistiques globales
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { icon: "📋", label: "Transactions",       value: globalStats.count },
-              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
-              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
-              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
-            ].map(s => (
-              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
-                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* ── Alerte solde bas ── */}
       <div className="card" style={{ borderLeft: `3px solid ${alertOn ? "var(--warning)" : "var(--border)"}`, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: alertOn ? 12 : 0, cursor: "pointer" }}
@@ -2916,10 +2890,19 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
       {/* ── Catégories ── */}
       <SectionTitle>Gestion Catégories</SectionTitle>
-      <div className="filter-row">
+      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (
           <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={() => setCatFilter(k)}>{l}</div>
         ))}
+        <button onClick={onNewCat} style={{
+          marginLeft:"auto", display:"flex", alignItems:"center", gap:4,
+          background:"var(--accent)", border:"none", borderRadius:20,
+          padding:"6px 14px", color:"var(--bg)", fontWeight:800,
+          fontSize:".7rem", cursor:"pointer", flexShrink:0,
+          touchAction:"manipulation",
+        }}>
+          ＋ Créer
+        </button>
       </div>
       <div className="cat-grid">
         {filtered.length === 0
@@ -2941,8 +2924,13 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     {usage === 0 ? "✕" : usage}
                   </div>
                   <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
-                  <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
-                  {/* Badge lien — informatif uniquement */}
+                  {/* Nom avec retour à la ligne — comme les cartes frais fixes */}
+                  <span style={{
+                    fontSize:".6rem", fontWeight:700,
+                    wordBreak:"break-word", whiteSpace:"normal",
+                    textAlign:"center", padding:"0 3px", lineHeight:1.3,
+                    width:"100%",
+                  }}>{c.name}</span>
                   {linkedTo && (
                     <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>
                       🔗
@@ -2957,8 +2945,6 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             })
         }
       </div>
-
-      <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
 
       {/* ── Section liaisons ── */}
       <div style={{ marginTop:16 }}>
@@ -2997,6 +2983,32 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           <LinkForm categories={data.categories} onLink={onEditCat} />
         </div>
       </div>
+
+      {/* ── Stats globales — en bas ── */}
+      {globalStats && (
+        <div style={{
+          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
+          borderRadius: "var(--radius)", padding: "14px 16px", marginTop: 16,
+          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
+        }}>
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
+            📊 Statistiques globales
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { icon: "📋", label: "Transactions",       value: globalStats.count },
+              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
+              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
+              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
+            ].map(s => (
+              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>
         ⚠️ Réinitialiser toutes les données
