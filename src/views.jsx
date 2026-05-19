@@ -1361,10 +1361,10 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
 
   return (
     <div style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid var(--border-soft)" }}>
-      {/* Actions cachées — ✏️ 📋 🗑️ */}
+      {/* Actions cachées — ✏️ 📋 🗑️ (✏️ désactivé pour les transactions de frais fixes) */}
       <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex" }}>
-        <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
-          style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
+        <div onClick={() => { if (!t.fromFixedId) { setOffset(0); setRevealed(false); onEdit?.(t.id); } }}
+          style={{ width: 55, height: "100%", background: t.fromFixedId ? "rgba(56,80,96,.2)" : "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: t.fromFixedId ? "default" : "pointer", opacity: t.fromFixedId ? .35 : 1 }}>✏️</div>
         <div onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }}
           style={{ width: 55, height: "100%", background: "rgba(104,212,152,.2)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer" }}>
           <span style={{ fontSize: "1rem" }}>📋</span>
@@ -1425,7 +1425,12 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           {icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+            {t.fromFixedId && (
+              <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>📌 FIXE</span>
+            )}
+          </div>
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</div>
         </div>
         <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
