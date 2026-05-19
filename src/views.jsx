@@ -2117,11 +2117,24 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
               </div>
             ))}
           </div>
-          {yearFixExp > 0 && (
-            <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 10, padding: "5px 9px", background: "var(--warning-glow)", borderRadius: 6 }}>
-              📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsWithFix} mois × {fmt(fixBaseAmount)})
-            </div>
-          )}
+          {yearFixExp > 0 && (() => {
+            const fixes = fixedExpenses.filter(f => f.categoryId === selCatId);
+            return (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: ".6rem", color: "var(--warning)", padding: "5px 9px", background: "var(--warning-glow)", borderRadius: "6px 6px 0 0" }}>
+                  📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsWithFix} mois)
+                </div>
+                <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "6px 9px", display: "flex", flexDirection: "column", gap: 3 }}>
+                  {fixes.map(f => (
+                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", fontSize: ".6rem" }}>
+                      <span style={{ color: "var(--text2)" }}>• {f.name}</span>
+                      <span style={{ fontFamily: "var(--mono)", color: "var(--warning)", fontWeight: 700 }}>{monthsWithFix} × {fmt(f.amount)} = {fmt(f.amount * monthsWithFix)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 12 }}>
             {txCount} transaction{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearTotal / Math.max(monthsElapsed, 1))}/mois
           </div>
