@@ -1102,7 +1102,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
       {/* ── 6. Vue Catégories ── */}
       {viewMode === "cats" && (
-        <CatBreakdown txs={filtered} categories={categories}
+        <CatBreakdown txs={filtered} allTxs={transactions.filter(t => t.date.startsWith(month))} categories={categories}
           onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("list"); }} />
       )}
 
@@ -1438,45 +1438,85 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
 }
 
 // 6. Répartition catégories
-function CatBreakdown({ txs, categories, onSelectCat }) {
+function CatBreakdown({ txs, allTxs, categories, onSelectCat }) {
+  const source = allTxs || txs;
+
+  // Dépenses par catégorie
   const bycat = {};
-  const totalExp = txs.filter(t => t.type === "expense").reduce((s, t) => s + (parseFloat(t.amount)||0), 0) || 1;
-  txs.filter(t => t.type === "expense").forEach(t => {
+  source.filter(t => t.type === "expense").forEach(t => {
     const c   = categories.find(c => c.id === t.categoryId);
     const key = c?.id || "__other__";
-    if (!bycat[key]) bycat[key] = { id: c?.id || null, name: c?.name||"Sans catégorie", icon: c?.icon||"❓", color: c?.color||"var(--text3)", total: 0, count: 0 };
-    bycat[key].total += parseFloat(t.amount)||0;
+    if (!bycat[key]) bycat[key] = { id: c?.id||null, name: c?.name||"Sans catégorie", icon: c?.icon||"❓", color: c?.color||"var(--text3)", exp:0, inc:0, count:0 };
+    bycat[key].exp   += parseFloat(t.amount)||0;
     bycat[key].count++;
   });
-  const sorted = Object.values(bycat).sort((a,b) => b.total - a.total);
+
+  // Revenus en déduction — même catégorie OU catégorie liée (linkedToId)
+  source.filter(t => isIncome(t.type) && t.type !== "dissolution_cagnotte").forEach(t => {
+    const a   = parseFloat(t.amount)||0;
+    const cat = categories.find(c => c.id === t.categoryId);
+    // Catégorie liée → déduire de la cible
+    if (cat?.linkedToId && bycat[cat.linkedToId]) {
+      bycat[cat.linkedToId].inc += a;
+    } else if (t.categoryId && bycat[t.categoryId]) {
+      // Même catégorie directe
+      bycat[t.categoryId].inc += a;
+    }
+  });
+
+  const sorted    = Object.values(bycat).map(c => ({ ...c, net: Math.max(0, c.exp - c.inc) })).sort((a,b) => b.net - a.net);
+  const totalNet  = sorted.reduce((s, c) => s + c.net, 0) || 1;
+
   if (sorted.length === 0) return (
     <div style={{ padding: "20px 0", textAlign: "center", color: "var(--text3)", fontSize: ".75rem" }}>Aucune dépense ce mois</div>
   );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {sorted.map(c => (
-        <div key={c.name}
-          onClick={() => c.id && onSelectCat?.(c.id)}
-          style={{
-            background: "var(--surface)", border: "1px solid var(--border)",
-            borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)",
-            padding: "10px 12px", cursor: c.id ? "pointer" : "default",
-            position: "relative",
-          }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
-            <span style={{ fontSize: ".75rem", fontWeight: 700 }}>{c.icon} {c.name}</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: c.color, fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(c.total)}</span>
-              <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{c.count} op.</span>
-              {c.id && <span style={{ color: "var(--text3)", fontSize: ".75rem" }}>›</span>}
+      {sorted.map(c => {
+        const hasOffset = c.inc > 0;
+        return (
+          <div key={c.name}
+            onClick={() => c.id && onSelectCat?.(c.id)}
+            style={{
+              background: "var(--surface)", border: "1px solid var(--border)",
+              borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)",
+              padding: "10px 12px", cursor: c.id ? "pointer" : "default",
+            }}>
+            {/* En-tête : nom + montants */}
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: hasOffset ? 4 : 6, alignItems: "center" }}>
+              <span style={{ fontSize: ".75rem", fontWeight: 700 }}>{c.icon} {c.name}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {hasOffset
+                  ? <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)", fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>
+                      {fmt(c.net)}
+                    </span>
+                  : <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: c.color, fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>
+                      {fmt(c.exp)}
+                    </span>
+                }
+                <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{c.count} op.</span>
+                {c.id && <span style={{ color: "var(--text3)", fontSize: ".75rem" }}>›</span>}
+              </div>
+            </div>
+            {/* Ligne de déduction si remboursement */}
+            {hasOffset && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, padding: "3px 6px", background: "rgba(104,212,152,.07)", borderRadius: 5 }}>
+                <span style={{ fontSize: ".6rem", color: "var(--success)" }}>↩ Remboursé / partagé</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: ".62rem", fontWeight: 700, color: "var(--success)" }}>−{fmt(c.inc)}</span>
+              </div>
+            )}
+            {/* Barre de progression — basée sur le net */}
+            <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99 }}>
+              <div style={{ width: `${(c.net / totalNet * 100).toFixed(0)}%`, height: "100%", background: c.color, borderRadius: 99 }}/>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>
+              <span>{hasOffset ? `Brut : ${fmt(c.exp)}` : ""}</span>
+              <span>{(c.net / totalNet * 100).toFixed(0)}% des dépenses nettes</span>
             </div>
           </div>
-          <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99 }}>
-            <div style={{ width: `${(c.total / totalExp * 100).toFixed(0)}%`, height: "100%", background: c.color, borderRadius: 99 }}/>
-          </div>
-          <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2, textAlign: "right" }}>{(c.total / totalExp * 100).toFixed(0)}% des dépenses</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1944,6 +1984,164 @@ function SavingsRateModal({ onClose, transactions, fixedExpenses, currentYear })
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Helper : résoudre les déductions liées pour une catégorie
+// ─────────────────────────────────────────────────────────────────
+function getLinkedIncomeForCat(catId, categories, transactions, period) {
+  // Catégories qui pointent vers catId (liaison "Remboursement courses" → "Courses")
+  const linkedCatIds = categories
+    .filter(c => c.linkedToId === catId)
+    .map(c => c.id);
+  // Aussi : revenus avec exactement la même catégorie (ancien comportement)
+  return transactions
+    .filter(t => {
+      if (!t.date.startsWith(period)) return false;
+      if (!isIncome(t.type) || t.type === "dissolution_cagnotte") return false;
+      return t.categoryId === catId || linkedCatIds.includes(t.categoryId);
+    })
+    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Modal détail catégorie
+// ─────────────────────────────────────────────────────────────────
+function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses }) {
+  const now       = new Date();
+  const curYM     = currentYM();
+  const [selCatId, setSelCatId] = useState(categories[0]?.id || "");
+
+  const cat = categories.find(c => c.id === selCatId);
+
+  // Catégories liées à celle sélectionnée
+  const linkedCats = categories.filter(c => c.linkedToId === selCatId);
+
+  // 6 derniers mois de stats pour cette catégorie
+  const monthStats = useMemo(() => {
+    return Array.from({ length: 6 }, (_, i) => {
+      const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const exp = transactions
+        .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
+        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+      const inc = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
+      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp, inc, net: Math.max(0, exp - inc) };
+    });
+  }, [selCatId, transactions, categories]);
+
+  // Totaux année
+  const yearStr = now.getFullYear().toString();
+  const yearExp = transactions
+    .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && t.categoryId === selCatId)
+    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const yearInc = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
+  const yearNet = Math.max(0, yearExp - yearInc);
+  const txCount = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+
+  // Top 5 transactions récentes
+  const recent = [...transactions]
+    .filter(t => t.categoryId === selCatId)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 5);
+
+  const maxNet = Math.max(...monthStats.map(m => m.exp), 1);
+
+  return (
+    <div className="modal" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <div className="modal-title">📊 Analyse par catégorie</div>
+
+        {/* Sélecteur */}
+        <div style={{ marginBottom: 14 }}>
+          <select value={selCatId} onChange={e => setSelCatId(e.target.value)}
+            style={{ width: "100%", background: "var(--surface2)", border: "1px solid var(--accent)", borderRadius: 9, padding: "9px 12px", color: "var(--text)", fontSize: ".82rem" }}>
+            {categories.map(c => (
+              <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {cat && (<>
+          {/* Catégorie liée */}
+          {linkedCats.length > 0 && (
+            <div style={{ display: "flex", gap: 5, marginBottom: 12, flexWrap: "wrap" }}>
+              {linkedCats.map(lc => (
+                <div key={lc.id} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.25)", borderRadius: 20, fontSize: ".62rem", color: "var(--success)" }}>
+                  🔗 Déductions depuis : <strong>{lc.icon} {lc.name}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Totaux année */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+            {[
+              { l: "💸 Dépensé", v: yearExp, c: "var(--danger)" },
+              { l: "↩ Récupéré", v: yearInc, c: "var(--success)", hidden: yearInc === 0 },
+              { l: "📊 Net",     v: yearNet, c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
+            ].map(s => (
+              <div key={s.l} style={{ background: "var(--surface2)", borderRadius: 9, padding: "8px 10px", opacity: s.hidden ? .35 : 1 }}>
+                <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 3 }}>{s.l}</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.c, fontSize: ".78rem", fontVariantNumeric: "tabular-nums" }}>{fmt(s.v)}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 12 }}>
+            {txCount} opération{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearExp / Math.max(monthStats.filter(m=>m.exp>0).length, 1))}/mois dépensé
+          </div>
+
+          {/* Barres 6 mois */}
+          <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>Évolution 6 mois</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
+            {monthStats.map(m => (
+              <div key={m.ym} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: ".65rem", fontWeight: 700, width: 28, flexShrink: 0, textTransform: "capitalize" }}>{m.label}</span>
+                <div style={{ flex: 1, position: "relative", height: 12 }}>
+                  {/* Barre dépense */}
+                  <div style={{ position: "absolute", inset: 0, background: "var(--surface3)", borderRadius: 99 }} />
+                  <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(m.exp / maxNet * 100)}%`, background: "var(--danger)", borderRadius: 99, opacity: .7 }} />
+                  {/* Barre net (par dessus) */}
+                  {m.inc > 0 && (
+                    <div style={{ position: "absolute", top: 2, left: 0, height: "calc(100% - 4px)", width: `${(m.net / maxNet * 100)}%`, background: "var(--accent)", borderRadius: 99 }} />
+                  )}
+                </div>
+                <div style={{ width: 72, textAlign: "right", flexShrink: 0 }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: ".65rem", fontWeight: 800, color: m.net > 0 ? (m.inc > 0 ? "var(--accent)" : "var(--danger)") : "var(--text3)" }}>
+                    {m.net > 0 ? fmt(m.net) : "—"}
+                  </span>
+                  {m.inc > 0 && <div style={{ fontSize: ".52rem", color: "var(--success)" }}>↩ {fmt(m.inc)}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Transactions récentes */}
+          {recent.length > 0 && (<>
+            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>Dernières opérations</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--border)" }}>
+              {recent.map((t, i) => {
+                const isInc = isIncome(t.type);
+                return (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: i < recent.length-1 ? "1px solid var(--border-soft)" : "none", background: "var(--surface)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: ".7rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.note || "—"}</div>
+                      <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{t.date}</div>
+                    </div>
+                    <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".75rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink: 0 }}>
+                      {isInc ? "+" : "−"}{fmt(t.amount)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </>)}
+        </>)}
+
+        <button className="btn btn-outline" style={{ width: "100%", marginTop: 14 }} onClick={onClose}>Fermer</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  RAPPORT — helpers locaux
 // ─────────────────────────────────────────────────────────────────
 function RapportDonut({ inc, exp, sav }) {
@@ -2007,6 +2205,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const [rapportTab,    setRapportTab]    = useState("bilan");
   const [chartFilter,   setChartFilter]   = useState("all");
   const [showSavModal,  setShowSavModal]  = useState(false);
+  const [showCatModal,  setShowCatModal]  = useState(false);
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
   const [goalInput,   setGoalInput]   = useState("");
@@ -2030,16 +2229,36 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const { top5, topTotal } = useMemo(() => {
     const tf    = fixedExpenses.reduce((s, f) => s + f.amount, 0);
     const isCur = currentYear === new Date().getFullYear();
-    const map   = {};
-    if (isCur && tf > 0) map["__fixes__"] = tf;
+    const yearStr = currentYear.toString();
+    const expMap = {};
+    const incMap = {};
+    if (isCur && tf > 0) expMap["__fixes__"] = tf;
+    // Dépenses
     transactions
-      .filter(t => t.date.startsWith(currentYear.toString()) && t.type === "expense")
+      .filter(t => t.date.startsWith(yearStr) && t.type === "expense")
       .forEach(t => {
         const k = t.categoryId || "__other__";
-        map[k] = (map[k] || 0) + (parseFloat(t.amount) || 0);
+        expMap[k] = (expMap[k] || 0) + (parseFloat(t.amount) || 0);
       });
-    const entries = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const total   = Object.values(map).reduce((s, v) => s + v, 0) || 1;
+    // Revenus de même catégorie OU catégorie liée = déductions
+    transactions
+      .filter(t => t.date.startsWith(yearStr) && isIncome(t.type) && t.type !== "dissolution_cagnotte")
+      .forEach(t => {
+        const a   = parseFloat(t.amount)||0;
+        const cat = categories.find(c => c.id === t.categoryId);
+        if (cat?.linkedToId && expMap[cat.linkedToId]) {
+          incMap[cat.linkedToId] = (incMap[cat.linkedToId]||0) + a;
+        } else if (t.categoryId && expMap[t.categoryId]) {
+          incMap[t.categoryId] = (incMap[t.categoryId]||0) + a;
+        }
+      });
+    // Coût net par catégorie
+    const netMap = {};
+    Object.keys(expMap).forEach(k => {
+      netMap[k] = Math.max(0, expMap[k] - (incMap[k] || 0));
+    });
+    const entries = Object.entries(netMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const total   = Object.values(netMap).reduce((s, v) => s + v, 0) || 1;
     return { top5: entries, topTotal: total };
   }, [transactions, fixedExpenses, currentYear]);
 
@@ -2079,7 +2298,32 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
       {/* ══ BILAN : hero + moyennes + graphique + classement + objectif ══ */}
       {rapportTab === "bilan" && (<>
 
-        {/* Bouton taux d'épargne */}
+        {/* Bouton analyse catégorie */}
+        <button onClick={() => setShowCatModal(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--accent)", borderRadius: "var(--radius-sm)",
+          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "1.1rem" }}>📊</span>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Analyse par catégorie</div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Détail mensuel et annuel d'un poste</div>
+            </div>
+          </div>
+          <span style={{ color: "var(--accent)", fontSize: ".85rem" }}>›</span>
+        </button>
+
+        {/* Modal analyse catégorie */}
+        {showCatModal && (
+          <CategoryDetailModal
+            onClose={() => setShowCatModal(false)}
+            categories={data.categories}
+            transactions={data.transactions}
+            fixedExpenses={data.fixedExpenses}
+          />
+        )}
         <button onClick={() => setShowSavModal(true)} style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
           background: "var(--surface)", border: "1px solid var(--border)",
@@ -2448,9 +2692,10 @@ function AnalysteLocal({ data, currentYear, months }) {
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings }) {
-  const [catFilter, setCatFilter] = useState("all");
-  const [alertOn,   setAlertOn]   = useState(alertEnabled);
-  const [thresh,    setThresh]    = useState(String(alertThreshold));
+  const [catFilter,   setCatFilter]   = useState("all");
+  const [linkingId,   setLinkingId]   = useState(null); // catId en cours de liage
+  const [alertOn,     setAlertOn]     = useState(alertEnabled);
+  const [thresh,      setThresh]      = useState(String(alertThreshold));
 
   function saveAlert(enabled, value) {
     const t = parseFloat(value) || 0;
@@ -2640,13 +2885,12 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         {filtered.length === 0
           ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
           : filtered.map(c => {
-              const usage = catUsage[c.id] || 0;
+              const usage    = catUsage[c.id] || 0;
+              const linkedTo = data.categories.find(x => x.id === c.linkedToId);
               return (
                 <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
-                  {/* Point couleur type */}
                   <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%",
                     background: c.type==="expense" ? "var(--danger)" : "var(--success)" }} />
-                  {/* Badge usage */}
                   <div style={{
                     position:"absolute", top:4, right:4,
                     fontSize:".48rem", fontWeight:800, lineHeight:1,
@@ -2658,13 +2902,64 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   </div>
                   <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
                   <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
-                  <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"1px 4px", marginTop:2, lineHeight:1.4 }}
-                    onClick={e => { e.stopPropagation(); onDeleteCat(c.id); }}>✕</button>
+                  {/* Badge lien */}
+                  {linkedTo && (
+                    <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700 }}>
+                      🔗 {linkedTo.icon}
+                    </span>
+                  )}
+                  <div style={{ display:"flex", gap:2, marginTop:2 }}>
+                    {/* Bouton lier */}
+                    <button style={{ fontSize:".6rem", padding:"1px 4px", background:"var(--accent-glow)", border:"none", borderRadius:4, color:"var(--accent)", cursor:"pointer", lineHeight:1.4 }}
+                      onClick={e => { e.stopPropagation(); setLinkingId(linkingId===c.id ? null : c.id); }}>
+                      🔗
+                    </button>
+                    <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"1px 4px", lineHeight:1.4 }}
+                      onClick={e => { e.stopPropagation(); onDeleteCat(c.id); }}>✕</button>
+                  </div>
                 </div>
               );
             })
         }
       </div>
+
+      {/* Picker de liage */}
+      {linkingId && (() => {
+        const linkSrc = data.categories.find(c => c.id === linkingId);
+        return (
+          <div style={{ background:"var(--surface)", border:"1.5px solid var(--accent)", borderRadius:"var(--radius-sm)", padding:12, marginTop:8 }}>
+            <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--accent)", marginBottom:6 }}>
+              🔗 Lier <strong>{linkSrc?.icon} {linkSrc?.name}</strong> à une catégorie de déduction
+            </div>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", marginBottom:8 }}>
+              Les revenus de cette catégorie seront déduits de la catégorie cible dans les calculs de coût net.
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+              <div
+                onClick={() => { onEditCat({ id: linkingId, linkedToId: null }); setLinkingId(null); }}
+                style={{ padding:"7px 10px", background: !linkSrc?.linkedToId ? "var(--accent-glow)" : "var(--surface2)", border:`1px solid ${!linkSrc?.linkedToId ? "var(--accent)" : "var(--border)"}`, borderRadius:8, cursor:"pointer", fontSize:".68rem", color:"var(--text2)" }}>
+                ∅ Aucun lien (réinitialiser)
+              </div>
+              {data.categories.filter(c => c.id !== linkingId).map(c => (
+                <div key={c.id}
+                  onClick={() => { onEditCat({ id: linkingId, linkedToId: c.id }); setLinkingId(null); }}
+                  style={{
+                    padding:"7px 10px", cursor:"pointer", borderRadius:8, fontSize:".72rem", fontWeight:600,
+                    background: linkSrc?.linkedToId === c.id ? "rgba(104,212,152,.1)" : "var(--surface2)",
+                    border:`1px solid ${linkSrc?.linkedToId === c.id ? "var(--success)" : "var(--border)"}`,
+                    color: linkSrc?.linkedToId === c.id ? "var(--success)" : "var(--text)",
+                  }}>
+                  {c.icon} {c.name}
+                  {linkSrc?.linkedToId === c.id && <span style={{ marginLeft:6, fontSize:".6rem" }}>✓ Lié</span>}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setLinkingId(null)} style={{ width:"100%", marginTop:8, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px", color:"var(--text3)", fontSize:".68rem", cursor:"pointer" }}>
+              Annuler
+            </button>
+          </div>
+        );
+      })()}
       <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
 
       <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>

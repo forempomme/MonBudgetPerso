@@ -425,7 +425,15 @@ export default function App() {
     ),
     options: (
       <OptionsView data={data}
-        onEditCat={id  => { const c = data.categories.find(x => x.id === id); setCatModal(c ?? {}); }}
+        onEditCat={idOrObj => {
+          // Si c'est un objet avec id → sauvegarde directe (ex: mise à jour du linkedToId)
+          if (idOrObj && typeof idOrObj === "object" && idOrObj.id) {
+            dispatch({ type: A.SAVE_CATEGORY, cat: idOrObj });
+          } else {
+            const c = data.categories.find(x => x.id === idOrObj);
+            setCatModal(c ?? {});
+          }
+        }}
         onDeleteCat={deleteCat}
         onNewCat={()   => setCatModal({})}
         onExport={handleExport}
