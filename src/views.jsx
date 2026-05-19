@@ -279,28 +279,33 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
 
-    // Transactions (toutes périodes)
-    transactions.filter(t => isPointable(t.type)).forEach(t => {
+    // Transactions normales — exclure les fromFixedId (comptés dans la boucle frais fixes)
+    transactions.filter(t => isPointable(t.type) && !t.fromFixedId).forEach(t => {
       const a = parseFloat(t.amount) || 0;
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });
 
-    // Frais fixes — un état de pointage par mois
+    // Frais fixes — utiliser la transaction générée si elle existe, sinon pointedMonths
     allMonths.forEach(ym => {
       fixedExpenses.forEach(f => {
+        const generatedTx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
         const ov = f.monthlyOverrides?.[ym];
         const a  = (ov?.amount ?? f.amount) || 0;
-        if (f.pointedMonths?.[ym]) ptExp   += a;
-        else                       noPtExp += a;
+        const pointed = generatedTx ? !!generatedTx.pointed : !!f.pointedMonths?.[ym];
+        if (pointed) ptExp   += a;
+        else         noPtExp += a;
       });
     });
 
-    const pointableTxs = transactions.filter(t => isPointable(t.type));
+    const pointableTxs = transactions.filter(t => isPointable(t.type) && !t.fromFixedId);
     const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
     const nbPtFix = allMonths.reduce((n, ym) =>
-      n + fixedExpenses.filter(f => f.pointedMonths?.[ym]).length, 0);
+      n + fixedExpenses.filter(f => {
+        const tx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
+        return tx ? !!tx.pointed : !!f.pointedMonths?.[ym];
+      }).length, 0);
     const totalFix = allMonths.length * fixedExpenses.length;
 
     return {
@@ -897,7 +902,10 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
   // Rapprochement du mois affiché
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
-    const txMonth = transactions.filter(t => t.date.startsWith(month) && isPointable(t.type));
+    // Transactions normales du mois (exclure les fromFixedId → comptés via frais fixes)
+    const txMonth = transactions.filter(t =>
+      t.date.startsWith(month) && isPointable(t.type) && !t.fromFixedId
+    );
     let pt = 0, noPt = 0;
     txMonth.forEach(t => {
       const a = parseFloat(t.amount) || 0;
@@ -905,17 +913,23 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
       if (t.pointed) pt   += val;
       else           noPt += val;
     });
+    // Frais fixes — utiliser la transaction générée si elle existe
     monthFixes.forEach(f => {
+      const generatedTx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === month);
       const ov = f.monthlyOverrides?.[month];
       const a  = (ov?.amount ?? f.amount) || 0;
-      const isPointed = !!f.pointedMonths?.[month];
-      if (isPointed) pt   -= a;
-      else           noPt -= a;
+      const pointed = generatedTx ? !!generatedTx.pointed : !!f.pointedMonths?.[month];
+      if (pointed) pt   -= a;
+      else         noPt -= a;
     });
+    const nbPtFix = monthFixes.filter(f => {
+      const tx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === month);
+      return tx ? !!tx.pointed : !!f.pointedMonths?.[month];
+    }).length;
     return {
       soldePointe:    pt,
       soldeAttente:   noPt,
-      nbPointed:      txMonth.filter(t => t.pointed).length + monthFixes.filter(f => f.pointedMonths?.[month]).length,
+      nbPointed:      txMonth.filter(t => t.pointed).length + nbPtFix,
       totalPointable: txMonth.length + monthFixes.length,
     };
   }, [transactions, fixedExpenses, month, monthFixes]);
@@ -942,8 +956,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
-    if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
-    if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
+    if (pointFilter === "pointed")   list = list.filter(t => !t.fromFixedId && isPointable(t.type) &&  t.pointed);
+    if (pointFilter === "unpointed") list = list.filter(t => !t.fromFixedId && isPointable(t.type) && !t.pointed);
     if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
@@ -1403,8 +1417,8 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
-        {/* Bouton pointage — masqué pour decagnottage et transfer */}
-        {onTogglePoint && isPointable(t.type) && (
+        {/* Bouton pointage — masqué pour decagnottage, transfer ET frais fixes (gérés via section dédiée) */}
+        {onTogglePoint && isPointable(t.type) && !t.fromFixedId && (
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
