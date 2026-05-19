@@ -2691,9 +2691,49 @@ function AnalysteLocal({ data, currentYear, months }) {
 // ─────────────────────────────────────────────────────────────────
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
+// Formulaire d'ajout de liaison — composant séparé pour son propre état
+function LinkForm({ categories, onLink }) {
+  const [srcId, setSrcId] = useState("");
+  const [dstId, setDstId] = useState("");
+  const canLink = srcId && dstId && srcId !== dstId;
+  function doLink() {
+    if (!canLink) return;
+    onLink({ id: srcId, linkedToId: dstId });
+    setSrcId(""); setDstId("");
+  }
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:7, borderTop:"1px solid var(--border-soft)", paddingTop:10 }}>
+      <select value={srcId} onChange={e => setSrcId(e.target.value)}
+        style={{ background:"var(--bg)", border:`1px solid ${srcId ? "var(--accent)" : "var(--border)"}`, borderRadius:8, padding:"10px 12px", color:"var(--text)", fontSize:".78rem" }}>
+        <option value="">↩ Source (remboursement / partage…)</option>
+        {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+      </select>
+      <select value={dstId} onChange={e => setDstId(e.target.value)}
+        style={{ background:"var(--bg)", border:`1px solid ${dstId ? "var(--accent)" : "var(--border)"}`, borderRadius:8, padding:"10px 12px", color:"var(--text)", fontSize:".78rem" }}>
+        <option value="">💸 Cible (catégorie de dépense…)</option>
+        {categories.filter(c => c.id !== srcId).map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+      </select>
+      <button
+        disabled={!canLink}
+        onTouchStart={e => e.stopPropagation()}
+        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); doLink(); }}
+        onClick={doLink}
+        style={{
+          background: canLink ? "var(--accent)" : "var(--surface2)",
+          border:"none", borderRadius:9, padding:"11px",
+          color: canLink ? "var(--bg)" : "var(--text3)",
+          fontWeight:800, fontSize:".78rem",
+          cursor: canLink ? "pointer" : "default",
+          touchAction:"manipulation",
+        }}>
+        🔗 Créer la liaison
+      </button>
+    </div>
+  );
+}
+
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings }) {
   const [catFilter,   setCatFilter]   = useState("all");
-  const [linkingId,   setLinkingId]   = useState(null); // catId en cours de liage
   const [alertOn,     setAlertOn]     = useState(alertEnabled);
   const [thresh,      setThresh]      = useState(String(alertThreshold));
 
@@ -2902,65 +2942,61 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   </div>
                   <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
                   <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
-                  {/* Badge lien */}
+                  {/* Badge lien — informatif uniquement */}
                   {linkedTo && (
-                    <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700 }}>
-                      🔗 {linkedTo.icon}
+                    <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>
+                      🔗
                     </span>
                   )}
-                  <div style={{ display:"flex", gap:2, marginTop:2 }}>
-                    {/* Bouton lier */}
-                    <button style={{ fontSize:".6rem", padding:"1px 4px", background:"var(--accent-glow)", border:"none", borderRadius:4, color:"var(--accent)", cursor:"pointer", lineHeight:1.4 }}
-                      onClick={e => { e.stopPropagation(); setLinkingId(linkingId===c.id ? null : c.id); }}>
-                      🔗
-                    </button>
-                    <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"1px 4px", lineHeight:1.4 }}
-                      onClick={e => { e.stopPropagation(); onDeleteCat(c.id); }}>✕</button>
-                  </div>
+                  <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"2px 6px", marginTop:2, lineHeight:1.4, minWidth:24, minHeight:24 }}
+                    onTouchStart={e => e.stopPropagation()}
+                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onDeleteCat(c.id); }}
+                    onClick={e => e.stopPropagation()}>✕</button>
                 </div>
               );
             })
         }
       </div>
 
-      {/* Picker de liage */}
-      {linkingId && (() => {
-        const linkSrc = data.categories.find(c => c.id === linkingId);
-        return (
-          <div style={{ background:"var(--surface)", border:"1.5px solid var(--accent)", borderRadius:"var(--radius-sm)", padding:12, marginTop:8 }}>
-            <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--accent)", marginBottom:6 }}>
-              🔗 Lier <strong>{linkSrc?.icon} {linkSrc?.name}</strong> à une catégorie de déduction
-            </div>
-            <div style={{ fontSize:".6rem", color:"var(--text3)", marginBottom:8 }}>
-              Les revenus de cette catégorie seront déduits de la catégorie cible dans les calculs de coût net.
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
-              <div
-                onClick={() => { onEditCat({ id: linkingId, linkedToId: null }); setLinkingId(null); }}
-                style={{ padding:"7px 10px", background: !linkSrc?.linkedToId ? "var(--accent-glow)" : "var(--surface2)", border:`1px solid ${!linkSrc?.linkedToId ? "var(--accent)" : "var(--border)"}`, borderRadius:8, cursor:"pointer", fontSize:".68rem", color:"var(--text2)" }}>
-                ∅ Aucun lien (réinitialiser)
-              </div>
-              {data.categories.filter(c => c.id !== linkingId).map(c => (
-                <div key={c.id}
-                  onClick={() => { onEditCat({ id: linkingId, linkedToId: c.id }); setLinkingId(null); }}
-                  style={{
-                    padding:"7px 10px", cursor:"pointer", borderRadius:8, fontSize:".72rem", fontWeight:600,
-                    background: linkSrc?.linkedToId === c.id ? "rgba(104,212,152,.1)" : "var(--surface2)",
-                    border:`1px solid ${linkSrc?.linkedToId === c.id ? "var(--success)" : "var(--border)"}`,
-                    color: linkSrc?.linkedToId === c.id ? "var(--success)" : "var(--text)",
-                  }}>
-                  {c.icon} {c.name}
-                  {linkSrc?.linkedToId === c.id && <span style={{ marginLeft:6, fontSize:".6rem" }}>✓ Lié</span>}
-                </div>
-              ))}
-            </div>
-            <button onClick={() => setLinkingId(null)} style={{ width:"100%", marginTop:8, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px", color:"var(--text3)", fontSize:".68rem", cursor:"pointer" }}>
-              Annuler
-            </button>
-          </div>
-        );
-      })()}
       <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
+
+      {/* ── Section liaisons ── */}
+      <div style={{ marginTop:16 }}>
+        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:8 }}>🔗 Liaisons de catégories</div>
+        <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-sm)", padding:12 }}>
+          <div style={{ fontSize:".62rem", color:"var(--text3)", marginBottom:10, lineHeight:1.5 }}>
+            Lie une catégorie de remboursement à une catégorie de dépense. Les revenus de la source seront déduits du coût net de la cible.
+          </div>
+
+          {/* Liens existants */}
+          {data.categories.filter(c => c.linkedToId).map(c => {
+            const target = data.categories.find(x => x.id === c.linkedToId);
+            if (!target) return null;
+            return (
+              <div key={c.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"rgba(104,212,152,.06)", border:"1px solid rgba(104,212,152,.2)", borderRadius:8, marginBottom:6 }}>
+                <span style={{ fontSize:".85rem" }}>{c.icon}</span>
+                <span style={{ fontSize:".72rem", fontWeight:700, flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</span>
+                <span style={{ fontSize:".7rem", color:"var(--text3)", flexShrink:0 }}>→</span>
+                <span style={{ fontSize:".85rem" }}>{target.icon}</span>
+                <span style={{ fontSize:".72rem", fontWeight:700, color:"var(--success)", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{target.name}</span>
+                <button
+                  onTouchStart={e => e.stopPropagation()}
+                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onEditCat({ id:c.id, linkedToId:null }); }}
+                  onClick={e => { e.stopPropagation(); onEditCat({ id:c.id, linkedToId:null }); }}
+                  style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"6px 10px", color:"var(--text3)", fontSize:".75rem", cursor:"pointer", minHeight:34, touchAction:"manipulation", flexShrink:0 }}>
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+          {data.categories.filter(c => c.linkedToId).length === 0 && (
+            <div style={{ fontSize:".65rem", color:"var(--text3)", fontStyle:"italic", textAlign:"center", padding:"6px 0 10px" }}>Aucune liaison définie</div>
+          )}
+
+          {/* Ajouter un lien */}
+          <LinkForm categories={data.categories} onLink={onEditCat} />
+        </div>
+      </div>
 
       <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>
         ⚠️ Réinitialiser toutes les données
