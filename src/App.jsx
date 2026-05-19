@@ -35,7 +35,37 @@ const PAGE_TITLES = Object.fromEntries(
 function loadState() {
   try {
     const s = localStorage.getItem(LS_KEY);
-    return s ? { ...DEFAULT_DATA, ...JSON.parse(s) } : DEFAULT_DATA;
+    const state = s ? { ...DEFAULT_DATA, ...JSON.parse(s) } : { ...DEFAULT_DATA };
+
+    // ── Migration : créer les transactions des frais fixes déjà pointés ──
+    const alreadyGenerated = new Set(
+      (state.transactions || [])
+        .filter(t => t.fromFixedId && t.fromFixedYM)
+        .map(t => `${t.fromFixedId}:${t.fromFixedYM}`)
+    );
+    const newTxs = [];
+    (state.fixedExpenses || []).forEach(f => {
+      Object.entries(f.pointedMonths || {}).forEach(([ym, pointed]) => {
+        if (!pointed) return;
+        if (alreadyGenerated.has(`${f.id}:${ym}`)) return;
+        const ov = f.monthlyOverrides?.[ym];
+        newTxs.push({
+          id: `ftx_${f.id}_${ym}`, // id déterministe → idempotent
+          type: "expense",
+          amount: ov?.amount ?? f.amount,
+          date: `${ym}-01`,
+          categoryId: f.categoryId || null,
+          note: ov?.name ?? f.name,
+          fromFixedId: f.id,
+          fromFixedYM: ym,
+        });
+      });
+    });
+    if (newTxs.length > 0) {
+      state.transactions = [...(state.transactions || []), ...newTxs];
+    }
+
+    return state;
   } catch {
     return DEFAULT_DATA;
   }
