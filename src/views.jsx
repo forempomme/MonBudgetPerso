@@ -279,33 +279,28 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
 
-    // Transactions normales — exclure les fromFixedId (comptés dans la boucle frais fixes)
-    transactions.filter(t => isPointable(t.type) && !t.fromFixedId).forEach(t => {
+    // Transactions (toutes périodes)
+    transactions.filter(t => isPointable(t.type)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });
 
-    // Frais fixes — utiliser la transaction générée si elle existe, sinon pointedMonths
+    // Frais fixes — un état de pointage par mois
     allMonths.forEach(ym => {
       fixedExpenses.forEach(f => {
-        const generatedTx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
         const ov = f.monthlyOverrides?.[ym];
         const a  = (ov?.amount ?? f.amount) || 0;
-        const pointed = generatedTx ? !!generatedTx.pointed : !!f.pointedMonths?.[ym];
-        if (pointed) ptExp   += a;
-        else         noPtExp += a;
+        if (f.pointedMonths?.[ym]) ptExp   += a;
+        else                       noPtExp += a;
       });
     });
 
-    const pointableTxs = transactions.filter(t => isPointable(t.type) && !t.fromFixedId);
+    const pointableTxs = transactions.filter(t => isPointable(t.type));
     const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
     const nbPtFix = allMonths.reduce((n, ym) =>
-      n + fixedExpenses.filter(f => {
-        const tx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
-        return tx ? !!tx.pointed : !!f.pointedMonths?.[ym];
-      }).length, 0);
+      n + fixedExpenses.filter(f => f.pointedMonths?.[ym]).length, 0);
     const totalFix = allMonths.length * fixedExpenses.length;
 
     return {
@@ -902,10 +897,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
   // Rapprochement du mois affiché
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
-    // Transactions normales du mois (exclure les fromFixedId → comptés via frais fixes)
-    const txMonth = transactions.filter(t =>
-      t.date.startsWith(month) && isPointable(t.type) && !t.fromFixedId
-    );
+    const txMonth = transactions.filter(t => t.date.startsWith(month) && isPointable(t.type));
     let pt = 0, noPt = 0;
     txMonth.forEach(t => {
       const a = parseFloat(t.amount) || 0;
@@ -913,23 +905,17 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
       if (t.pointed) pt   += val;
       else           noPt += val;
     });
-    // Frais fixes — utiliser la transaction générée si elle existe
     monthFixes.forEach(f => {
-      const generatedTx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === month);
       const ov = f.monthlyOverrides?.[month];
       const a  = (ov?.amount ?? f.amount) || 0;
-      const pointed = generatedTx ? !!generatedTx.pointed : !!f.pointedMonths?.[month];
-      if (pointed) pt   -= a;
-      else         noPt -= a;
+      const isPointed = !!f.pointedMonths?.[month];
+      if (isPointed) pt   -= a;
+      else           noPt -= a;
     });
-    const nbPtFix = monthFixes.filter(f => {
-      const tx = transactions.find(t => t.fromFixedId === f.id && t.fromFixedYM === month);
-      return tx ? !!tx.pointed : !!f.pointedMonths?.[month];
-    }).length;
     return {
       soldePointe:    pt,
       soldeAttente:   noPt,
-      nbPointed:      txMonth.filter(t => t.pointed).length + nbPtFix,
+      nbPointed:      txMonth.filter(t => t.pointed).length + monthFixes.filter(f => f.pointedMonths?.[month]).length,
       totalPointable: txMonth.length + monthFixes.length,
     };
   }, [transactions, fixedExpenses, month, monthFixes]);
@@ -956,8 +942,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
-    if (pointFilter === "pointed")   list = list.filter(t => !t.fromFixedId && isPointable(t.type) &&  t.pointed);
-    if (pointFilter === "unpointed") list = list.filter(t => !t.fromFixedId && isPointable(t.type) && !t.pointed);
+    if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
+    if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
     if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
@@ -1375,10 +1361,10 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
 
   return (
     <div style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid var(--border-soft)" }}>
-      {/* Actions cachées — ✏️ 📋 🗑️ (✏️ désactivé pour les transactions de frais fixes) */}
+      {/* Actions cachées — ✏️ 📋 🗑️ */}
       <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex" }}>
-        <div onClick={() => { if (!t.fromFixedId) { setOffset(0); setRevealed(false); onEdit?.(t.id); } }}
-          style={{ width: 55, height: "100%", background: t.fromFixedId ? "rgba(56,80,96,.2)" : "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: t.fromFixedId ? "default" : "pointer", opacity: t.fromFixedId ? .35 : 1 }}>✏️</div>
+        <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
+          style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
         <div onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }}
           style={{ width: 55, height: "100%", background: "rgba(104,212,152,.2)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer" }}>
           <span style={{ fontSize: "1rem" }}>📋</span>
@@ -1417,8 +1403,8 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
-        {/* Bouton pointage — masqué pour decagnottage, transfer ET frais fixes (gérés via section dédiée) */}
-        {onTogglePoint && isPointable(t.type) && !t.fromFixedId && (
+        {/* Bouton pointage — masqué pour decagnottage et transfer */}
+        {onTogglePoint && isPointable(t.type) && (
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
@@ -1439,12 +1425,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           {icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
-            {t.fromFixedId && (
-              <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>📌 FIXE</span>
-            )}
-          </div>
+          <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</div>
         </div>
         <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
@@ -2033,7 +2014,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   // Catégories liées à celle sélectionnée
   const linkedCats = categories.filter(c => c.linkedToId === selCatId);
 
-  // 6 derniers mois de stats pour cette catégorie
+  // 6 derniers mois de stats pour cette catégorie (transactions + frais fixes)
   const monthStats = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
       const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
@@ -2041,19 +2022,42 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
       const exp = transactions
         .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+      // Frais fixes de cette catégorie pour ce mois
+      const fixExp = fixedExpenses
+        .filter(f => f.categoryId === selCatId)
+        .reduce((s, f) => {
+          const ov = f.monthlyOverrides?.[ym];
+          return s + ((ov?.amount ?? f.amount) || 0);
+        }, 0);
       const inc = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
-      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp, inc, net: Math.max(0, exp - inc) };
+      const total = exp + fixExp;
+      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp: total, fixExp, inc, net: Math.max(0, total - inc) };
     });
-  }, [selCatId, transactions, categories]);
+  }, [selCatId, transactions, fixedExpenses, categories]);
 
-  // Totaux année
+  // Totaux année (transactions + frais fixes de la catégorie)
   const yearStr = now.getFullYear().toString();
   const yearExp = transactions
     .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && t.categoryId === selCatId)
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  // Frais fixes de la catégorie × mois écoulés cette année
+  const monthsThisYear = now.getMonth() + 1;
+  const yearFixExp = fixedExpenses
+    .filter(f => f.categoryId === selCatId)
+    .reduce((s, f) => {
+      // Sommer les montants effectifs pour chaque mois de l'année
+      let total = 0;
+      for (let m = 1; m <= monthsThisYear; m++) {
+        const ym = `${yearStr}-${String(m).padStart(2,"0")}`;
+        const ov = f.monthlyOverrides?.[ym];
+        total += (ov?.amount ?? f.amount) || 0;
+      }
+      return s + total;
+    }, 0);
   const yearInc = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
-  const yearNet = Math.max(0, yearExp - yearInc);
-  const txCount = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+  const yearTotal = yearExp + yearFixExp;
+  const yearNet   = Math.max(0, yearTotal - yearInc);
+  const txCount   = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
 
   // Top 5 transactions récentes
   const recent = [...transactions]
@@ -2091,11 +2095,11 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
           )}
 
           {/* Totaux année */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: yearFixExp > 0 ? 6 : 14 }}>
             {[
-              { l: "💸 Dépensé", v: yearExp, c: "var(--danger)" },
-              { l: "↩ Récupéré", v: yearInc, c: "var(--success)", hidden: yearInc === 0 },
-              { l: "📊 Net",     v: yearNet, c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
+              { l: "💸 Dépensé", v: yearTotal, c: "var(--danger)" },
+              { l: "↩ Récupéré", v: yearInc,   c: "var(--success)", hidden: yearInc === 0 },
+              { l: "📊 Net",     v: yearNet,    c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
             ].map(s => (
               <div key={s.l} style={{ background: "var(--surface2)", borderRadius: 9, padding: "8px 10px", opacity: s.hidden ? .35 : 1 }}>
                 <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 3 }}>{s.l}</div>
@@ -2103,8 +2107,13 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
               </div>
             ))}
           </div>
+          {yearFixExp > 0 && (
+            <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 10, padding: "4px 8px", background: "var(--warning-glow)", borderRadius: 6 }}>
+              📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsThisYear} mois × {fmt(fixedExpenses.filter(f=>f.categoryId===selCatId).reduce((s,f)=>s+(f.amount||0),0))})
+            </div>
+          )}
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 12 }}>
-            {txCount} opération{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearExp / Math.max(monthStats.filter(m=>m.exp>0).length, 1))}/mois dépensé
+            {txCount} transaction{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearTotal / Math.max(monthsThisYear, 1))}/mois
           </div>
 
           {/* Barres 6 mois */}
