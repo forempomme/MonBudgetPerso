@@ -68,7 +68,6 @@ export const A = /** @type {const} */ ({
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
   SAVE_ALERT_SETTINGS: "SAVE_ALERT_SETTINGS",
-  SAVE_REF_BALANCE:    "SAVE_REF_BALANCE",
   IMPORT_DATA:         "IMPORT_DATA",
   RESET:               "RESET",
 });
@@ -92,8 +91,6 @@ export const DEFAULT_DATA = {
   recurringTemplates: [],
   alertEnabled:   false,
   alertThreshold: 500,
-  refBalance:     null,  // solde bancaire de référence (number | null)
-  refDate:        null,  // date ISO "YYYY-MM-DD" de la référence
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -342,9 +339,6 @@ export function reducer(state, action) {
 
     case A.SAVE_ALERT_SETTINGS:
       return { ...state, alertEnabled: action.enabled, alertThreshold: action.threshold };
-
-    case A.SAVE_REF_BALANCE:
-      return { ...state, refBalance: action.refBalance, refDate: action.refDate };
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };

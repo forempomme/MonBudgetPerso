@@ -246,14 +246,14 @@ function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaC
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
 // ─────────────────────────────────────────────────────────────────
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, refBalance, refDate }) {
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold }) {
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
   const prevM     = getPrevMonth(curM);
   const curY      = new Date().getFullYear().toString();
 
-  const balance   = useBalance(transactions, fixedExpenses, refBalance ?? null, refDate ?? null);
+  const balance   = useBalance(transactions, fixedExpenses);
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
   const prevMonth = useMonthStats(transactions, fixedExpenses, prevM);
   const tf        = useTotalFixes(fixedExpenses);
@@ -413,13 +413,6 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           <div className="hero-value" style={{ color: balanceColor }}>
             <CountUp target={balance} color={balanceColor} duration={1000} />
           </div>
-          {refBalance !== null && refDate && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", background: "rgba(112,184,224,.12)", border: "1px solid rgba(112,184,224,.2)", borderRadius: 20, marginTop: 4, marginBottom: 2 }}>
-              <span style={{ fontSize: ".58rem", color: "var(--accent)" }}>
-                📍 Ancré au {new Date(refDate + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · {fmt(refBalance)}
-              </span>
-            </div>
-          )}
           {provTotal > 0 && (
             <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
@@ -2796,13 +2789,10 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, refBalance = null, refDate = null, onSaveRefBalance }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings }) {
   const [catFilter,   setCatFilter]   = useState("all");
   const [alertOn,     setAlertOn]     = useState(alertEnabled);
   const [thresh,      setThresh]      = useState(String(alertThreshold));
-  const [refAmt,      setRefAmt]      = useState(refBalance !== null ? String(refBalance) : "");
-  const [refDt,       setRefDt]       = useState(refDate || new Date().toISOString().slice(0, 10));
-  const [refSaved,    setRefSaved]    = useState(refBalance !== null);
 
   function saveAlert(enabled, value) {
     const t = parseFloat(value) || 0;
@@ -2840,52 +2830,6 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
   return (
     <div>
-
-      {/* ── Solde de référence ── */}
-      <div className="card" style={{ borderLeft: `3px solid ${refSaved ? "var(--accent)" : "var(--border)"}`, marginBottom: 14 }}>
-        <div style={{ fontSize: ".65rem", fontWeight: 800, color: refSaved ? "var(--accent)" : "var(--text2)", marginBottom: 10 }}>
-          📍 Solde bancaire de référence
-        </div>
-        {!refSaved ? (<>
-          <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginBottom: 10 }}>
-            Ancre le calcul à ton vrai solde bancaire. Idéalement relevé <strong>après</strong> que les prélèvements fixes du mois soient effectués.
-          </div>
-          <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5 }}>Date</div>
-            <input type="date" value={refDt} onChange={e => setRefDt(e.target.value)}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 9, padding: "9px 12px", color: "var(--text)", fontSize: ".82rem", boxSizing: "border-box" }} />
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5 }}>Solde réel (€)</div>
-            <input type="number" value={refAmt} step="0.01" placeholder="Ex : 3240.00"
-              onChange={e => setRefAmt(e.target.value)}
-              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 9, padding: "9px 12px", color: "var(--text)", fontSize: ".95rem", fontFamily: "var(--mono)", boxSizing: "border-box" }} />
-          </div>
-          <button
-            disabled={!refAmt || !refDt}
-            onClick={() => { const v = parseFloat(refAmt); if (!isNaN(v)) { onSaveRefBalance?.(v, refDt); setRefSaved(true); } }}
-            style={{ width: "100%", background: refAmt && refDt ? "var(--accent)" : "var(--surface2)", border: "none", borderRadius: 9, padding: "10px", color: refAmt && refDt ? "var(--bg)" : "var(--text3)", fontWeight: 800, fontSize: ".78rem", cursor: refAmt && refDt ? "pointer" : "default", touchAction: "manipulation" }}>
-            Enregistrer la référence
-          </button>
-        </>) : (
-          <div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem" }}>
-                <span style={{ color: "var(--text2)" }}>Date</span>
-                <span style={{ fontWeight: 700 }}>{new Date(refDt + "T12:00:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem" }}>
-                <span style={{ color: "var(--text2)" }}>Solde ancré</span>
-                <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--accent)" }}>{fmt(parseFloat(refAmt))}</span>
-              </div>
-            </div>
-            <button onClick={() => setRefSaved(false)}
-              style={{ width: "100%", background: "transparent", border: "1px solid var(--border)", borderRadius: 9, padding: "8px", color: "var(--text2)", fontSize: ".7rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation" }}>
-              ✏️ Modifier la référence
-            </button>
-          </div>
-        )}
-      </div>
 
       {/* ── Alerte solde bas ── */}
       <div className="card" style={{ borderLeft: `3px solid ${alertOn ? "var(--warning)" : "var(--border)"}`, marginBottom: 14 }}>
