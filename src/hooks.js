@@ -56,11 +56,7 @@ export function useMonthStats(transactions, fixedExpenses, ym) {
         else if (t.type === "decagnottage") decag += a;
       });
 
-    const hasGeneratedTx = (f) =>
-      transactions.some(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
-    const fixContrib = isCur
-      ? fixedExpenses.reduce((s, f) => hasGeneratedTx(f) ? s : s + ((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), 0)
-      : 0;
+    const fixContrib = isCur ? effectiveFixesForMonth(fixedExpenses, ym) : 0;
     exp += fixContrib;
 
     return {
@@ -98,10 +94,7 @@ export function useYearMonths(transactions, fixedExpenses, year) {
       });
 
       if (isCurYear && i === curMonth) {
-        fixedExpenses.forEach(f => {
-          const hasGeneratedTx = transactions.some(t => t.fromFixedId === f.id && t.fromFixedYM === mStr);
-          if (!hasGeneratedTx) exp += (f.monthlyOverrides?.[mStr]?.amount ?? f.amount) || 0;
-        });
+        exp += effectiveFixesForMonth(fixedExpenses, mStr);
       }
 
       return { inc, exp, sav, net: inc - exp, label: MONTHS_SHORT[i], mini: MONTHS_MINI[i], idx: i };
@@ -122,26 +115,17 @@ export function useBalance(transactions, fixedExpenses) {
       else if (t.type === "epargne") bal -= a;
     });
 
-    // Déduit les frais fixes uniquement pour les mois sans transaction générée
     if (transactions.length > 0) {
-      const earliest = transactions
-        .filter(t => !t.fromFixedId) // ignorer les tx de frais fixes pour le startYM
-        .reduce((min, t) => (t.date < min ? t.date : min), transactions.find(t => !t.fromFixedId)?.date || "9999-99");
+      const earliest = transactions.reduce(
+        (min, t) => (t.date < min ? t.date : min),
+        transactions[0].date
+      );
       const startYM = earliest.slice(0, 7);
-      if (startYM !== "9999-99") {
-        const now  = new Date();
-        const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-        monthRange(startYM, endYM).forEach(ym => {
-          fixedExpenses.forEach(f => {
-            // Ne déduire que si la transaction n'a pas déjà été créée
-            const hasGeneratedTx = transactions.some(t => t.fromFixedId === f.id && t.fromFixedYM === ym);
-            if (!hasGeneratedTx) {
-              const ov = f.monthlyOverrides?.[ym];
-              bal -= (ov?.amount ?? f.amount) || 0;
-            }
-          });
-        });
-      }
+      const now = new Date();
+      const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      monthRange(startYM, endYM).forEach(ym => {
+        bal -= effectiveFixesForMonth(fixedExpenses, ym);
+      });
     } else {
       bal -= effectiveFixesForMonth(fixedExpenses, currentYM());
     }
@@ -190,10 +174,7 @@ export function useYearTotals(transactions, fixedExpenses, year) {
     });
     if (isCur) {
       const curM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      fixedExpenses.forEach(f => {
-        const hasGeneratedTx = transactions.some(t => t.fromFixedId === f.id && t.fromFixedYM === curM);
-        if (!hasGeneratedTx) exp += (f.monthlyOverrides?.[curM]?.amount ?? f.amount) || 0;
-      });
+      exp += effectiveFixesForMonth(fixedExpenses, curM);
     }
     return { inc, exp, sav };
   }, [transactions, fixedExpenses, year]);
