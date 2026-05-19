@@ -334,6 +334,7 @@ export function reducer(state, action) {
           amount, date: `${ym}-01`,
           categoryId: f.categoryId || null,
           note, fromFixedId: id, fromFixedYM: ym,
+          pointed: true, // confirmée au moment du pointage
         };
         return {
           ...state,
