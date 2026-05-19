@@ -169,25 +169,11 @@ export function reducer(state, action) {
       };
     }
 
-    case A.DELETE_TRANSACTION: {
-      const tx = state.transactions.find(t => t.id === action.id);
-      // Si c'est une transaction générée depuis un frais fixe, dépointer le mois
-      if (tx?.fromFixedId && tx?.fromFixedYM) {
-        const newFixes = state.fixedExpenses.map(f => {
-          if (f.id !== tx.fromFixedId) return f;
-          const pm = { ...(f.pointedMonths || {}) };
-          pm[tx.fromFixedYM] = false;
-          return { ...f, pointedMonths: pm };
-        });
-        return {
-          ...state,
-          transactions:  state.transactions.filter(t => t.id !== action.id),
-          fixedExpenses: newFixes,
-        };
-      }
-      return { ...state, transactions: state.transactions.filter(t => t.id !== action.id) };
-    }
-
+    case A.DELETE_TRANSACTION:
+      return {
+        ...state,
+        transactions: state.transactions.filter(t => t.id !== action.id),
+      };
     // ── Cagnottes ─────────────────────────────────────────────────
     case A.SAVE_CAGNOTTE: {
       const { cag } = action;
@@ -313,45 +299,16 @@ export function reducer(state, action) {
         ),
       };
 
-    case A.TOGGLE_POINT_FIX: {
-      const { id, ym } = action;
-      const f = state.fixedExpenses.find(x => x.id === id);
-      if (!f) return state;
-
-      const currentlyPointed = !!(f.pointedMonths?.[ym]);
-      const pointedMonths = { ...(f.pointedMonths || {}), [ym]: !currentlyPointed };
-      const newFixes = state.fixedExpenses.map(x =>
-        x.id === id ? { ...x, pointedMonths } : x
-      );
-
-      if (!currentlyPointed) {
-        // ── Pointer → créer la transaction ────────────────────────
-        const ov     = f.monthlyOverrides?.[ym];
-        const amount = ov?.amount ?? f.amount;
-        const note   = ov?.name   ?? f.name;
-        const newTx  = {
-          id: uid("ftx"), type: "expense",
-          amount, date: `${ym}-01`,
-          categoryId: f.categoryId || null,
-          note, fromFixedId: id, fromFixedYM: ym,
-          pointed: true, // confirmée au moment du pointage
-        };
-        return {
-          ...state,
-          fixedExpenses: newFixes,
-          transactions:  [...state.transactions, newTx],
-        };
-      } else {
-        // ── Dépointer → supprimer la transaction ──────────────────
-        return {
-          ...state,
-          fixedExpenses: newFixes,
-          transactions: state.transactions.filter(
-            t => !(t.fromFixedId === id && t.fromFixedYM === ym)
-          ),
-        };
-      }
-    }
+    case A.TOGGLE_POINT_FIX:
+      return {
+        ...state,
+        fixedExpenses: state.fixedExpenses.map(f => {
+          if (f.id !== action.id) return f;
+          const pointedMonths = { ...(f.pointedMonths || {}) };
+          pointedMonths[action.ym] = !pointedMonths[action.ym];
+          return { ...f, pointedMonths };
+        }),
+      };
 
     case A.OVERRIDE_FIX_MONTH:
       return {
