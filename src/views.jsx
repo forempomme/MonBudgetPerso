@@ -2014,27 +2014,49 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   // Catégories liées à celle sélectionnée
   const linkedCats = categories.filter(c => c.linkedToId === selCatId);
 
-  // 6 derniers mois de stats pour cette catégorie
+  // 6 derniers mois de stats — frais fixes uniquement sur les mois terminés
   const monthStats = useMemo(() => {
+    const curYM = currentYM();
     return Array.from({ length: 6 }, (_, i) => {
-      const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-      const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const exp = transactions
+      const d      = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const ym     = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const isPast = ym <= curYM; // mois courant inclus, futurs exclus
+      const exp    = transactions
         .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-      const inc = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
-      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp, inc, net: Math.max(0, exp - inc) };
+      const fixExp = isPast ? fixedExpenses
+        .filter(f => f.categoryId === selCatId)
+        .reduce((s, f) => { const ov = f.monthlyOverrides?.[ym]; return s + ((ov?.amount ?? f.amount) || 0); }, 0) : 0;
+      const inc    = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
+      const total  = exp + fixExp;
+      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp: total, fixExp, inc, net: Math.max(0, total - inc) };
     });
-  }, [selCatId, transactions, categories]);
+  }, [selCatId, transactions, fixedExpenses, categories]);
 
-  // Totaux année
-  const yearStr = now.getFullYear().toString();
-  const yearExp = transactions
+  // Totaux année — frais fixes sur mois terminés uniquement (pas le mois en cours)
+  const yearStr       = now.getFullYear().toString();
+  const monthsElapsed = now.getMonth() + 1; // jan→mois courant inclus
+  const yearExp    = transactions
     .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && t.categoryId === selCatId)
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  const yearInc = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
-  const yearNet = Math.max(0, yearExp - yearInc);
-  const txCount = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+  const yearFixExp = fixedExpenses
+    .filter(f => f.categoryId === selCatId)
+    .reduce((s, f) => {
+      let total = 0;
+      for (let m = 1; m <= monthsElapsed; m++) {
+        const ym = `${yearStr}-${String(m).padStart(2, "0")}`;
+        const ov = f.monthlyOverrides?.[ym];
+        total += (ov?.amount ?? f.amount) || 0;
+      }
+      return s + total;
+    }, 0);
+  const yearTotal  = yearExp + yearFixExp;
+  const yearInc    = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
+  const yearNet    = Math.max(0, yearTotal - yearInc);
+  const txCount    = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+  const fixBaseAmount = fixedExpenses
+    .filter(f => f.categoryId === selCatId)
+    .reduce((s, f) => s + (f.amount || 0), 0);
 
   // Top 5 transactions récentes
   const recent = [...transactions]
@@ -2072,11 +2094,11 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
           )}
 
           {/* Totaux année */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: yearFixExp > 0 ? 6 : 14 }}>
             {[
-              { l: "💸 Dépensé", v: yearExp, c: "var(--danger)" },
-              { l: "↩ Récupéré", v: yearInc, c: "var(--success)", hidden: yearInc === 0 },
-              { l: "📊 Net",     v: yearNet, c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
+              { l: "💸 Dépensé", v: yearTotal, c: "var(--danger)" },
+              { l: "↩ Récupéré", v: yearInc,   c: "var(--success)", hidden: yearInc === 0 },
+              { l: "📊 Net",     v: yearNet,    c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
             ].map(s => (
               <div key={s.l} style={{ background: "var(--surface2)", borderRadius: 9, padding: "8px 10px", opacity: s.hidden ? .35 : 1 }}>
                 <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 3 }}>{s.l}</div>
@@ -2084,8 +2106,13 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
               </div>
             ))}
           </div>
+          {yearFixExp > 0 && (
+            <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 10, padding: "5px 9px", background: "var(--warning-glow)", borderRadius: 6 }}>
+              📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsElapsed} mois × {fmt(fixBaseAmount)})
+            </div>
+          )}
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 12 }}>
-            {txCount} opération{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearExp / Math.max(monthStats.filter(m=>m.exp>0).length, 1))}/mois dépensé
+            {txCount} transaction{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearTotal / Math.max(monthsElapsed, 1))}/mois
           </div>
 
           {/* Barres 6 mois */}
