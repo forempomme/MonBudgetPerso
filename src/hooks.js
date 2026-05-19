@@ -105,8 +105,40 @@ export function useYearMonths(transactions, fixedExpenses, year) {
 // ─────────────────────────────────────────────────────────────────
 //  Current balance (all-time)
 // ─────────────────────────────────────────────────────────────────
-export function useBalance(transactions, fixedExpenses) {
+export function useBalance(transactions, fixedExpenses, refBalance = null, refDate = null) {
   return useMemo(() => {
+    const now  = new Date();
+    const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    if (refBalance !== null && refDate) {
+      // ── Calcul ancré depuis la référence ────────────────────────
+      let bal = refBalance;
+
+      // Transactions depuis la date de référence
+      transactions
+        .filter(t => t.date >= refDate)
+        .forEach(t => {
+          const a = parseFloat(t.amount) || 0;
+          if (isIncome(t.type))          bal += a;
+          else if (t.type === "expense") bal -= a;
+          else if (t.type === "epargne") bal -= a;
+        });
+
+      // Frais fixes pour les mois STRICTEMENT APRÈS le mois de référence
+      // (le mois de référence est déjà dans le solde réel saisi)
+      const [refY, refM] = refDate.slice(0, 7).split('-').map(Number);
+      let nm = refM + 1, ny = refY;
+      if (nm > 12) { nm = 1; ny++; }
+      const fixStartYM = `${ny}-${String(nm).padStart(2, "0")}`;
+      if (fixStartYM <= endYM) {
+        monthRange(fixStartYM, endYM).forEach(ym => {
+          bal -= effectiveFixesForMonth(fixedExpenses, ym);
+        });
+      }
+      return bal;
+    }
+
+    // ── Calcul classique depuis la première transaction ──────────
     let bal = 0;
     transactions.forEach(t => {
       const a = parseFloat(t.amount) || 0;
@@ -121,8 +153,6 @@ export function useBalance(transactions, fixedExpenses) {
         transactions[0].date
       );
       const startYM = earliest.slice(0, 7);
-      const now = new Date();
-      const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       monthRange(startYM, endYM).forEach(ym => {
         bal -= effectiveFixesForMonth(fixedExpenses, ym);
       });
@@ -131,7 +161,7 @@ export function useBalance(transactions, fixedExpenses) {
     }
 
     return bal;
-  }, [transactions, fixedExpenses]);
+  }, [transactions, fixedExpenses, refBalance, refDate]);
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -80,6 +80,8 @@ export default function App() {
   const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
   const saveAlertSettings  = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
+  const saveRefBalance     = useCallback((refBalance, refDate) =>
+    dispatch({ type: A.SAVE_REF_BALANCE, refBalance, refDate }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -373,6 +375,8 @@ export default function App() {
         onGoToHistorique={goToHistoriqueWithFilter}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
+        refBalance={data.refBalance}
+        refDate={data.refDate}
       />
     ),
     cagnottes: (
@@ -443,6 +447,9 @@ export default function App() {
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
+        refBalance={data.refBalance}
+        refDate={data.refDate}
+        onSaveRefBalance={saveRefBalance}
       />
     ),
   };
