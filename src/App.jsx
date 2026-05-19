@@ -50,7 +50,7 @@ function loadState() {
         if (alreadyGenerated.has(`${f.id}:${ym}`)) return;
         const ov = f.monthlyOverrides?.[ym];
         newTxs.push({
-          id: `ftx_${f.id}_${ym}`, // id déterministe → idempotent
+          id: `ftx_${f.id}_${ym}`,
           type: "expense",
           amount: ov?.amount ?? f.amount,
           date: `${ym}-01`,
@@ -58,6 +58,7 @@ function loadState() {
           note: ov?.name ?? f.name,
           fromFixedId: f.id,
           fromFixedYM: ym,
+          pointed: true,
         });
       });
     });
