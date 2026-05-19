@@ -1,362 +1,573 @@
-import { uid, todayISO } from "./utils.js";
+import { useReducer, useEffect, useState, useCallback, useRef } from "react";
+import "./styles.css";
+import { reducer, DEFAULT_DATA, A } from "./store.js";
+import { LS_KEY, uid, APP_NAME } from "./utils.js";
+import { ToastCtx } from "./context.js";
+import { ToastContainer } from "./components/index.jsx";
+import {
+  TransModal, FixedModal, CagModal, TransferModal, CatModal,
+  ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
+} from "./components/modals.jsx";
+import {
+  AccueilView, CagnottesView, HistoriqueView,
+  FixesView, RapportView, OptionsView,
+} from "./views.jsx";
 
 // ─────────────────────────────────────────────────────────────────
-//  JSDoc Types
+//  Constants
 // ─────────────────────────────────────────────────────────────────
-/**
- * @typedef {'income'|'expense'|'epargne'|'decagnottage'|'dissolution_cagnotte'|'transfer'} TxType
- *
- * @typedef {Object} Transaction
- * @property {string}  id
- * @property {TxType}  type
- * @property {number}  amount
- * @property {string}  date        – ISO "YYYY-MM-DD"
- * @property {string}  [categoryId]
- * @property {string}  [targetCagId]
- * @property {string}  [note]
- *
- * @typedef {Object} Cagnotte
- * @property {string}  id
- * @property {string}  name
- * @property {number}  current
- * @property {number|null}  target
- * @property {string|null}  targetDate  – ISO "YYYY-MM-DD"
- *
- * @typedef {Object} Category
- * @property {string}  id
- * @property {string}  name
- * @property {string}  icon
- * @property {'expense'|'income'} type
- *
- * @typedef {Object} FixedExpense
- * @property {string}  id
- * @property {string}  name
- * @property {number}  amount
- * @property {string}  [categoryId]
- *
- * @property {Object.<string,string>} monthNotes   – clé "YYYY-MM", valeur texte libre
- *
- * @typedef {Object} AppData
- * @property {Transaction[]}   transactions
- * @property {Category[]}      categories
- * @property {Cagnotte[]}      cagnottes
- * @property {FixedExpense[]}  fixedExpenses
- * @property {string|null}     lastBackupDate
- * @property {Object.<string,string>} monthNotes
- */
+const TABS = [
+  ["accueil",    "🏠", "Accueil"],
+  ["cagnottes",  "🐷", "Cagnottes"],
+  ["historique", "📋", "Historique"],
+  ["fixes",      "📌", "Fixes"],
+  ["rapport",    "📊", "Rapport"],
+  ["options",    "⚙️",  "Options"],
+];
+const PAGE_TITLES = Object.fromEntries(
+  [["accueil","Tableau de bord"],["cagnottes","🐷 Cagnottes"],["historique","Historique"],
+   ["fixes","Frais Fixes"],["rapport","Rapport Annuel"],["options","Options"]]
+);
 
 // ─────────────────────────────────────────────────────────────────
-//  Action types
+//  Load initial state
 // ─────────────────────────────────────────────────────────────────
-export const A = /** @type {const} */ ({
-  SAVE_TRANSACTION:  "SAVE_TRANSACTION",
-  DELETE_TRANSACTION:"DELETE_TRANSACTION",
-  SAVE_CAGNOTTE:     "SAVE_CAGNOTTE",
-  DELETE_CAGNOTTE:   "DELETE_CAGNOTTE",
-  SAVE_FIXED:        "SAVE_FIXED",
-  DELETE_FIXED:      "DELETE_FIXED",
-  EXECUTE_TRANSFER:  "EXECUTE_TRANSFER",
-  SAVE_CATEGORY:     "SAVE_CATEGORY",
-  DELETE_CATEGORY:   "DELETE_CATEGORY",
-  SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
-  DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
-  SET_BACKUP_DATE:   "SET_BACKUP_DATE",
-  SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
-  TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
-  TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
-  OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
-  SAVE_RECURRING:      "SAVE_RECURRING",
-  DEL_RECURRING:       "DEL_RECURRING",
-  SAVE_ALERT_SETTINGS: "SAVE_ALERT_SETTINGS",
-  IMPORT_DATA:         "IMPORT_DATA",
-  RESET:               "RESET",
-});
-
-// ─────────────────────────────────────────────────────────────────
-//  Default state
-// ─────────────────────────────────────────────────────────────────
-/** @type {AppData} */
-export const DEFAULT_DATA = {
-  transactions: [],
-  categories: [
-    { id: "1", name: "Loyer",   icon: "🏠", type: "expense" },
-    { id: "2", name: "Courses", icon: "🛒", type: "expense" },
-    { id: "3", name: "Salaire", icon: "💰", type: "income"  },
-  ],
-  cagnottes: [],
-  fixedExpenses: [],
-  provisionalExpenses: [],
-  lastBackupDate: null,
-  monthNotes: {},
-  recurringTemplates: [],
-  alertEnabled:   false,
-  alertThreshold: 500,
-};
-
-// ─────────────────────────────────────────────────────────────────
-//  Reducer
-// ─────────────────────────────────────────────────────────────────
-/**
- * @param {AppData} state
- * @param {{ type: string, [key: string]: any }} action
- * @returns {AppData}
- */
-export function reducer(state, action) {
-  switch (action.type) {
-
-    // ── Transactions ──────────────────────────────────────────────
-    case A.SAVE_TRANSACTION: {
-      const { tx } = action;
-
-      // ── Edit existing ──
-      if (tx.id) {
-        const old = state.transactions.find(t => t.id === tx.id);
-        let cagnottes = state.cagnottes;
-
-        // Reverse the old cagnotte effect before applying the new one
-        if (old?.type === "epargne") {
-          cagnottes = cagnottes.map(c =>
-            c.id === old.targetCagId
-              ? { ...c, current: c.current - (parseFloat(old.amount) || 0) }
-              : c
-          );
-        } else if (old?.type === "decagnottage") {
-          cagnottes = cagnottes.map(c =>
-            c.id === old.targetCagId
-              ? { ...c, current: c.current + (parseFloat(old.amount) || 0) }
-              : c
-          );
-        }
-
-        // Apply the new cagnotte effect
-        if (tx.type === "epargne") {
-          cagnottes = cagnottes.map(c =>
-            c.id === tx.targetCagId ? { ...c, current: c.current + tx.amount } : c
-          );
-        } else if (tx.type === "decagnottage") {
-          cagnottes = cagnottes.map(c =>
-            c.id === tx.targetCagId ? { ...c, current: c.current - tx.amount } : c
-          );
-        }
-
-        return {
-          ...state,
-          cagnottes,
-          transactions: state.transactions.map(t =>
-            t.id === tx.id ? { ...t, ...tx } : t
-          ),
-        };
-      }
-
-      // ── New transaction ──
-      const newTx = { ...tx, id: uid("t") };
-      let cagnottes = state.cagnottes;
-
-      if (tx.type === "epargne") {
-        cagnottes = cagnottes.map(c =>
-          c.id === tx.targetCagId ? { ...c, current: c.current + tx.amount } : c
-        );
-      } else if (tx.type === "decagnottage") {
-        cagnottes = cagnottes.map(c =>
-          c.id === tx.targetCagId ? { ...c, current: c.current - tx.amount } : c
-        );
-      }
-
-      return {
-        ...state,
-        cagnottes,
-        transactions: [...state.transactions, newTx],
-      };
-    }
-
-    case A.DELETE_TRANSACTION:
-      return {
-        ...state,
-        transactions: state.transactions.filter(t => t.id !== action.id),
-      };
-    // ── Cagnottes ─────────────────────────────────────────────────
-    case A.SAVE_CAGNOTTE: {
-      const { cag } = action;
-      if (cag.id) {
-        return {
-          ...state,
-          cagnottes: state.cagnottes.map(c =>
-            c.id === cag.id ? { ...c, ...cag } : c
-          ),
-        };
-      }
-      return {
-        ...state,
-        cagnottes: [...state.cagnottes, { ...cag, id: uid("cg") }],
-      };
-    }
-
-    case A.DELETE_CAGNOTTE: {
-      const target = state.cagnottes.find(c => c.id === action.id);
-      if (!target) return state;
-
-      const cagnottes = state.cagnottes.filter(c => c.id !== action.id);
-      const transactions = target.current > 0
-        ? [...state.transactions, {
-            id: uid("t"),
-            type: "dissolution_cagnotte",
-            amount: target.current,
-            date: todayISO(),
-            categoryId: "",
-            note: target.name,
-            targetCagId: "",
-          }]
-        : state.transactions;
-
-      return { ...state, cagnottes, transactions };
-    }
-
-    // ── Fixed expenses ────────────────────────────────────────────
-    case A.SAVE_FIXED: {
-      const { idx, fixed } = action;
-      const newFixed = [...state.fixedExpenses];
-      if (idx != null) {
-        newFixed[idx] = { ...newFixed[idx], ...fixed };
-      } else {
-        newFixed.push({ ...fixed, id: uid("f") });
-      }
-      return { ...state, fixedExpenses: newFixed };
-    }
-
-    case A.DELETE_FIXED: {
-      const newFixed = [...state.fixedExpenses];
-      newFixed.splice(action.idx, 1);
-      return { ...state, fixedExpenses: newFixed };
-    }
-
-    // ── Transfer between cagnottes ────────────────────────────────
-    case A.EXECUTE_TRANSFER: {
-      const { fromId, toId, amt } = action;
-      return {
-        ...state,
-        cagnottes: state.cagnottes.map(c =>
-          c.id === fromId ? { ...c, current: c.current - amt } :
-          c.id === toId   ? { ...c, current: c.current + amt } : c
-        ),
-      };
-    }
-
-    // ── Categories ────────────────────────────────────────────────
-    case A.SAVE_CATEGORY: {
-      const { cat } = action;
-      if (cat.id) {
-        return {
-          ...state,
-          categories: state.categories.map(c =>
-            c.id === cat.id ? { ...c, ...cat } : c
-          ),
-        };
-      }
-      return {
-        ...state,
-        categories: [...state.categories, { ...cat, id: uid("cat") }],
-      };
-    }
-
-    case A.DELETE_CATEGORY:
-      return {
-        ...state,
-        categories: state.categories.filter(c => c.id !== action.id),
-      };
-
-    // ── Provisional expenses ──────────────────────────────────────
-    case A.SAVE_PROVISIONAL: {
-      const { provisional } = action;
-      if (provisional.id) {
-        return {
-          ...state,
-          provisionalExpenses: (state.provisionalExpenses || []).map(p =>
-            p.id === provisional.id ? { ...p, ...provisional } : p
-          ),
-        };
-      }
-      return {
-        ...state,
-        provisionalExpenses: [...(state.provisionalExpenses || []), { ...provisional, id: uid("pv") }],
-      };
-    }
-
-    case A.DELETE_PROVISIONAL:
-      return {
-        ...state,
-        provisionalExpenses: (state.provisionalExpenses || []).filter(p => p.id !== action.id),
-      };
-
-    // ── Misc ──────────────────────────────────────────────────────
-    case A.SET_BACKUP_DATE:
-      return { ...state, lastBackupDate: action.date };
-
-    case A.TOGGLE_POINT_TX:
-      return {
-        ...state,
-        transactions: state.transactions.map(t =>
-          t.id === action.id ? { ...t, pointed: !t.pointed } : t
-        ),
-      };
-
-    case A.TOGGLE_POINT_FIX:
-      return {
-        ...state,
-        fixedExpenses: state.fixedExpenses.map(f => {
-          if (f.id !== action.id) return f;
-          const pointedMonths = { ...(f.pointedMonths || {}) };
-          pointedMonths[action.ym] = !pointedMonths[action.ym];
-          return { ...f, pointedMonths };
-        }),
-      };
-
-    case A.OVERRIDE_FIX_MONTH:
-      return {
-        ...state,
-        fixedExpenses: state.fixedExpenses.map(f => {
-          if (f.id !== action.id) return f;
-          const monthlyOverrides = { ...(f.monthlyOverrides || {}) };
-          if (action.override) {
-            monthlyOverrides[action.ym] = action.override; // { amount, name }
-          } else {
-            delete monthlyOverrides[action.ym]; // reset → valeur par défaut
-          }
-          return { ...f, monthlyOverrides };
-        }),
-      };
-
-    case A.SAVE_RECURRING: {
-      const tpl = action.tpl;
-      const existing = (state.recurringTemplates || []).find(r => r.id === tpl.id);
-      if (existing) {
-        return { ...state, recurringTemplates: state.recurringTemplates.map(r => r.id === tpl.id ? { ...r, ...tpl } : r) };
-      }
-      return { ...state, recurringTemplates: [...(state.recurringTemplates || []), { ...tpl, id: tpl.id || uid("rc") }] };
-    }
-
-    case A.DEL_RECURRING:
-      return { ...state, recurringTemplates: (state.recurringTemplates || []).filter(r => r.id !== action.id) };
-
-    case A.SAVE_ALERT_SETTINGS:
-      return { ...state, alertEnabled: action.enabled, alertThreshold: action.threshold };
-
-    case A.SAVE_MONTH_NOTE: {
-      const notes = { ...(state.monthNotes || {}) };
-      if (action.note.trim()) {
-        notes[action.ym] = action.note.trim();
-      } else {
-        delete notes[action.ym];
-      }
-      return { ...state, monthNotes: notes };
-    }
-
-    case A.IMPORT_DATA:
-      return { ...DEFAULT_DATA, ...action.data };
-
-    case A.RESET:
-      return DEFAULT_DATA;
-
-    default:
-      return state;
+function loadState() {
+  try {
+    const s = localStorage.getItem(LS_KEY);
+    return s ? { ...DEFAULT_DATA, ...JSON.parse(s) } : DEFAULT_DATA;
+  } catch {
+    return DEFAULT_DATA;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  App
+// ─────────────────────────────────────────────────────────────────
+export default function App() {
+  const [data, dispatch] = useReducer(reducer, undefined, loadState);
+  const [year, setYear]  = useState(new Date().getFullYear());
+
+  const [tabHistory, setTabHistory] = useState(["accueil"]);
+  const tab = tabHistory[tabHistory.length - 1];
+  const [slideDir, setSlideDir]     = useState(0);
+  const [animKey,  setAnimKey]      = useState(0);
+
+  // Scroll en haut à chaque changement d'onglet — après la définition de tab
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+    document.querySelector(".container")?.scrollTo({ top: 0, behavior: "instant" });
+  }, [tab]);
+
+  const TAB_ORDER = ["accueil","cagnottes","historique","fixes","rapport","options"];
+
+  // Naviguer vers un onglet : empiler si différent du courant
+  const navigateTo = useCallback((newTab) => {
+    setTabHistory(prev => {
+      const cur = prev[prev.length - 1];
+      if (cur === newTab) return prev;
+      const curIdx = TAB_ORDER.indexOf(cur);
+      const newIdx = TAB_ORDER.indexOf(newTab);
+      setSlideDir(newIdx > curIdx ? 1 : -1);
+      setAnimKey(k => k + 1);
+      return [...prev, newTab];
+    });
+  }, []);
+
+  // Retour arrière : dépiler
+  const saveMonthNote   = useCallback((ym, note) => dispatch({ type: A.SAVE_MONTH_NOTE, ym, note }), []);
+  const saveRecurring      = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
+  const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
+  const saveAlertSettings  = useCallback((enabled, threshold) =>
+    dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
+
+  const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
+  const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
+  const overrideFixMonth  = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_FIX_MONTH, id, ym, override }), []);
+
+  // Filtre pointage partagé entre AccueilView et HistoriqueView
+  const [histPointFilter, setHistPointFilter] = useState("all");
+
+  const goToHistoriqueWithFilter = useCallback((filter) => {
+    setHistPointFilter(filter);
+    navigateTo("historique");
+  }, [navigateTo]);
+
+  const goBack = useCallback(() => {
+    setTabHistory(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
+  }, []);
+
+  const canGoBack = tabHistory.length > 1;
+
+  // ── React-controlled theme ───────────────────────────────────
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  useEffect(() => {
+    document.documentElement.className = theme === "light" ? "light" : "";
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+
+  // ── App title ────────────────────────────────────────────────
+  useEffect(() => { document.title = APP_NAME; }, []);
+
+  // ── Persist to localStorage on every data change ─────────────
+  useEffect(() => {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+  }, [data]);
+
+  // ── Toast system ─────────────────────────────────────────────
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((msg, type = "success") => {
+    const id = uid("toast");
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  }, []);
+
+  // ── File import ref ──────────────────────────────────────────
+  const importRef = useRef();
+
+  // ── Bouton retour physique Android via @capacitor/app ────────
+  // Ref toujours fraîche pour éviter les stale closures dans le listener
+  const backHandlerRef = useRef(null);
+
+  backHandlerRef.current = () => {
+    // Priorité 1 : fermer le modal le plus récent
+    if (confirmModal)  { setConfirmModal(null);   return; }
+    if (cagHistModal)  { setCagHistModal(null);   return; }
+    if (monthModal)    { setMonthModal(null);     return; }
+    if (detailModal)   { setDetailModal(null);    return; }
+    if (catModal)      { setCatModal(null);       return; }
+    if (transferModal) { setTransferModal(false); return; }
+    if (cagModal)      { setCagModal(null);       return; }
+    if (fixedModal)    { setFixedModal(null);     return; }
+    if (transModal)    { setTransModal(null);     return; }
+    // Priorité 2 : onglet précédent
+    if (canGoBack) { goBack(); return; }
+    // Rien → quitter l'app (Capacitor gère le comportement système)
+  };
+
+  useEffect(() => {
+    let listener = null;
+    async function register() {
+      if (window.Capacitor?.isNativePlatform?.()) {
+        const { App: CapApp } = await import("@capacitor/app");
+        listener = await CapApp.addListener("backButton", () => {
+          backHandlerRef.current();
+        });
+      } else {
+        // Fallback web : touche Échap
+        const onKey = (e) => { if (e.key === "Escape") backHandlerRef.current(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }
+    }
+    const cleanup = register();
+    return () => {
+      cleanup?.then?.(fn => fn?.());
+      listener?.remove?.();
+    };
+  }, []);
+
+  // Using a discriminated union pattern: null = closed, object = open with config
+  const [transModal,    setTransModal]    = useState(null); // null | { editingId: string|null }
+  const [fixedModal,    setFixedModal]    = useState(null); // null | { editingIdx: number|null }
+  const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
+  const [transferModal, setTransferModal] = useState(false);
+  const [catModal,      setCatModal]      = useState(null); // null | Category object (or {})
+  const [confirmModal,  setConfirmModal]  = useState(null); // null | { title, msg, onConfirm }
+  const [detailModal,   setDetailModal]   = useState(null); // null | { type, period }
+  const [monthModal,    setMonthModal]    = useState(null); // null | { year, monthIdx }
+  const [cagHistModal,  setCagHistModal]  = useState(null); // null | cagId string
+
+  // ── Dispatch helpers ─────────────────────────────────────────
+  const saveTransaction = useCallback((tx) => {
+    dispatch({ type: A.SAVE_TRANSACTION, tx });
+  }, []);
+
+  const deleteTransaction = useCallback((id) => {
+    setConfirmModal({
+      title: "Supprimer l'opération ?",
+      msg:   "Cette opération sera retirée de l'historique définitivement.",
+      onConfirm: () => {
+        dispatch({ type: A.DELETE_TRANSACTION, id });
+        addToast("Opération supprimée", "error");
+      },
+    });
+  }, [addToast]);
+
+  const duplicateTransaction = useCallback((tx) => {
+    const now = new Date();
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    dispatch({ type: A.SAVE_TRANSACTION, tx: {
+      type: tx.type, amount: tx.amount,
+      date: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(Math.min(now.getDate(), lastDay)).padStart(2,"0")}`,
+      categoryId: tx.categoryId, note: tx.note,
+    }});
+    addToast("Transaction dupliquée à aujourd'hui", "success");
+  }, [addToast]);
+
+  const saveCag = useCallback((cag) => {
+    dispatch({ type: A.SAVE_CAGNOTTE, cag });
+  }, []);
+
+  function deleteCag(id) {
+    const c = data.cagnottes.find(x => x.id === id);
+    if (!c) return;
+    setConfirmModal({
+      title: "Supprimer la cagnotte ?",
+      msg: c.current > 0
+        ? `La cagnotte "${c.name}" sera supprimée et ${(c.current).toLocaleString("fr-FR",{minimumFractionDigits:2})} € seront recrédités dans votre solde.`
+        : `La cagnotte "${c.name}" sera supprimée (solde à 0).`,
+      onConfirm: () => {
+        dispatch({ type: A.DELETE_CAGNOTTE, id });
+        addToast("Cagnotte supprimée", "error");
+      },
+    });
+  }
+
+  const saveFixed = useCallback((payload) => {
+    dispatch({ type: A.SAVE_FIXED, ...payload });
+  }, []);
+
+  const deleteFixed = useCallback((idx) => {
+    setConfirmModal({
+      title: "Supprimer ce frais fixe ?",
+      msg:   "Ce frais ne sera plus comptabilisé dans le solde.",
+      onConfirm: () => {
+        dispatch({ type: A.DELETE_FIXED, idx });
+        addToast("Frais fixe supprimé", "error");
+      },
+    });
+  }, [addToast]);
+
+  const saveProvisional = useCallback((provisional) => {
+    dispatch({ type: A.SAVE_PROVISIONAL, provisional });
+  }, []);
+
+  const deleteProvisional = useCallback((id) => {
+    dispatch({ type: A.DELETE_PROVISIONAL, id });
+    addToast("Frais prévisionnel supprimé", "error");
+  }, [addToast]);
+
+  function executeTransfer(payload) {
+    dispatch({ type: A.EXECUTE_TRANSFER, ...payload });
+    setTransferModal(false);
+  }
+
+  function saveCat(cat) {
+    dispatch({ type: A.SAVE_CATEGORY, cat });
+  }
+
+  function deleteCat(id) {
+    setConfirmModal({
+      title: "Supprimer cette catégorie ?",
+      msg:   "Les opérations liées perdront leur catégorie.",
+      onConfirm: () => {
+        dispatch({ type: A.DELETE_CATEGORY, id });
+        addToast("Catégorie supprimée", "error");
+      },
+    });
+  }
+
+  // ── Export / Import ──────────────────────────────────────────
+  async function handleExport() {
+    const newDate  = new Date().toISOString();
+    const snapshot = { ...data, lastBackupDate: newDate };
+    const json     = JSON.stringify(snapshot, null, 2);
+    const fileName = `budget_backup_${newDate.slice(0, 10)}.json`;
+
+    // ── APK Capacitor ────────────────────────────────────────────
+    // 1. Écrire en cache  2. Ouvrir la feuille de partage Android
+    //    → l'utilisateur choisit : Téléchargements, Drive, email…
+    if (window.Capacitor?.isNativePlatform?.()) {
+      try {
+        const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
+        const { Share } = await import("@capacitor/share");
+
+        // Écriture dans le cache de l'app (temporaire, juste pour le partage)
+        const { uri } = await Filesystem.writeFile({
+          path:      fileName,
+          data:      json,
+          directory: Directory.Cache,
+          encoding:  Encoding.UTF8,
+        });
+
+        // Feuille de partage native Android : l'utilisateur choisit l'emplacement
+        await Share.share({
+          title:       "Budget Pro — Sauvegarde",
+          url:         uri,
+          dialogTitle: "Enregistrer la sauvegarde",
+        });
+
+        dispatch({ type: A.SET_BACKUP_DATE, date: newDate });
+        addToast("✓ Sauvegarde exportée");
+      } catch (err) {
+        // AbortError = l'utilisateur a annulé le sélecteur → silence
+        if (!err?.message?.includes("canceled") && err?.name !== "AbortError") {
+          addToast(`Erreur export : ${err?.message ?? err}`, "error");
+        }
+      }
+      return;
+    }
+
+    // ── Web / desktop ────────────────────────────────────────────
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = fileName; a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      dispatch({ type: A.SET_BACKUP_DATE, date: newDate });
+      addToast(`✓ Export : ${fileName}`);
+    } catch {
+      addToast("Erreur lors de l'export", "error");
+    }
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (!imported.transactions || !imported.categories) {
+          addToast("Fichier invalide — structure incorrecte", "error");
+          return;
+        }
+        dispatch({ type: A.IMPORT_DATA, data: imported });
+        addToast(`✓ Import réussi — ${imported.transactions.length} opération(s) chargée(s)`);
+      } catch {
+        addToast("Fichier invalide — JSON malformé", "error");
+      }
+    };
+    reader.onerror = () => addToast("Impossible de lire le fichier", "error");
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function handleReset() {
+    setConfirmModal({
+      title: "TOUT EFFACER ?",
+      msg:   "Cette action est irréversible. Toutes vos données seront supprimées.",
+      onConfirm: () => {
+        dispatch({ type: A.RESET });
+        addToast("Données réinitialisées", "error");
+      },
+    });
+  }
+
+  // ── View map ─────────────────────────────────────────────────
+  const views = {
+    accueil: (
+      <AccueilView data={data}
+        onShowDetail={(type, period) => setDetailModal({ type, period })}
+        onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
+        onEditTrans={id => setTransModal({ editingId: id })}
+        onDeleteTrans={deleteTransaction}
+        onSwitchTab={navigateTo}
+        onSaveProvisional={saveProvisional}
+        onDeleteProvisional={deleteProvisional}
+        onGoToHistorique={goToHistoriqueWithFilter}
+        alertEnabled={data.alertEnabled}
+        alertThreshold={data.alertThreshold}
+      />
+    ),
+    cagnottes: (
+      <CagnottesView data={data}
+        onNewCag={()    => setCagModal({ editingId: null })}
+        onEditCag={id   => setCagModal({ editingId: id  })}
+        onDeleteCag={deleteCag}
+        onTransfer={()  => setTransferModal(true)}
+        onShowCagHistory={id => setCagHistModal(id)}
+      />
+    ),
+    historique: (
+      <HistoriqueView data={data}
+        onEditTrans={id => setTransModal({ editingId: id })}
+        onDeleteTrans={deleteTransaction}
+        onDuplicateTrans={duplicateTransaction}
+        onTogglePointTx={togglePointTx}
+        onTogglePointFix={togglePointFix}
+        onOverrideFixMonth={overrideFixMonth}
+        onDeleteRecurring={deleteRecurring}
+        onConfirmRecurring={(tpl, month) => {
+          const [y, m] = month.split("-").map(Number);
+          const lastDay = new Date(y, m, 0).getDate(); // dernier jour du mois
+          const day = Math.min(new Date().getDate(), lastDay);
+          dispatch({ type: A.SAVE_TRANSACTION, tx: {
+            type: tpl.type, amount: tpl.amount,
+            date: `${month}-${String(day).padStart(2,"0")}`,
+            categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
+          }});
+        }}
+        initPointFilter={histPointFilter}
+        onClearPointFilter={() => setHistPointFilter("all")}
+      />
+    ),
+    fixes: (
+      <FixesView data={data}
+        onNewFixed={()    => setFixedModal({ editingIdx: null })}
+        onEditFixed={idx  => setFixedModal({ editingIdx: idx  })}
+        onDeleteFixed={deleteFixed}
+        onSaveProvisional={saveProvisional}
+        onDeleteProvisional={deleteProvisional}
+      />
+    ),
+    rapport: (
+      <RapportView data={data} currentYear={year} setCurrentYear={setYear}
+        onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
+        monthNotes={data.monthNotes || {}}
+        onSaveMonthNote={saveMonthNote}
+      />
+    ),
+    options: (
+      <OptionsView data={data}
+        onEditCat={idOrObj => {
+          // Si c'est un objet avec id → sauvegarde directe (ex: mise à jour du linkedToId)
+          if (idOrObj && typeof idOrObj === "object" && idOrObj.id) {
+            dispatch({ type: A.SAVE_CATEGORY, cat: idOrObj });
+          } else {
+            const c = data.categories.find(x => x.id === idOrObj);
+            setCatModal(c ?? {});
+          }
+        }}
+        onDeleteCat={deleteCat}
+        onNewCat={()   => setCatModal({})}
+        onExport={handleExport}
+        onImport={() => importRef.current?.click()}
+        onReset={handleReset}
+        onDeleteRecurring={deleteRecurring}
+        alertEnabled={data.alertEnabled}
+        alertThreshold={data.alertThreshold}
+        onSaveAlertSettings={saveAlertSettings}
+      />
+    ),
+  };
+
+  return (
+    <ToastCtx.Provider value={addToast}>
+      {/* ── Header ── */}
+      <header className="bp-header">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          {canGoBack && (
+            <button className="back-btn" onClick={() => backHandlerRef.current()}>
+              ‹
+            </button>
+          )}
+          <h1 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {PAGE_TITLES[tab] ?? tab}
+          </h1>
+        </div>
+        <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
+          {theme === "dark" ? "☀️" : "🌙"}
+        </button>
+      </header>
+
+      {/* ── Main content ── */}
+      <div className="container" key={animKey} style={{
+        animation: slideDir !== 0 ? `tab-slide-${slideDir > 0 ? "right" : "left"} .28s ease both` : "none",
+      }}>{views[tab]}</div>
+
+      {/* ── Tab bar ── */}
+      <div className="tabs">
+        {TABS.map(([k, icon, label]) => (
+          <button key={k} className={`tab-btn${tab === k ? " active" : ""}`} onClick={() => navigateTo(k)}>
+            <span className="tab-icon">{icon}</span>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── FAB ── */}
+      <button className="fab" onClick={() => setTransModal({ editingId: null })}>＋</button>
+
+      {/* ── Hidden file input ── */}
+      <input ref={importRef} type="file" hidden accept=".json" onChange={handleImportFile} />
+
+      {/* ── Modals ── */}
+      {transModal && (
+        <TransModal
+          transactions={data.transactions}
+          categories={data.categories}
+          cagnottes={data.cagnottes}
+          editingId={transModal.editingId}
+          onSave={tx => { saveTransaction(tx); setTransModal(null); }}
+          onSaveRecurring={tpl => saveRecurring(tpl)}
+          onClose={() => setTransModal(null)}
+        />
+      )}
+      {fixedModal && (
+        <FixedModal
+          categories={data.categories}
+          fixedExpenses={data.fixedExpenses}
+          editingIdx={fixedModal.editingIdx}
+          onSave={payload => { saveFixed(payload); setFixedModal(null); }}
+          onClose={() => setFixedModal(null)}
+        />
+      )}
+      {cagModal && (
+        <CagModal
+          cagnottes={data.cagnottes}
+          editingId={cagModal.editingId}
+          onSave={cag => { saveCag(cag); setCagModal(null); }}
+          onClose={() => setCagModal(null)}
+        />
+      )}
+      {transferModal && (
+        <TransferModal
+          cagnottes={data.cagnottes}
+          onSave={executeTransfer}
+          onClose={() => setTransferModal(false)}
+        />
+      )}
+      {catModal && (
+        <CatModal
+          editingCat={catModal?.id ? catModal : null}
+          onSave={cat => { saveCat(cat); setCatModal(null); }}
+          onClose={() => setCatModal(null)}
+        />
+      )}
+      {confirmModal && (
+        <ConfirmModal
+          {...confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
+      {detailModal && (
+        <DetailModal
+          config={detailModal}
+          transactions={data.transactions}
+          categories={data.categories}
+          cagnottes={data.cagnottes}
+          fixedExpenses={data.fixedExpenses}
+          onClose={() => setDetailModal(null)}
+        />
+      )}
+      {monthModal && (
+        <MonthDetailModal
+          config={monthModal}
+          transactions={data.transactions}
+          categories={data.categories}
+          cagnottes={data.cagnottes}
+          fixedExpenses={data.fixedExpenses}
+          onClose={() => setMonthModal(null)}
+        />
+      )}
+      {cagHistModal && (
+        <CagHistModal
+          cagId={cagHistModal}
+          transactions={data.transactions}
+          categories={data.categories}
+          cagnottes={data.cagnottes}
+          onClose={() => setCagHistModal(null)}
+        />
+      )}
+
+      {/* ── Toast notifications ── */}
+      <ToastContainer toasts={toasts} />
+    </ToastCtx.Provider>
+  );
 }
