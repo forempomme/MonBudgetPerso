@@ -2014,7 +2014,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   // Catégories liées à celle sélectionnée
   const linkedCats = categories.filter(c => c.linkedToId === selCatId);
 
-  // 6 derniers mois de stats pour cette catégorie (transactions + frais fixes)
+  // 6 derniers mois de stats pour cette catégorie
   const monthStats = useMemo(() => {
     return Array.from({ length: 6 }, (_, i) => {
       const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
@@ -2022,42 +2022,19 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
       const exp = transactions
         .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-      // Frais fixes de cette catégorie pour ce mois
-      const fixExp = fixedExpenses
-        .filter(f => f.categoryId === selCatId)
-        .reduce((s, f) => {
-          const ov = f.monthlyOverrides?.[ym];
-          return s + ((ov?.amount ?? f.amount) || 0);
-        }, 0);
       const inc = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
-      const total = exp + fixExp;
-      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp: total, fixExp, inc, net: Math.max(0, total - inc) };
+      return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp, inc, net: Math.max(0, exp - inc) };
     });
-  }, [selCatId, transactions, fixedExpenses, categories]);
+  }, [selCatId, transactions, categories]);
 
-  // Totaux année (transactions + frais fixes de la catégorie)
+  // Totaux année
   const yearStr = now.getFullYear().toString();
   const yearExp = transactions
     .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && t.categoryId === selCatId)
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  // Frais fixes de la catégorie × mois écoulés cette année
-  const monthsThisYear = now.getMonth() + 1;
-  const yearFixExp = fixedExpenses
-    .filter(f => f.categoryId === selCatId)
-    .reduce((s, f) => {
-      // Sommer les montants effectifs pour chaque mois de l'année
-      let total = 0;
-      for (let m = 1; m <= monthsThisYear; m++) {
-        const ym = `${yearStr}-${String(m).padStart(2,"0")}`;
-        const ov = f.monthlyOverrides?.[ym];
-        total += (ov?.amount ?? f.amount) || 0;
-      }
-      return s + total;
-    }, 0);
   const yearInc = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
-  const yearTotal = yearExp + yearFixExp;
-  const yearNet   = Math.max(0, yearTotal - yearInc);
-  const txCount   = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+  const yearNet = Math.max(0, yearExp - yearInc);
+  const txCount = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
 
   // Top 5 transactions récentes
   const recent = [...transactions]
@@ -2095,11 +2072,11 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
           )}
 
           {/* Totaux année */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: yearFixExp > 0 ? 6 : 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
             {[
-              { l: "💸 Dépensé", v: yearTotal, c: "var(--danger)" },
-              { l: "↩ Récupéré", v: yearInc,   c: "var(--success)", hidden: yearInc === 0 },
-              { l: "📊 Net",     v: yearNet,    c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
+              { l: "💸 Dépensé", v: yearExp, c: "var(--danger)" },
+              { l: "↩ Récupéré", v: yearInc, c: "var(--success)", hidden: yearInc === 0 },
+              { l: "📊 Net",     v: yearNet, c: yearInc > 0 ? "var(--accent)" : "var(--warning)" },
             ].map(s => (
               <div key={s.l} style={{ background: "var(--surface2)", borderRadius: 9, padding: "8px 10px", opacity: s.hidden ? .35 : 1 }}>
                 <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 3 }}>{s.l}</div>
@@ -2107,13 +2084,8 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
               </div>
             ))}
           </div>
-          {yearFixExp > 0 && (
-            <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 10, padding: "4px 8px", background: "var(--warning-glow)", borderRadius: 6 }}>
-              📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsThisYear} mois × {fmt(fixedExpenses.filter(f=>f.categoryId===selCatId).reduce((s,f)=>s+(f.amount||0),0))})
-            </div>
-          )}
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 12 }}>
-            {txCount} transaction{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearTotal / Math.max(monthsThisYear, 1))}/mois
+            {txCount} opération{txCount !== 1 ? "s" : ""} cette année · moy. {fmt(yearExp / Math.max(monthStats.filter(m=>m.exp>0).length, 1))}/mois dépensé
           </div>
 
           {/* Barres 6 mois */}
@@ -2802,6 +2774,32 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   return (
     <div>
 
+      {/* ⑦ Stats globales */}
+      {globalStats && (
+        <div style={{
+          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
+          borderRadius: "var(--radius)", padding: "14px 16px", marginBottom: 14,
+          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
+        }}>
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
+            📊 Statistiques globales
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {[
+              { icon: "📋", label: "Transactions",       value: globalStats.count },
+              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
+              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
+              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
+            ].map(s => (
+              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
+                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Alerte solde bas ── */}
       <div className="card" style={{ borderLeft: `3px solid ${alertOn ? "var(--warning)" : "var(--border)"}`, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: alertOn ? 12 : 0, cursor: "pointer" }}
@@ -2918,19 +2916,10 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
       {/* ── Catégories ── */}
       <SectionTitle>Gestion Catégories</SectionTitle>
-      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
+      <div className="filter-row">
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (
           <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={() => setCatFilter(k)}>{l}</div>
         ))}
-        <button onClick={onNewCat} style={{
-          marginLeft:"auto", display:"flex", alignItems:"center", gap:4,
-          background:"var(--accent)", border:"none", borderRadius:20,
-          padding:"6px 14px", color:"var(--bg)", fontWeight:800,
-          fontSize:".7rem", cursor:"pointer", flexShrink:0,
-          touchAction:"manipulation",
-        }}>
-          ＋ Créer
-        </button>
       </div>
       <div className="cat-grid">
         {filtered.length === 0
@@ -2952,13 +2941,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     {usage === 0 ? "✕" : usage}
                   </div>
                   <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
-                  {/* Nom avec retour à la ligne — comme les cartes frais fixes */}
-                  <span style={{
-                    fontSize:".6rem", fontWeight:700,
-                    wordBreak:"break-word", whiteSpace:"normal",
-                    textAlign:"center", padding:"0 3px", lineHeight:1.3,
-                    width:"100%",
-                  }}>{c.name}</span>
+                  <span style={{ fontSize:".6rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:"100%", padding:"0 2px" }}>{c.name}</span>
                   {linkedTo && (
                     <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>
                       🔗
@@ -2973,6 +2956,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             })
         }
       </div>
+
+      <button className="btn btn-outline" style={{ width:"100%", marginTop:10 }} onClick={onNewCat}>+ Créer une catégorie</button>
 
       {/* ── Section liaisons ── */}
       <div style={{ marginTop:16 }}>
@@ -3011,32 +2996,6 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           <LinkForm categories={data.categories} onLink={onEditCat} />
         </div>
       </div>
-
-      {/* ── Stats globales — en bas ── */}
-      {globalStats && (
-        <div style={{
-          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
-          borderRadius: "var(--radius)", padding: "14px 16px", marginTop: 16,
-          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
-        }}>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
-            📊 Statistiques globales
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { icon: "📋", label: "Transactions",       value: globalStats.count },
-              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
-              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
-              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
-            ].map(s => (
-              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
-                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>
         ⚠️ Réinitialiser toutes les données
