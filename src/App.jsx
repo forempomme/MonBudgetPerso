@@ -82,8 +82,10 @@ export default function App() {
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
   const saveCategoryThreshold  = useCallback((catId, threshold) =>
     dispatch({ type: A.SAVE_CATEGORY_THRESHOLD, catId, threshold }), []);
-  const saveRoundingSettings   = useCallback((enabled, cagnotteId, rule) =>
+  const saveRoundingSettings      = useCallback((enabled, cagnotteId, rule) =>
     dispatch({ type: A.SAVE_ROUNDING_SETTINGS, enabled, cagnotteId, rule }), []);
+  const markRoundingTransferred   = useCallback(() =>
+    dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: new Date().toISOString().slice(0, 10) }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
   const deleteTag              = useCallback(id   => dispatch({ type: A.DELETE_TAG,  id   }), []);
 
@@ -379,6 +381,10 @@ export default function App() {
         onGoToHistorique={goToHistoriqueWithFilter}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
+        roundingEnabled={data.roundingEnabled}
+        roundingCagnotteId={data.roundingCagnotteId}
+        roundingLastTransferDate={data.roundingLastTransferDate}
+        onMarkRoundingTransferred={markRoundingTransferred}
       />
     ),
     cagnottes: (
