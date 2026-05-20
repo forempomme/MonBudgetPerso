@@ -69,6 +69,7 @@ export const A = /** @type {const} */ ({
   DEL_RECURRING:       "DEL_RECURRING",
   SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
+  MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
   SAVE_TAG:                 "SAVE_TAG",
   DELETE_TAG:               "DELETE_TAG",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
@@ -97,9 +98,10 @@ export const DEFAULT_DATA = {
   alertThreshold:       500,
   categoryThresholds:   {},
   tags:                 [],
-  roundingEnabled:      false,
-  roundingCagnotteId:   null,
-  roundingRule:         "ceil",
+  roundingEnabled:           false,
+  roundingCagnotteId:        null,
+  roundingRule:              "ceil",
+  roundingLastTransferDate:  null,
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -387,6 +389,9 @@ export function reducer(state, action) {
 
     case A.SAVE_ROUNDING_SETTINGS:
       return { ...state, roundingEnabled: action.enabled, roundingCagnotteId: action.cagnotteId, roundingRule: action.rule };
+
+    case A.MARK_ROUNDING_TRANSFERRED:
+      return { ...state, roundingLastTransferDate: action.date };
 
     case A.SAVE_TAG: {
       const { tag } = action;
