@@ -3481,6 +3481,26 @@ function AnalysteLocal({ data, currentYear, months }) {
 //  OPTIONS
 // ─────────────────────────────────────────────────────────────────
 // Formulaire d'ajout de liaison — composant séparé pour son propre état
+// ─────────────────────────────────────────────────────────────────
+//  Bottom Sheet générique
+// ─────────────────────────────────────────────────────────────────
+function Sheet({ open, onClose, title, children }) {
+  if (!open) return null;
+  return (
+    <div
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:"var(--bg)", width:"100%", maxWidth:600, borderRadius:"16px 16px 0 0", maxHeight:"87vh", overflowY:"auto", padding:"20px 16px 40px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontSize:".9rem", fontWeight:800 }}>{title}</div>
+          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px 10px", color:"var(--text2)", cursor:"pointer", fontSize:".75rem", touchAction:"manipulation" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function LinkForm({ categories, onLink }) {
   const [srcId, setSrcId] = useState("");
   const [dstId, setDstId] = useState("");
@@ -3573,220 +3593,246 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
     : null;
   const backupOk = daysSinceBackup !== null && daysSinceBackup <= 7;
 
+  // Feuille ouverte
+  const [openSheet, setOpenSheet] = useState(null);
+  const [showBackupHist, setShowBackupHist] = useState(false);
+
+  const close = () => setOpenSheet(null);
+
+  // Badges
+  const autoCount   = autoSavings.filter(p=>p.enabled).length;
+  const roundCag    = data.cagnottes.find(c=>c.id===roundingCagnotteId);
+  const linkedCount = data.categories.filter(c=>c.linkedToId).length;
+  const recurCount  = (data.recurringTemplates||[]).length;
+  const last        = (data.backupHistory||[])[0];
+
+  const GROUPS = [
+    {
+      title:"🔒 Sécurité", color:"var(--accent)",
+      items:[
+        { id:"security", icon:"🔒", label:"PIN & biométrie",
+          badge: pinOn?"PIN actif":"Désactivé",
+          badgeColor: pinOn?"var(--success)":"var(--text3)" },
+      ]
+    },
+    {
+      title:"🐷 Épargne", color:"var(--success)",
+      items:[
+        { id:"autoSavings", icon:"🎯", label:"Versements automatiques",
+          badge: autoCount > 0 ? `${autoCount} plan${autoCount>1?"s":""}` : "Inactif",
+          badgeColor: autoCount > 0 ? "var(--purple)" : "var(--text3)" },
+        { id:"rounding", icon:"🐷", label:"Arrondi automatique",
+          badge: roundOn && roundCag ? roundCag.name : "Désactivé",
+          badgeColor: roundOn ? "var(--success)" : "var(--text3)" },
+        { id:"alert", icon:"🔔", label:"Alerte solde bas",
+          badge: alertOn ? `${thresh} €` : "Désactivé",
+          badgeColor: alertOn ? "var(--warning)" : "var(--text3)" },
+      ]
+    },
+    {
+      title:"🏷️ Catégories", color:"var(--purple)",
+      items:[
+        { id:"categories", icon:"🏷️", label:"Gestion catégories",
+          badge: `${data.categories.length} cat.`,
+          badgeColor:"var(--text3)" },
+        { id:"links", icon:"🔗", label:"Liaisons",
+          badge: linkedCount > 0 ? `${linkedCount} lien${linkedCount>1?"s":""}` : "Aucune",
+          badgeColor: linkedCount > 0 ? "var(--accent)" : "var(--text3)" },
+        { id:"recurring", icon:"🔄", label:"Récurrentes",
+          badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
+          badgeColor: recurCount > 0 ? "var(--text3)" : "var(--text3)" },
+      ]
+    },
+    {
+      title:"💾 Données", color:"#c8b860",
+      items:[
+        { id:"backup", icon:"💾", label:"Sauvegarde",
+          badge: last ? `il y a ${daysSinceBackup}j` : "Jamais",
+          badgeColor: backupOk ? "var(--success)" : last ? "var(--warning)" : "var(--danger)" },
+      ]
+    },
+  ];
+
   return (
     <div>
-
-      {/* ── Alerte solde bas ── */}
-      <div className="card" style={{ borderLeft: `3px solid ${alertOn ? "var(--warning)" : "var(--border)"}`, marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: alertOn ? 12 : 0, cursor: "pointer" }}
-          onClick={() => saveAlert(!alertOn, thresh)}>
-          <div style={{
-            width: 38, height: 22, borderRadius: 11, flexShrink: 0,
-            background: alertOn ? "var(--warning)" : "var(--border)",
-            position: "relative", transition: "background .2s",
-          }}>
-            <div style={{
-              position: "absolute", top: 3, left: alertOn ? 17 : 3,
-              width: 16, height: 16, borderRadius: "50%",
-              background: "#fff", transition: "left .2s",
-            }} />
-          </div>
-          <div>
-            <div style={{ fontSize: ".72rem", fontWeight: 700, color: alertOn ? "var(--warning)" : "var(--text2)" }}>
-              🔔 Alerte solde bas
+      {/* ── Menu groupé ── */}
+      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+        {GROUPS.map(group => (
+          <div key={group.title}>
+            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", marginBottom:6, paddingLeft:4 }}>
+              {group.title}
             </div>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-              La pastille passe au rouge quand le solde est sous le seuil
-            </div>
-          </div>
-        </div>
-        {alertOn && (
-          <div>
-            <div style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, marginBottom: 6 }}>Seuil d'alerte (€)</div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <input type="number" value={thresh} min="0" step="100"
-                onChange={e => setThresh(e.target.value)}
-                onBlur={() => saveAlert(true, thresh)}
-                style={{ flex: 1, background: "var(--bg)", border: "1px solid var(--warning)", borderRadius: 9, padding: "8px 12px", color: "var(--text)", fontSize: ".88rem", fontFamily: "var(--mono)" }} />
-              <button onClick={() => saveAlert(true, thresh)} style={{ background: "var(--warning)", border: "none", borderRadius: 9, padding: "8px 14px", color: "var(--bg)", fontWeight: 800, fontSize: ".75rem", cursor: "pointer" }}>
-                OK
-              </button>
-            </div>
-            <div style={{ display: "flex", gap: 5 }}>
-              {[200, 500, 1000].map(v => (
-                <button key={v} onClick={() => saveAlert(true, String(v))} style={{
-                  flex: 1, background: parseFloat(thresh)===v ? "rgba(200,184,96,.15)" : "transparent",
-                  border: `1px solid ${parseFloat(thresh)===v ? "var(--warning)" : "var(--border)"}`,
-                  borderRadius: 7, padding: "5px 0", fontSize: ".68rem", fontWeight: 700,
-                  color: parseFloat(thresh)===v ? "var(--warning)" : "var(--text2)", cursor: "pointer",
-                }}>{fmt(v)}</button>
+            <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
+              {group.items.map((item, i) => (
+                <div key={item.id}
+                  onTouchStart={e=>e.stopPropagation()}
+                  onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();setOpenSheet(item.id); }}
+                  onClick={()=>setOpenSheet(item.id)}
+                  style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
+                    borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
+                    cursor:"pointer", touchAction:"manipulation",
+                  }}>
+                  <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>{item.icon}</span>
+                  <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>{item.label}</span>
+                  <span style={{ fontSize:".58rem", fontWeight:700, color:item.badgeColor, padding:"2px 8px", background:`${item.badgeColor}22`, borderRadius:10, flexShrink:0 }}>
+                    {item.badge}
+                  </span>
+                  <span style={{ color:"var(--text3)", fontSize:".8rem", flexShrink:0 }}>›</span>
+                </div>
               ))}
             </div>
           </div>
-        )}
+        ))}
+
+        {/* Actions directes */}
+        <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
+          <div onClick={onImport} style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", borderBottom:"1px solid var(--border-soft)", cursor:"pointer" }}>
+            <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>⬆️</span>
+            <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>Importer des données</span>
+            <span style={{ color:"var(--text3)", fontSize:".8rem" }}>›</span>
+          </div>
+          <div onClick={onReset} style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", cursor:"pointer" }}>
+            <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>⚠️</span>
+            <span style={{ flex:1, fontSize:".76rem", fontWeight:600, color:"var(--danger)" }}>Réinitialiser toutes les données</span>
+            <span style={{ color:"var(--danger)", fontSize:".8rem", opacity:.5 }}>›</span>
+          </div>
+        </div>
       </div>
 
-      {/* ── Sauvegarde ── */}
-      {(() => {
-        const history = data.backupHistory || [];
-        const [showHist, setShowHist] = useState(false);
-        const last = history[0] || null;
-        const borderCol = backupOk ? "var(--success)" : last ? "var(--warning)" : "var(--danger)";
-        return (
-          <div style={{ marginBottom: 14 }}>
-            {/* Carte dernière sauvegarde */}
-            <div className="card" style={{ borderLeft: `3px solid ${borderCol}`, marginBottom: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontSize: ".65rem", fontWeight: 800, color: borderCol }}>
-                    {!last
-                      ? "⚠️ Aucune sauvegarde"
-                      : backupOk
-                        ? "✅ Dernière sauvegarde"
-                        : `⚠️ Sauvegarde il y a ${daysSinceBackup} jours`}
-                  </div>
-                  {last && (
-                    <div style={{ fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, marginTop: 4 }}>
-                      {new Date(last.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} à {last.date.slice(11, 16)}
-                    </div>
-                  )}
-                </div>
-                {last && (
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--accent)" }}>{last.sizeKo} ko</div>
-                    <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{last.txCount} transactions</div>
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button className="btn btn-primary" style={{ flex: 2 }} onClick={onExport}>💾 Sauvegarder</button>
-                <button className="btn btn-outline"  style={{ flex: 1 }} onClick={onImport}>⬆ Importer</button>
-              </div>
-            </div>
-
-            {/* Bouton historique + liste */}
-            {history.length > 0 && (
-              <div>
-                <button onClick={() => setShowHist(h => !h)} style={{
-                  width: "100%", background: "transparent",
-                  border: `1px solid var(--border)`, borderRadius: 8,
-                  padding: "8px 12px", color: "var(--text3)",
-                  fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  touchAction: "manipulation",
-                }}>
-                  <span>📋 Historique — {history.length} sauvegarde{history.length > 1 ? "s" : ""}</span>
-                  <span style={{ transform: showHist ? "rotate(90deg)" : "none", transition: "transform .2s" }}>›</span>
-                </button>
-                {showHist && (
-                  <div style={{ marginTop: 5, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
-                    {history.map((b, i) => (
-                      <div key={b.id} style={{
-                        display: "flex", alignItems: "center", gap: 8,
-                        padding: "9px 12px",
-                        borderBottom: i < history.length - 1 ? "1px solid var(--border-soft)" : "none",
-                        background: i === 0 ? "rgba(112,184,224,.04)" : "transparent",
-                      }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                            <span style={{ fontSize: ".7rem", fontWeight: 700 }}>
-                              {new Date(b.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à {b.date.slice(11, 16)}
-                            </span>
-                            {i === 0 && <span style={{ fontSize: ".48rem", background: "rgba(104,212,152,.12)", color: "var(--success)", padding: "1px 5px", borderRadius: 6, fontWeight: 800 }}>DERNIER</span>}
-                          </div>
-                          <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{b.txCount} transactions · {b.sizeKo} ko</div>
-                        </div>
-                        <button
-                          onTouchStart={e => e.stopPropagation()}
-                          onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onExport(); }}
-                          onClick={onExport}
-                          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", color: "var(--accent)", fontSize: ".7rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation", flexShrink: 0 }}>
-                          📥
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+      {/* ── Stats globales ── */}
+      {globalStats && (
+        <div style={{ background:"linear-gradient(135deg,#0c1830,#182a48)", borderRadius:"var(--radius)", padding:"14px 16px", marginTop:16, boxShadow:"0 4px 18px rgba(112,184,224,.12)" }}>
+          <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.5)", fontWeight:700, textTransform:"uppercase", letterSpacing:".12em", marginBottom:10 }}>
+            📊 Statistiques globales
           </div>
-        );
-      })()}
-
-      {/* ── Transactions récurrentes ── */}
-      {(data.recurringTemplates || []).length > 0 && (
-        <>
-          <SectionTitle>🔄 Transactions récurrentes</SectionTitle>
-          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 14 }}>
-            {(data.recurringTemplates || []).map(tpl => {
-              const cat  = data.categories.find(c => c.id === tpl.categoryId);
-              const isInc = isIncome(tpl.type);
-              return (
-                <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px", borderBottom:"1px solid var(--border-soft)" }}>
-                  <div style={{ width:32, height:32, borderRadius:9, background:"var(--surface2)", border:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:"1rem" }}>
-                    {cat?.icon ?? (isInc ? "💰" : "💸")}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:".74rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tpl.label}</div>
-                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>
-                      {cat?.name ?? "—"} · <span style={{ color:"var(--accent)" }}>{tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle"}</span>
-                      {tpl.occurrences != null && (
-                        <span> · {(data.transactions||[]).filter(t=>t.templateId===tpl.id).length}/{tpl.occurrences} fois</span>
-                      )}
-                    </div>
-                  </div>
-                  <span style={{ fontFamily:"var(--mono)", fontWeight:800, fontSize:".8rem", color: isInc ? "var(--success)" : "var(--danger)", flexShrink:0 }}>
-                    {isInc ? "+" : "−"}{fmt(tpl.amount)}
-                  </span>
-                  <button onClick={() => onDeleteRecurring?.(tpl.id)} style={{ background:"rgba(200,112,112,.1)", border:"1px solid rgba(200,112,112,.2)", borderRadius:7, padding:"4px 8px", color:"var(--danger)", fontSize:".7rem", cursor:"pointer", flexShrink:0 }}>✕</button>
-                </div>
-              );
-            })}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            {[
+              { icon:"📋", label:"Transactions",       value:globalStats.count },
+              { icon:"📅", label:"Première opération", value:new Date(globalStats.earliest+"T12:00:00").toLocaleDateString("fr-FR",{month:"short",year:"numeric"}) },
+              { icon:"💶", label:"Total géré",         value:fmt(globalStats.totalGere) },
+              { icon:"🏷️", label:"Catégories",         value:data.categories.length },
+            ].map(s=>(
+              <div key={s.label} style={{ background:"rgba(255,255,255,.06)", borderRadius:10, padding:"10px 12px" }}>
+                <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.45)", marginBottom:4 }}>{s.icon} {s.label}</div>
+                <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:"#fff", fontSize:".85rem" }}>{s.value}</div>
+              </div>
+            ))}
           </div>
-        </>
+        </div>
       )}
 
-      {/* ── Versements automatiques ── */}
-      <div className="card" style={{ borderLeft:`3px solid var(--purple)`, marginBottom:14 }}>
-        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>🎯 Versements automatiques</div>
-        <div style={{ fontSize:".62rem", color:"var(--text3)", lineHeight:1.5, marginBottom:10 }}>
-          Planifie un virement mensuel fixe vers une cagnotte. Il apparaît dans l'Historique pour confirmation.
+      {/* Version */}
+      <div style={{ marginTop:32, textAlign:"center", color:"var(--text3)", fontSize:".65rem", letterSpacing:".06em", fontWeight:600 }}>
+        {APP_NAME} — v{APP_VERSION}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════ */}
+      {/* SHEETS                                                 */}
+      {/* ══════════════════════════════════════════════════════ */}
+
+      {/* 🔒 Sécurité */}
+      <Sheet open={openSheet==="security"} onClose={close} title="🔒 Sécurité">
+        <div onClick={()=>{const n=!bioOn;setBioOn(n);onSaveSecuritySettings?.(pinOn,pinHash,n);}}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:bioOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${bioOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:10, marginBottom:10, cursor:"pointer", touchAction:"manipulation" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:".76rem", fontWeight:700, color:bioOn?"var(--accent)":"var(--text2)" }}>Empreinte / FaceID</div>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Déverrouillage biométrique Android</div>
+          </div>
+          <div style={{ width:40, height:22, borderRadius:11, background:bioOn?"var(--accent)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:bioOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+          </div>
+        </div>
+        <div onClick={()=>{if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:pinOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${pinOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:10, marginBottom:pinSetup||pinOn?10:0, cursor:"pointer", touchAction:"manipulation" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:".76rem", fontWeight:700, color:pinOn?"var(--accent)":"var(--text2)" }}>Code PIN (4 chiffres)</div>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{pinOn?"Verrou actif à l'ouverture":"Fallback si biométrie indisponible"}</div>
+          </div>
+          <div style={{ width:40, height:22, borderRadius:11, background:pinOn?"var(--accent)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:pinOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+          </div>
+        </div>
+        {pinSetup && (
+          <div style={{ background:"var(--surface2)", border:"1.5px solid var(--accent)", borderRadius:10, padding:14, marginBottom:10 }}>
+            <div style={{ fontSize:".68rem", fontWeight:800, color:"var(--accent)", marginBottom:10 }}>
+              {pinSetup==="enter"?"Choisir un code PIN":"Confirmer le code PIN"}
+            </div>
+            <div style={{ display:"flex", gap:14, marginBottom:12, justifyContent:"center" }}>
+              {[0,1,2,3].map(i=>(
+                <div key={i} style={{ width:14, height:14, borderRadius:"50%", background:i<pinEntry.length?"var(--accent)":"transparent", border:"2px solid rgba(112,184,224,.4)", transition:"background .1s" }} />
+              ))}
+            </div>
+            {pinError && <div style={{ fontSize:".62rem", color:"var(--danger)", marginBottom:8, textAlign:"center" }}>{pinError}</div>}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6, justifyContent:"center", maxWidth:210, margin:"0 auto 12px" }}>
+              {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k,i)=>(
+                k===""
+                  ? <div key={i} style={{ width:54, height:42 }} />
+                  : <button key={i}
+                      onTouchStart={e=>e.stopPropagation()}
+                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
+                        if(k==="⌫"){setPinEntry(p=>p.slice(0,-1));setPinError("");return;}
+                        const next=pinEntry+k; if(next.length>4)return; setPinEntry(next);
+                        if(next.length===4){
+                          if(pinSetup==="enter"){setPinFirst(next);setPinEntry("");setPinSetup("confirm");}
+                          else{ if(next===pinFirst){sha256hex(next).then(h=>{onSaveSecuritySettings?.(true,h,bioOn);setPinOn(true);setPinSetup(null);setPinEntry("");setPinFirst("");});} else{setPinEntry("");setPinError("Les codes ne correspondent pas");} }
+                        }
+                      }}
+                      onClick={()=>{}}
+                      style={{ width:54, height:42, background:"var(--bg)", border:"1px solid var(--border)", borderRadius:9, color:"#e8f0e8", fontSize:k==="⌫"?"1rem":"1.1rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+                      {k}
+                    </button>
+              ))}
+            </div>
+            <button onClick={()=>{setPinSetup(null);setPinEntry("");setPinFirst("");setPinError("");}} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer" }}>Annuler</button>
+          </div>
+        )}
+        {pinOn && !pinSetup && (
+          <button onClick={()=>{setPinSetup("enter");setPinEntry("");}}
+            style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"10px", color:"var(--text2)", fontSize:".72rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+            ✏️ Modifier le code PIN
+          </button>
+        )}
+      </Sheet>
+
+      {/* 🎯 Versements automatiques */}
+      <Sheet open={openSheet==="autoSavings"} onClose={close} title="🎯 Versements automatiques">
+        <div style={{ fontSize:".65rem", color:"var(--text3)", lineHeight:1.6, marginBottom:12 }}>
+          Virement mensuel planifié vers une cagnotte. Il apparaît dans l'Historique pour confirmation.
         </div>
         {autoSavings.map(plan => {
-          const cag = data.cagnottes.find(c => c.id === plan.cagnotteId);
+          const cag = data.cagnottes.find(c=>c.id===plan.cagnotteId);
           return (
             <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"var(--surface2)", border:`1px solid ${plan.enabled?"rgba(176,144,224,.25)":"var(--border)"}`, borderRadius:9, marginBottom:6 }}>
               <span style={{ fontSize:".9rem" }}>{cag?.icon||"🐷"}</span>
               <div style={{ flex:1 }}>
-                <div style={{ fontSize:".72rem", fontWeight:700 }}>{cag?.name||"—"}</div>
-                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} le {plan.dayOfMonth} de chaque mois</div>
+                <div style={{ fontSize:".74rem", fontWeight:700 }}>{cag?.name||"—"}</div>
+                <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} le {plan.dayOfMonth} de chaque mois</div>
               </div>
-              <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onSaveAutoSaving?.({...plan,enabled:!plan.enabled});}} onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})}
-                style={{ width:36, height:20, borderRadius:10, background:plan.enabled?"var(--purple)":"var(--border)", position:"relative", cursor:"pointer", transition:"background .2s", flexShrink:0, touchAction:"manipulation" }}>
+              <div onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})}
+                style={{ width:36, height:20, borderRadius:10, background:plan.enabled?"var(--purple)":"var(--border)", position:"relative", cursor:"pointer", transition:"background .2s", flexShrink:0 }}>
                 <div style={{ position:"absolute", top:2, left:plan.enabled?17:2, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
               </div>
-              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={e=>{e.stopPropagation();onDeleteAutoSaving?.(plan.id);}}
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={()=>onDeleteAutoSaving?.(plan.id)}
                 style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", color:"var(--text3)", fontSize:".65rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
             </div>
           );
         })}
         {!addingPlan ? (
-          <button onClick={()=>setAddingPlan(true)} style={{ width:"100%", background:"transparent", border:`1.5px dashed var(--purple)`, borderRadius:9, padding:"9px", color:"var(--purple)", fontWeight:700, fontSize:".72rem", cursor:"pointer", touchAction:"manipulation" }}>
+          <button onClick={()=>setAddingPlan(true)} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--purple)", borderRadius:9, padding:"10px", color:"var(--purple)", fontWeight:700, fontSize:".75rem", cursor:"pointer", marginTop:4, touchAction:"manipulation" }}>
             ＋ Planifier un versement
           </button>
         ) : (
-          <div style={{ background:"var(--surface2)", border:`1.5px solid var(--purple)`, borderRadius:10, padding:12 }}>
-            <div style={{ fontSize:".62rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>Nouveau versement auto</div>
+          <div style={{ background:"var(--surface2)", border:"1.5px solid var(--purple)", borderRadius:10, padding:12, marginTop:4 }}>
             <select value={planDraft.cagnotteId} onChange={e=>setPlanDraft(d=>({...d,cagnotteId:e.target.value}))}
-              style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"8px 10px", color:"var(--text)", fontSize:".78rem", marginBottom:8 }}>
+              style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 10px", color:"var(--text)", fontSize:".78rem", marginBottom:8 }}>
               <option value="">Choisir une cagnotte…</option>
               {data.cagnottes.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
             </select>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
               <div>
                 <div style={{ fontSize:".58rem", color:"var(--text2)", marginBottom:3 }}>Montant (€)</div>
-                <input type="number" value={planDraft.amount} min="1" placeholder="50"
-                  onChange={e=>setPlanDraft(d=>({...d,amount:e.target.value}))}
+                <input type="number" value={planDraft.amount} min="1" placeholder="50" onChange={e=>setPlanDraft(d=>({...d,amount:e.target.value}))}
                   style={{ width:"100%", background:"var(--bg)", border:`1px solid ${planDraft.amount?"var(--purple)":"var(--border)"}`, borderRadius:7, padding:"8px 10px", color:"var(--text)", fontSize:".85rem", fontFamily:"var(--mono)", boxSizing:"border-box" }} />
               </div>
               <div>
@@ -3799,239 +3845,213 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             </div>
             <div style={{ display:"flex", gap:6 }}>
               <button onClick={()=>setAddingPlan(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer" }}>Annuler</button>
-              <button onClick={()=>{ if(!planDraft.cagnotteId||!planDraft.amount)return; onSaveAutoSaving?.({cagnotteId:planDraft.cagnotteId,amount:parseFloat(planDraft.amount),dayOfMonth:parseInt(planDraft.dayOfMonth),enabled:true}); setAddingPlan(false); setPlanDraft({cagnotteId:"",amount:"",dayOfMonth:"1"}); }}
+              <button onClick={()=>{if(!planDraft.cagnotteId||!planDraft.amount)return;onSaveAutoSaving?.({cagnotteId:planDraft.cagnotteId,amount:parseFloat(planDraft.amount),dayOfMonth:parseInt(planDraft.dayOfMonth),enabled:true});setAddingPlan(false);setPlanDraft({cagnotteId:"",amount:"",dayOfMonth:"1"});}}
                 style={{ flex:2, background:planDraft.cagnotteId&&planDraft.amount?"var(--purple)":"var(--surface2)", border:"none", borderRadius:8, padding:"8px", color:planDraft.cagnotteId&&planDraft.amount?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer", touchAction:"manipulation" }}>
                 Créer
               </button>
             </div>
           </div>
         )}
-      </div>
+      </Sheet>
 
-      {/* ── Sécurité PIN ── */}
-      <div className="card" style={{ borderLeft:`3px solid var(--accent)`, marginBottom:14 }}>
-        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--accent)", marginBottom:10 }}>🔒 Sécurité</div>
-        {/* Biométrie */}
-        <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();const n=!bioOn;setBioOn(n);onSaveSecuritySettings?.(pinOn,pinHash,n);}} onClick={()=>{ const n=!bioOn;setBioOn(n);onSaveSecuritySettings?.(pinOn,pinHash,n); }}
-          style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:bioOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${bioOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:9, marginBottom:8, cursor:"pointer", touchAction:"manipulation" }}>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:".72rem", fontWeight:700, color:bioOn?"var(--accent)":"var(--text2)" }}>Empreinte / FaceID</div>
-            <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>Déverrouillage biométrique Android</div>
-          </div>
-          <div style={{ width:38, height:22, borderRadius:11, background:bioOn?"var(--accent)":"var(--border)", position:"relative", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:bioOn?17:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
+      {/* 🐷 Arrondi automatique */}
+      <Sheet open={openSheet==="rounding"} onClose={close} title="🐷 Arrondi automatique">
+        <div style={{ fontSize:".65rem", color:"var(--text3)", lineHeight:1.6, marginBottom:12 }}>
+          À chaque dépense, verse la différence jusqu'à l'arrondi dans une cagnotte.
         </div>
-        {/* PIN toggle */}
-        <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}} onClick={()=>{if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}}
-          style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:pinOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${pinOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:9, marginBottom: (pinSetup||pinOn)?8:0, cursor:"pointer", touchAction:"manipulation" }}>
+        <div onClick={()=>{const n=!roundOn;setRoundOn(n);onSaveRoundingSettings?.(n,roundCagId||null,roundRule);}}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:roundOn?"rgba(104,212,152,.06)":"var(--surface2)", border:`1px solid ${roundOn?"rgba(104,212,152,.2)":"var(--border)"}`, borderRadius:10, marginBottom:roundOn?12:0, cursor:"pointer", touchAction:"manipulation" }}>
           <div style={{ flex:1 }}>
-            <div style={{ fontSize:".72rem", fontWeight:700, color:pinOn?"var(--accent)":"var(--text2)" }}>Code PIN (4 chiffres)</div>
-            <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{pinOn?"Verrou actif à l'ouverture":"Fallback si biométrie indisponible"}</div>
+            <div style={{ fontSize:".76rem", fontWeight:700, color:roundOn?"var(--success)":"var(--text2)" }}>Arrondi automatique {roundOn?"activé":"désactivé"}</div>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Verse la différence dans une cagnotte</div>
           </div>
-          <div style={{ width:38, height:22, borderRadius:11, background:pinOn?"var(--accent)":"var(--border)", position:"relative", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:pinOn?17:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
-        </div>
-        {/* Setup PIN inline */}
-        {pinSetup && (
-          <div style={{ background:"var(--surface2)", border:`1.5px solid var(--accent)`, borderRadius:10, padding:12, marginBottom:8 }}>
-            <div style={{ fontSize:".62rem", fontWeight:800, color:"var(--accent)", marginBottom:8 }}>
-              {pinSetup==="enter"?"Choisir un code PIN (4 chiffres)":"Confirmer le code PIN"}
-            </div>
-            <div style={{ display:"flex", gap:12, marginBottom:10, justifyContent:"center" }}>
-              {[0,1,2,3].map(i=>(
-                <div key={i} style={{ width:12, height:12, borderRadius:"50%", background:i<pinEntry.length?"var(--accent)":"transparent", border:"2px solid rgba(112,184,224,.4)", transition:"background .1s" }} />
-              ))}
-            </div>
-            {pinError && <div style={{ fontSize:".6rem", color:"var(--danger)", marginBottom:8, textAlign:"center" }}>{pinError}</div>}
-            <div style={{ display:"flex", flexWrap:"wrap", gap:5, justifyContent:"center", maxWidth:200, margin:"0 auto 10px" }}>
-              {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k,i)=>(
-                k===""
-                  ? <div key={i} style={{ width:52, height:40 }} />
-                  : <button key={i}
-                      onTouchStart={e=>e.stopPropagation()}
-                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
-                        if(k==="⌫"){setPinEntry(p=>p.slice(0,-1));setPinError("");return;}
-                        const next=pinEntry+k; if(next.length>4)return; setPinEntry(next);
-                        if(next.length===4){
-                          if(pinSetup==="enter"){setPinFirst(next);setPinEntry("");setPinSetup("confirm");}
-                          else{
-                            if(next===pinFirst){sha256hex(next).then(h=>{onSaveSecuritySettings?.(true,h,bioOn);setPinOn(true);setPinSetup(null);setPinEntry("");setPinFirst("");});}
-                            else{setPinEntry("");setPinError("Les codes ne correspondent pas");}
-                          }
-                        }
-                      }}
-                      onClick={()=>{}}
-                      style={{ width:52, height:40, background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8, color:"#e8f0e8", fontSize:k==="⌫"?"1rem":"1rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
-                      {k}
-                    </button>
-              ))}
-            </div>
-            <button onClick={()=>{setPinSetup(null);setPinEntry("");setPinFirst("");setPinError("");}} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"7px", color:"var(--text3)", fontSize:".68rem", cursor:"pointer" }}>Annuler</button>
-          </div>
-        )}
-        {pinOn && !pinSetup && (
-          <button onClick={()=>{setPinSetup("enter");setPinEntry("");}} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text2)", fontSize:".7rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
-            ✏️ Modifier le code PIN
-          </button>
-        )}
-      </div>
-
-      {/* ── Arrondi automatique ── */}
-      <div className="card" style={{ borderLeft: `3px solid ${roundOn ? "var(--success)" : "var(--border)"}`, marginBottom: 14 }}>
-        <div onClick={() => {
-          const next = !roundOn; setRoundOn(next);
-          onSaveRoundingSettings?.(next, roundCagId || null, roundRule);
-        }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: roundOn ? 12 : 0 }}>
-          <div style={{ width: 38, height: 22, borderRadius: 11, background: roundOn ? "var(--success)" : "var(--border)", position: "relative", transition: "background .2s", flexShrink: 0 }}>
-            <div style={{ position: "absolute", top: 3, left: roundOn ? 17 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
-          </div>
-          <div>
-            <div style={{ fontSize: ".72rem", fontWeight: 800, color: roundOn ? "var(--success)" : "var(--text2)" }}>🐷 Arrondi automatique</div>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Verse la différence dans une cagnotte à chaque dépense</div>
+          <div style={{ width:40, height:22, borderRadius:11, background:roundOn?"var(--success)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:roundOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
           </div>
         </div>
         {roundOn && (<>
-          <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5 }}>Cagnotte cible</div>
-          <select value={roundCagId} onChange={e => { setRoundCagId(e.target.value); onSaveRoundingSettings?.(roundOn, e.target.value, roundRule); }}
-            style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: ".78rem", marginBottom: 10 }}>
+          <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Cagnotte cible</div>
+          <select value={roundCagId} onChange={e=>{setRoundCagId(e.target.value);onSaveRoundingSettings?.(roundOn,e.target.value,roundRule);}}
+            style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8, padding:"9px 10px", color:"var(--text)", fontSize:".78rem", marginBottom:12 }}>
             <option value="">Choisir une cagnotte…</option>
-            {data.cagnottes.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            {data.cagnottes.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
           </select>
-          <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 6 }}>Arrondir à</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-            {[["ceil","L'euro sup."],["5","5 € sup."],["10","10 € sup."]].map(([k,l]) => (
-              <button key={k} onClick={() => { setRoundRule(k); onSaveRoundingSettings?.(roundOn, roundCagId, k); }} style={{
-                background: roundRule===k ? "rgba(104,212,152,.12)" : "transparent",
-                border: `1px solid ${roundRule===k ? "var(--success)" : "var(--border)"}`,
-                borderRadius: 8, padding: "8px 0", color: roundRule===k ? "var(--success)" : "var(--text2)",
-                fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+          <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Arrondir à</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6 }}>
+            {[["ceil","L'euro sup."],["5","5 € sup."],["10","10 € sup."]].map(([k,l])=>(
+              <button key={k} onClick={()=>{setRoundRule(k);onSaveRoundingSettings?.(roundOn,roundCagId,k);}} style={{
+                background:roundRule===k?"rgba(104,212,152,.12)":"transparent",
+                border:`1px solid ${roundRule===k?"var(--success)":"var(--border)"}`,
+                borderRadius:8, padding:"9px 0", color:roundRule===k?"var(--success)":"var(--text2)", fontSize:".68rem", fontWeight:700, cursor:"pointer",
               }}>{l}</button>
             ))}
           </div>
         </>)}
-      </div>
-      <SectionTitle>Gestion Catégories</SectionTitle>
-      <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
-        {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (
-          <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={() => setCatFilter(k)}>{l}</div>
-        ))}
-        <button onClick={onNewCat} style={{
-          marginLeft:"auto", display:"flex", alignItems:"center", gap:4,
-          background:"var(--accent)", border:"none", borderRadius:20,
-          padding:"6px 14px", color:"var(--bg)", fontWeight:800,
-          fontSize:".7rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation",
-        }}>＋ Créer</button>
-      </div>
-      <div className="cat-grid">
-        {filtered.length === 0
-          ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
-          : filtered.map(c => {
-              const usage    = catUsage[c.id] || 0;
-              const linkedTo = data.categories.find(x => x.id === c.linkedToId);
-              return (
-                <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
-                  <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%",
-                    background: c.type==="expense" ? "var(--danger)" : "var(--success)" }} />
-                  <div style={{
-                    position:"absolute", top:4, right:4,
-                    fontSize:".48rem", fontWeight:800, lineHeight:1,
-                    color: usage === 0 ? "var(--danger)" : "var(--text3)",
-                    background: usage === 0 ? "var(--danger-glow)" : "var(--surface3)",
-                    padding:"2px 4px", borderRadius:4,
-                  }}>
-                    {usage === 0 ? "✕" : usage}
-                  </div>
-                  <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
-                  <span style={{ fontSize:".6rem", fontWeight:700, wordBreak:"break-word", whiteSpace:"normal", textAlign:"center", lineHeight:1.3, width:"100%", padding:"0 3px" }}>{c.name}</span>
-                  {linkedTo && (
-                    <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>
-                      🔗
-                    </span>
-                  )}
-                  <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"2px 6px", marginTop:2, lineHeight:1.4, minWidth:24, minHeight:24 }}
-                    onTouchStart={e => e.stopPropagation()}
-                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onDeleteCat(c.id); }}
-                    onClick={e => e.stopPropagation()}>✕</button>
-                </div>
-              );
-            })
-        }
-      </div>
+      </Sheet>
 
-      {/* ── Section liaisons ── */}
-      <div style={{ marginTop:16 }}>
-        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:8 }}>🔗 Liaisons de catégories</div>
-        <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"var(--radius-sm)", padding:12 }}>
-          <div style={{ fontSize:".62rem", color:"var(--text3)", marginBottom:10, lineHeight:1.5 }}>
-            Lie une catégorie de remboursement à une catégorie de dépense. Les revenus de la source seront déduits du coût net de la cible.
+      {/* 🔔 Alerte solde bas */}
+      <Sheet open={openSheet==="alert"} onClose={close} title="🔔 Alerte solde bas">
+        <div onClick={()=>saveAlert(!alertOn, thresh)}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:alertOn?"rgba(200,184,96,.06)":"var(--surface2)", border:`1px solid ${alertOn?"rgba(200,184,96,.2)":"var(--border)"}`, borderRadius:10, marginBottom:alertOn?12:0, cursor:"pointer", touchAction:"manipulation" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:".76rem", fontWeight:700, color:alertOn?"var(--warning)":"var(--text2)" }}>Alerte {alertOn?"activée":"désactivée"}</div>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Notification si le solde passe sous le seuil</div>
           </div>
-
-          {/* Liens existants */}
-          {data.categories.filter(c => c.linkedToId).map(c => {
-            const target = data.categories.find(x => x.id === c.linkedToId);
-            if (!target) return null;
-            return (
-              <div key={c.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"rgba(104,212,152,.06)", border:"1px solid rgba(104,212,152,.2)", borderRadius:8, marginBottom:6 }}>
-                <span style={{ fontSize:".85rem" }}>{c.icon}</span>
-                <span style={{ fontSize:".72rem", fontWeight:700, flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</span>
-                <span style={{ fontSize:".7rem", color:"var(--text3)", flexShrink:0 }}>→</span>
-                <span style={{ fontSize:".85rem" }}>{target.icon}</span>
-                <span style={{ fontSize:".72rem", fontWeight:700, color:"var(--success)", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{target.name}</span>
-                <button
-                  onTouchStart={e => e.stopPropagation()}
-                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onEditCat({ id:c.id, linkedToId:null }); }}
-                  onClick={e => { e.stopPropagation(); onEditCat({ id:c.id, linkedToId:null }); }}
-                  style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"6px 10px", color:"var(--text3)", fontSize:".75rem", cursor:"pointer", minHeight:34, touchAction:"manipulation", flexShrink:0 }}>
-                  ✕
+          <div style={{ width:40, height:22, borderRadius:11, background:alertOn?"var(--warning)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:alertOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+          </div>
+        </div>
+        {alertOn && (
+          <div>
+            <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Seuil d'alerte (€)</div>
+            <input type="number" value={thresh} min="0" step="50"
+              onChange={e=>{setThresh(e.target.value);onSaveAlertSettings?.(alertOn,parseFloat(e.target.value)||0);}}
+              style={{ width:"100%", background:"var(--bg)", border:"1.5px solid var(--warning)", borderRadius:9, padding:"11px 14px", color:"var(--text)", fontSize:"1.1rem", fontFamily:"var(--mono)", boxSizing:"border-box", marginBottom:10 }} />
+            <div style={{ display:"flex", gap:6 }}>
+              {[200,500,1000].map(v=>(
+                <button key={v} onClick={()=>{setThresh(String(v));onSaveAlertSettings?.(alertOn,v);}}
+                  style={{ flex:1, background:thresh===String(v)?"rgba(200,184,96,.15)":"transparent", border:`1px solid ${thresh===String(v)?"var(--warning)":"var(--border)"}`, borderRadius:8, padding:"8px 0", color:thresh===String(v)?"var(--warning)":"var(--text3)", fontSize:".68rem", fontWeight:700, cursor:"pointer" }}>
+                  {v} €
                 </button>
-              </div>
-            );
-          })}
-          {data.categories.filter(c => c.linkedToId).length === 0 && (
-            <div style={{ fontSize:".65rem", color:"var(--text3)", fontStyle:"italic", textAlign:"center", padding:"6px 0 10px" }}>Aucune liaison définie</div>
-          )}
-
-          {/* Ajouter un lien */}
-          <LinkForm categories={data.categories} onLink={onEditCat} />
-        </div>
-      </div>
-
-      {/* ── Stats globales — en bas ── */}
-      {globalStats && (
-        <div style={{
-          background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
-          borderRadius: "var(--radius)", padding: "14px 16px", marginTop: 16,
-          boxShadow: "0 4px 18px rgba(112,184,224,.12)",
-        }}>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 10 }}>
-            📊 Statistiques globales
+              ))}
+            </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { icon: "📋", label: "Transactions",       value: globalStats.count },
-              { icon: "📅", label: "Première opération", value: new Date(globalStats.earliest + "T12:00:00").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) },
-              { icon: "💶", label: "Total géré",         value: fmt(globalStats.totalGere) },
-              { icon: "🏷️", label: "Catégories",         value: data.categories.length },
-            ].map(s => (
-              <div key={s.label} style={{ background: "rgba(255,255,255,.06)", borderRadius: 10, padding: "10px 12px" }}>
-                <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.45)", marginBottom: 4 }}>{s.icon} {s.label}</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "#fff", fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
-              </div>
-            ))}
-          </div>
+        )}
+      </Sheet>
+
+      {/* 🏷️ Gestion catégories */}
+      <Sheet open={openSheet==="categories"} onClose={close} title="🏷️ Catégories">
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:10 }}>
+          {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l])=>(
+            <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={()=>setCatFilter(k)}>{l}</div>
+          ))}
+          <button onClick={onNewCat} style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:4, background:"var(--accent)", border:"none", borderRadius:20, padding:"6px 14px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation" }}>
+            ＋ Créer
+          </button>
         </div>
-      )}
+        <div className="cat-grid">
+          {filtered.length === 0
+            ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
+            : filtered.map(c => {
+                const usage    = catUsage[c.id] || 0;
+                const linkedTo = data.categories.find(x => x.id === c.linkedToId);
+                return (
+                  <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
+                    <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%", background:c.type==="expense"?"var(--danger)":"var(--success)" }} />
+                    <div style={{ position:"absolute", top:4, right:4, fontSize:".48rem", fontWeight:800, lineHeight:1, color:usage===0?"var(--danger)":"var(--text3)", background:usage===0?"var(--danger-glow)":"var(--surface3)", padding:"2px 4px", borderRadius:4 }}>
+                      {usage===0?"✕":usage}
+                    </div>
+                    <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
+                    <span style={{ fontSize:".6rem", fontWeight:700, wordBreak:"break-word", whiteSpace:"normal", textAlign:"center", lineHeight:1.3, width:"100%", padding:"0 3px" }}>{c.name}</span>
+                    {linkedTo && <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>🔗</span>}
+                    <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"2px 6px", marginTop:2, lineHeight:1.4, minWidth:24, minHeight:24 }}
+                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteCat(c.id);}} onClick={e=>e.stopPropagation()}>✕</button>
+                  </div>
+                );
+              })
+          }
+        </div>
+      </Sheet>
 
-      <button className="btn btn-danger-outline" style={{ width:"100%", marginTop:20 }} onClick={onReset}>
-        ⚠️ Réinitialiser toutes les données
-      </button>
+      {/* 🔗 Liaisons */}
+      <Sheet open={openSheet==="links"} onClose={close} title="🔗 Liaisons de catégories">
+        <div style={{ fontSize:".65rem", color:"var(--text3)", lineHeight:1.5, marginBottom:12 }}>
+          Lie une catégorie de remboursement à une catégorie de dépense pour calculer les coûts nets.
+        </div>
+        {data.categories.filter(c=>c.linkedToId).map(c => {
+          const target = data.categories.find(x=>x.id===c.linkedToId);
+          if (!target) return null;
+          return (
+            <div key={c.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"rgba(104,212,152,.06)", border:"1px solid rgba(104,212,152,.2)", borderRadius:8, marginBottom:6 }}>
+              <span style={{ fontSize:".85rem" }}>{c.icon}</span>
+              <span style={{ fontSize:".72rem", fontWeight:700, flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</span>
+              <span style={{ fontSize:".7rem", color:"var(--text3)", flexShrink:0 }}>→</span>
+              <span style={{ fontSize:".85rem" }}>{target.icon}</span>
+              <span style={{ fontSize:".72rem", fontWeight:700, color:"var(--success)", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{target.name}</span>
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onEditCat({id:c.id,linkedToId:null});}} onClick={()=>onEditCat({id:c.id,linkedToId:null})}
+                style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"6px 10px", color:"var(--text3)", fontSize:".75rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
+            </div>
+          );
+        })}
+        {data.categories.filter(c=>c.linkedToId).length===0 && (
+          <div style={{ fontSize:".65rem", color:"var(--text3)", fontStyle:"italic", textAlign:"center", padding:"8px 0 12px" }}>Aucune liaison définie</div>
+        )}
+        <LinkForm categories={data.categories} onLink={onEditCat} />
+      </Sheet>
 
-      {/* Version */}
-      <div style={{ marginTop: 32, textAlign: "center", color: "var(--text3)", fontSize: ".65rem", letterSpacing: ".06em", fontWeight: 600 }}>
-        {APP_NAME} — v{APP_VERSION}
-      </div>
+      {/* 🔄 Récurrentes */}
+      <Sheet open={openSheet==="recurring"} onClose={close} title="🔄 Récurrentes">
+        {(data.recurringTemplates||[]).length === 0 ? (
+          <div style={{ textAlign:"center", padding:"20px 0", color:"var(--text3)", fontSize:".75rem" }}>Aucun modèle récurrent</div>
+        ) : (data.recurringTemplates||[]).map(tpl => {
+          const cat  = data.categories.find(c=>c.id===tpl.categoryId);
+          const isInc = isIncome(tpl.type);
+          const done  = (data.transactions||[]).filter(t=>t.templateId===tpl.id).length;
+          return (
+            <div key={tpl.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"11px 14px", background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, marginBottom:6 }}>
+              <div style={{ width:32, height:32, borderRadius:9, background:"var(--surface2)", border:"1px solid var(--border)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:"1rem" }}>
+                {cat?.icon ?? (isInc?"💰":"💸")}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:".74rem", fontWeight:700, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{tpl.label}</div>
+                <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>
+                  {cat?.name ?? "—"} · <span style={{ color:"var(--accent)" }}>{tpl.frequency==="yearly"?"Annuelle":"Mensuelle"}</span>
+                  {tpl.occurrences!=null && <span> · {done}/{tpl.occurrences} fois</span>}
+                </div>
+              </div>
+              <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:isInc?"var(--success)":"var(--danger)", fontSize:".78rem", flexShrink:0 }}>{fmt(tpl.amount)}</div>
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteRecurring?.(tpl.id);}} onClick={()=>onDeleteRecurring?.(tpl.id)}
+                style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 8px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
+            </div>
+          );
+        })}
+      </Sheet>
+
+      {/* 💾 Sauvegarde */}
+      <Sheet open={openSheet==="backup"} onClose={close} title="💾 Sauvegarde">
+        {/* Dernière sauvegarde */}
+        <div style={{ background:"var(--surface)", border:`1.5px solid ${backupOk?"rgba(104,212,152,.3)":last?"rgba(200,184,96,.3)":"rgba(200,112,112,.3)"}`, borderLeft:`3px solid ${backupOk?"var(--success)":last?"var(--warning)":"var(--danger)"}`, borderRadius:12, padding:14, marginBottom:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+            <div>
+              <div style={{ fontSize:".65rem", fontWeight:800, color:backupOk?"var(--success)":last?"var(--warning)":"var(--danger)" }}>
+                {!last?"⚠️ Aucune sauvegarde":backupOk?`✅ il y a ${daysSinceBackup} jour${daysSinceBackup>1?"s":""}`:`⚠️ il y a ${daysSinceBackup} jours`}
+              </div>
+              {last && <div style={{ fontFamily:"var(--mono)", fontSize:".82rem", fontWeight:800, marginTop:4 }}>{new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"})} à {last.date.slice(11,16)}</div>}
+            </div>
+            {last && <div style={{ textAlign:"right" }}>
+              <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--accent)" }}>{last.sizeKo} ko</div>
+              <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{last.txCount} transactions</div>
+            </div>}
+          </div>
+          <button className="btn btn-primary" style={{ width:"100%" }} onClick={onExport}>💾 Sauvegarder maintenant</button>
+        </div>
+        {/* Historique */}
+        {(data.backupHistory||[]).length > 0 && (
+          <div>
+            <button onClick={()=>setShowBackupHist(h=>!h)} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"9px 12px", color:"var(--text3)", fontSize:".68rem", fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6, touchAction:"manipulation" }}>
+              <span>📋 Historique ({(data.backupHistory||[]).length})</span>
+              <span style={{ transform:showBackupHist?"rotate(90deg)":"none", transition:"transform .2s" }}>›</span>
+            </button>
+            {showBackupHist && (
+              <div style={{ borderRadius:8, overflow:"hidden", border:"1px solid var(--border)" }}>
+                {(data.backupHistory||[]).map((b,i) => (
+                  <div key={b.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderBottom:i<(data.backupHistory||[]).length-1?"1px solid var(--border-soft)":"none" }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                        <span style={{ fontSize:".7rem", fontWeight:700 }}>{new Date(b.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} à {b.date.slice(11,16)}</span>
+                        {i===0 && <span style={{ fontSize:".48rem", background:"rgba(104,212,152,.12)", color:"var(--success)", padding:"1px 5px", borderRadius:6, fontWeight:800 }}>DERNIER</span>}
+                      </div>
+                      <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{b.txCount} transactions · {b.sizeKo} ko</div>
+                    </div>
+                    <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onExport();}} onClick={onExport}
+                      style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--accent)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>📥</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }
