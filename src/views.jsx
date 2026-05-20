@@ -246,7 +246,7 @@ function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaC
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
 // ─────────────────────────────────────────────────────────────────
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold }) {
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred }) {
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -254,6 +254,19 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const curY      = new Date().getFullYear().toString();
 
   const balance   = useBalance(transactions, fixedExpenses);
+
+  // ── Arrondi stats ─────────────────────────────────────────────
+  const roundStats = useMemo(() => {
+    if (!roundingEnabled || !roundingCagnotteId) return null;
+    const rtxs = transactions.filter(t => t.isRounding && t.targetCagId === roundingCagnotteId);
+    const month = rtxs.filter(t => t.date.startsWith(curM)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const year  = rtxs.filter(t => t.date.startsWith(curY)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const pending = rtxs
+      .filter(t => !roundingLastTransferDate || t.date > roundingLastTransferDate)
+      .reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const cag = cagnottes.find(c => c.id === roundingCagnotteId);
+    return { month, year, pending: parseFloat(pending.toFixed(2)), cagName: cag?.name || "", cagIcon: cag?.icon || "🐷" };
+  }, [transactions, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, curM, curY, cagnottes]);
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
   const prevMonth = useMonthStats(transactions, fixedExpenses, prevM);
   const tf        = useTotalFixes(fixedExpenses);
@@ -406,7 +419,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           alertThreshold={alertThreshold}
         />
 
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative", display: "flex", gap: 8 }}>
+          {/* ── Gauche : solde + rapprochement ── */}
+          <div style={{ flex: 1, minWidth: 0 }}>
           <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}>
             Solde Bancaire Estimé
           </div>
@@ -466,6 +481,40 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
                   background: "linear-gradient(90deg, var(--success), var(--accent))",
                   borderRadius: 99, transition: "width .4s ease",
                 }} />
+              </div>
+            </div>
+          )}
+          </div>{/* fin gauche */}
+
+          {/* ── Droite : arrondis vertical (si activé) ── */}
+          {roundStats && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, width: 58 }}>
+              <div style={{ fontSize: ".4rem", color: "rgba(255,255,255,.3)", textAlign: "center", marginBottom: 1 }}>🐷</div>
+              {/* Ce mois */}
+              <div style={{ background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
+                <div style={{ fontSize: ".38rem", color: "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Mois</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.month)}</div>
+              </div>
+              {/* Cette année */}
+              <div style={{ background: "rgba(112,184,224,.08)", border: "1px solid rgba(112,184,224,.15)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
+                <div style={{ fontSize: ".38rem", color: "rgba(112,184,224,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Année</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--accent)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.year)}</div>
+              </div>
+              {/* À virer */}
+              <div
+                onClick={() => roundStats.pending > 0.005 && onMarkRoundingTransferred?.()}
+                style={{
+                  background: roundStats.pending > 0.005 ? "rgba(200,184,96,.12)" : "rgba(104,212,152,.08)",
+                  border: `1px solid ${roundStats.pending > 0.005 ? "rgba(200,184,96,.3)" : "rgba(104,212,152,.2)"}`,
+                  borderRadius: 5, padding: "3px 5px", textAlign: "center",
+                  cursor: roundStats.pending > 0.005 ? "pointer" : "default",
+                }}>
+                <div style={{ fontSize: ".38rem", color: roundStats.pending > 0.005 ? "rgba(200,184,96,.8)" : "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>
+                  {roundStats.pending > 0.005 ? "À virer" : "Viré ✓"}
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: roundStats.pending > 0.005 ? "var(--warning)" : "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>
+                  {roundStats.pending > 0.005 ? fmt(roundStats.pending) : "—"}
+                </div>
               </div>
             </div>
           )}
@@ -823,6 +872,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
   const [showAmtFilter, setShowAmtFilter] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
 
   // Filtre pointage — initialisé depuis la hero card
   const [pointFilter, setPointFilter] = useState(initPointFilter);
@@ -1036,69 +1086,141 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
             🌐 Recherche sur toutes les périodes — {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
           </div>
         )}
-        <div className="filter-row">
-          {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
-            <div key={k} className={`filter-chip${filter===k?" active":""}`}
-              onClick={() => { setFilter(k); setCatId(""); }}>{l}</div>
-          ))}
-        </div>
 
-        {/* ── Filtre pointage ── */}
-        <div className="filter-row" style={{ marginBottom: 6 }}>
-          {[
-            ["all",      "Toutes",       ""],
-            ["pointed",  "✓ Pointées",   "var(--success)"],
-            ["unpointed","⏳ En attente", "var(--warning)"],
-          ].map(([k, l, col]) => (
-            <div key={k}
-              className={`filter-chip${pointFilter===k?" active":""}`}
-              style={{ color: pointFilter===k && col ? col : undefined }}
-              onClick={() => { setPointFilter(k); onClearPointFilter?.(); }}>
-              {l}
-            </div>
-          ))}
-        </div>
+        {/* ── Filtres compacts ── */}
+        {(() => {
+          const activeCount = [
+            filter !== "all", pointFilter !== "all",
+            sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "list",
+          ].filter(Boolean).length;
+          const activePills = [
+            filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
+            pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
+            sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
+            (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
+            viewMode !== "list"    && { label: "📊 Catégories", clear: () => setViewMode("list") },
+          ].filter(Boolean);
 
-        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-          <span style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tri :</span>
-          {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
-            <span key={k} className={`sort-chip${sort===k?" active":""}`} onClick={() => setSort(k)}>{l}</span>
-          ))}
-          <span className={`sort-chip${showAmtFilter?" active":""}`} onClick={() => setShowAmtFilter(s => !s)} style={{ marginLeft: "auto" }}>
-            💶 {(minAmt||maxAmt) ? "Montant ✦" : "Montant"}
-          </span>
-        </div>
-        {showAmtFilter && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
-            {[["Min (€)", minAmt, setMinAmt],["Max (€)", maxAmt, setMaxAmt]].map(([label, val, setter]) => (
-              <div key={label}>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 3 }}>{label}</div>
-                <input type="number" value={val} min="0" step="10"
-                  onChange={e => setter(e.target.value)}
-                  style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".75rem", fontFamily: "var(--mono)", boxSizing: "border-box" }}/>
+          return (
+            <div>
+              {/* Barre unique */}
+              <div style={{ display: "flex", gap: 5, marginBottom: showFilterPanel || activePills.length > 0 ? 6 : 0 }}>
+                <button onClick={() => setShowFilterPanel(p => !p)} style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  background: activeCount > 0 ? "var(--accent-glow)" : "var(--surface2)",
+                  border: `1px solid ${activeCount > 0 ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 8, padding: "0 10px", height: 36,
+                  color: activeCount > 0 ? "var(--accent)" : "var(--text2)",
+                  fontWeight: 700, fontSize: ".68rem", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
+                }}>
+                  <span>⚙️</span>
+                  <span>Filtres</span>
+                  {activeCount > 0 && (
+                    <span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".52rem", fontWeight: 800 }}>{activeCount}</span>
+                  )}
+                </button>
+                <button onClick={() => setGlobalSearch(g => !g)} style={{
+                  width: 36, height: 36, flexShrink: 0,
+                  background: globalSearch ? "var(--accent-glow)" : "var(--surface2)",
+                  border: `1px solid ${globalSearch ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 8, fontSize: ".78rem", cursor: "pointer", color: globalSearch ? "var(--accent)" : "var(--text2)", touchAction: "manipulation",
+                }}>🌐</button>
               </div>
-            ))}
-            {(minAmt||maxAmt) && (
-              <button onClick={() => { setMinAmt(""); setMaxAmt(""); }}
-                style={{ gridColumn: "span 2", background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px", color: "var(--text3)", fontSize: ".65rem", cursor: "pointer" }}>
-                ✕ Effacer le filtre montant
-              </button>
-            )}
-          </div>
-        )}
-      </div>
 
-      {/* ── Toggle Liste / Catégories ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
-        {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
-          <button key={k} onClick={() => setViewMode(k)} style={{
-            background: viewMode===k ? "var(--accent-glow)" : "transparent",
-            border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
-            borderRadius: "var(--radius-sm)", padding: "9px 0",
-            color: viewMode===k ? "var(--accent)" : "var(--text2)",
-            fontWeight: 700, fontSize: ".72rem", cursor: "pointer",
-          }}>{l}</button>
-        ))}
+              {/* Chips filtres actifs */}
+              {!showFilterPanel && activePills.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                  {activePills.map((p, i) => (
+                    <span key={i} onClick={p.clear} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: ".58rem", padding: "2px 8px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: 10, color: "var(--accent)", cursor: "pointer" }}>
+                      {p.label} <span style={{ opacity: .7 }}>✕</span>
+                    </span>
+                  ))}
+                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("list"); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
+                    ✕ Tout reset
+                  </span>
+                </div>
+              )}
+
+              {/* Panneau expansible */}
+              {showFilterPanel && (
+                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 10, marginBottom: 8, display: "flex", flexDirection: "column", gap: 9 }}>
+                  {/* Type */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                      {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
+                        <button key={k} onClick={() => { setFilter(k); setCatId(""); }} style={{
+                          background: filter===k ? "var(--accent-glow)" : "transparent",
+                          border: `1px solid ${filter===k ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 6, padding: "6px 0",
+                          color: filter===k ? "var(--accent)" : "var(--text2)",
+                          fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Pointage */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Pointage</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                      {[["all","Toutes",""],["pointed","✓ Pointées","var(--success)"],["unpointed","⏳ Attente","var(--warning)"]].map(([k,l,col]) => (
+                        <button key={k} onClick={() => { setPointFilter(k); onClearPointFilter?.(); }} style={{
+                          background: pointFilter===k ? "var(--accent-glow)" : "transparent",
+                          border: `1px solid ${pointFilter===k ? (col||"var(--accent)") : "var(--border)"}`,
+                          borderRadius: 6, padding: "6px 0",
+                          color: pointFilter===k ? (col||"var(--accent)") : "var(--text2)",
+                          fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Tri + Montant */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Tri</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
+                          <button key={k} onClick={() => setSort(k)} style={{
+                            background: sort===k ? "var(--accent-glow)" : "transparent",
+                            border: `1px solid ${sort===k ? "var(--accent)" : "var(--border)"}`,
+                            borderRadius: 6, padding: "5px 0",
+                            color: sort===k ? "var(--accent)" : "var(--text2)",
+                            fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
+                          }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Montant</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {[["min","Min €", minAmt, setMinAmt],["max","Max €", maxAmt, setMaxAmt]].map(([id,ph,val,setter]) => (
+                          <input key={id} type="number" value={val} min="0" step="10" placeholder={ph}
+                            onChange={e => setter(e.target.value)}
+                            style={{ background: "var(--bg)", border: `1px solid ${val ? "var(--accent)" : "var(--border)"}`, borderRadius: 6, padding: "5px 8px", color: "var(--text)", fontSize: ".7rem", fontFamily: "var(--mono)" }} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Vue */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Vue</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
+                        <button key={k} onClick={() => setViewMode(k)} style={{
+                          background: viewMode===k ? "var(--accent-glow)" : "transparent",
+                          border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 6, padding: "7px 0",
+                          color: viewMode===k ? "var(--accent)" : "var(--text2)",
+                          fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── 6. Vue Catégories ── */}
