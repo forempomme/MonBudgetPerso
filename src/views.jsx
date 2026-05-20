@@ -848,6 +848,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [globalSearch, setGlobalSearch] = useState(false);
 
   const { transactions, categories, cagnottes, fixedExpenses } = data;
+  const allTags = data.tags || [];
   const recurringTemplates = data.recurringTemplates || [];
 
   // Récurrentes en attente pour le mois affiché
@@ -1142,7 +1143,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                           <SwipeRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
                             onEdit={onEditTrans} onDelete={onDeleteTrans}
                             onTogglePoint={onTogglePointTx}
-                            onDuplicate={onDuplicateTrans} />
+                            onDuplicate={onDuplicateTrans}
+                            allTags={allTags} />
                         ))
                       : dayTxs.map(t => (
                           <PointRow key={t.id}
@@ -1344,7 +1346,7 @@ function BudgetBar({ exp, inc }) {
 }
 
 // 4. SwipeRow — avec bouton pointage intégré
-function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate }) {
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [] }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
@@ -1426,7 +1428,18 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
-          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 1, flexWrap: "nowrap", overflow: "hidden" }}>
+            <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
+            {(t.tagIds || []).map(tid => {
+              const tag = allTags.find(tg => tg.id === tid);
+              if (!tag) return null;
+              return (
+                <span key={tid} style={{ fontSize: ".5rem", padding: "1px 5px", background: `${tag.color}22`, color: tag.color, borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                  {tag.icon} {tag.name}
+                </span>
+              );
+            })}
+          </div>
         </div>
         <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
           {sign}{fmt(t.amount)}
@@ -2185,6 +2198,189 @@ function SuiviModal({ onClose, categories, transactions, fixedExpenses, threshol
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Modal Tags transversaux
+// ─────────────────────────────────────────────────────────────────
+const TAG_COLORS = ["#70b8e0","#68d498","#b090e0","#c87070","#c8b860","#88c880","#e08870"];
+const TAG_ICONS  = ["🏖️","🎉","🔨","✈️","🎓","🏥","🎁","🍽️","🏠","💼","🌿","🎮"];
+
+function TagsModal({ onClose, tags, transactions, fixedExpenses, categories, onSaveTag, onDeleteTag }) {
+  const [selTagId, setSelTagId]  = useState(tags[0]?.id || null);
+  const [newName,  setNewName]   = useState("");
+  const [newIcon,  setNewIcon]   = useState("🏷️");
+  const [newColor, setNewColor]  = useState(TAG_COLORS[0]);
+  const [creating, setCreating]  = useState(false);
+  const [tab,      setTab]       = useState(tags.length > 0 ? "view" : "manage");
+
+  const selTag = tags.find(t => t.id === selTagId);
+  const tagTxs = selTagId ? transactions.filter(t => (t.tagIds || []).includes(selTagId)) : [];
+  const totalExp = tagTxs.filter(t => t.type === "expense").reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const totalInc = tagTxs.filter(t => isIncome(t.type)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+
+  function createTag() {
+    if (!newName.trim()) return;
+    onSaveTag?.({ name: newName.trim(), icon: newIcon, color: newColor });
+    setNewName(""); setCreating(false);
+  }
+
+  return (
+    <div className="modal" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div className="modal-title" style={{ marginBottom:0 }}>🏷️ Tags</div>
+          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px 10px", color:"var(--text2)", cursor:"pointer", fontSize:".75rem" }}>✕</button>
+        </div>
+
+        {/* Onglets */}
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:14 }}>
+          {[["view","📊 Par tag"],["manage","⚙️ Gérer"]].map(([k,l])=>(
+            <button key={k} onClick={()=>setTab(k)} style={{
+              background:tab===k?"rgba(176,144,224,.1)":"transparent",
+              border:`1.5px solid ${tab===k?"var(--purple)":"var(--border)"}`,
+              borderRadius:10, padding:"9px 0",
+              color:tab===k?"var(--purple)":"var(--text2)",
+              fontWeight:700, fontSize:".7rem", cursor:"pointer",
+            }}>{l}</button>
+          ))}
+        </div>
+
+        {/* ── Vue par tag ── */}
+        {tab === "view" && (
+          tags.length === 0 ? (
+            <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)" }}>
+              <div style={{ fontSize:"2rem", marginBottom:10 }}>🏷️</div>
+              <div style={{ fontSize:".78rem", fontWeight:700, marginBottom:6 }}>Aucun tag créé</div>
+              <button onClick={()=>setTab("manage")} style={{ background:"var(--purple)", border:"none", borderRadius:9, padding:"9px 20px", color:"var(--bg)", fontWeight:800, fontSize:".72rem", cursor:"pointer" }}>
+                Créer un tag →
+              </button>
+            </div>
+          ) : (
+            <div>
+              {/* Sélecteur de tags */}
+              <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:12 }}>
+                {tags.map(tag=>(
+                  <button key={tag.id} onClick={()=>setSelTagId(tag.id)} style={{
+                    display:"flex", alignItems:"center", gap:4,
+                    padding:"5px 12px",
+                    background: selTagId===tag.id ? `${tag.color}22` : "transparent",
+                    border:`1.5px solid ${selTagId===tag.id ? tag.color : "var(--border)"}`,
+                    borderRadius:20, cursor:"pointer",
+                    color: selTagId===tag.id ? tag.color : "var(--text2)",
+                    fontSize:".68rem", fontWeight:700,
+                  }}>
+                    <span>{tag.icon}</span> {tag.name}
+                  </button>
+                ))}
+              </div>
+
+              {selTag && (
+                <div>
+                  {/* Hero résumé */}
+                  <div style={{ background:"linear-gradient(135deg,#0c1830,#182a48)", borderRadius:12, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${selTag.color}` }}>
+                    <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.5)", marginBottom:6 }}>{selTag.icon} {selTag.name} · {tagTxs.length} opération{tagTxs.length!==1?"s":""}</div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                      {[
+                        {l:"Dépenses",   v:totalExp, c:"var(--danger)"},
+                        {l:"Remboursé",  v:totalInc, c:"var(--success)", hidden:totalInc===0},
+                        {l:"Net",        v:totalExp-totalInc, c:"#fff"},
+                      ].map(s=>(
+                        <div key={s.l} style={{ opacity:s.hidden?.4:1 }}>
+                          <div style={{ fontSize:".52rem", color:"rgba(255,255,255,.4)", marginBottom:2 }}>{s.l}</div>
+                          <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:s.c, fontSize:".82rem" }}>{fmt(s.v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Transactions */}
+                  {tagTxs.length === 0 ? (
+                    <div style={{ textAlign:"center", padding:"14px 0", fontSize:".68rem", color:"var(--text3)" }}>Aucune transaction avec ce tag</div>
+                  ) : (
+                    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden" }}>
+                      {[...tagTxs].sort((a,b)=>b.date.localeCompare(a.date)).map((t,i)=>{
+                        const cat = categories.find(c=>c.id===t.categoryId);
+                        const isInc = isIncome(t.type);
+                        return (
+                          <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderBottom:i<tagTxs.length-1?"1px solid var(--border-soft)":"none" }}>
+                            <span style={{ fontSize:".85rem" }}>{cat?.icon||"💸"}</span>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              <div style={{ fontSize:".72rem", fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{t.note || cat?.name || "—"}</div>
+                              <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{t.date} · {cat?.name}</div>
+                            </div>
+                            <span style={{ fontFamily:"var(--mono)", fontWeight:800, fontSize:".75rem", color:isInc?"var(--success)":"var(--danger)", flexShrink:0 }}>
+                              {isInc?"+":"−"}{fmt(t.amount)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        )}
+
+        {/* ── Gérer les tags ── */}
+        {tab === "manage" && (
+          <div>
+            {/* Liste existants */}
+            {tags.length > 0 && (
+              <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
+                {tags.map(tag=>{
+                  const count = transactions.filter(t=>(t.tagIds||[]).includes(tag.id)).length;
+                  return (
+                    <div key={tag.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:`3px solid ${tag.color}`, borderRadius:10 }}>
+                      <span style={{ fontSize:"1rem" }}>{tag.icon}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:".72rem", fontWeight:700 }}>{tag.name}</div>
+                        <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{count} transaction{count!==1?"s":""}</div>
+                      </div>
+                      <button
+                        onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteTag?.(tag.id);}}
+                        onClick={()=>onDeleteTag?.(tag.id)}
+                        style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer", minHeight:30, touchAction:"manipulation" }}>✕</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Créer nouveau */}
+            {!creating ? (
+              <button onClick={()=>setCreating(true)} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--purple)", borderRadius:10, padding:"11px", color:"var(--purple)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
+                ＋ Créer un nouveau tag
+              </button>
+            ) : (
+              <div style={{ background:"var(--surface)", border:"1.5px solid var(--purple)", borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>Nouveau tag</div>
+                <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom du tag…"
+                  style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 12px", color:"var(--text)", fontSize:".8rem", marginBottom:10, boxSizing:"border-box" }} />
+                <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Icône</div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:10 }}>
+                  {TAG_ICONS.map(ic=>(
+                    <button key={ic} onClick={()=>setNewIcon(ic)} style={{ width:32, height:32, background:newIcon===ic?"var(--accent-glow)":"transparent", border:`1px solid ${newIcon===ic?"var(--accent)":"var(--border)"}`, borderRadius:7, fontSize:"1rem", cursor:"pointer" }}>{ic}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Couleur</div>
+                <div style={{ display:"flex", gap:5, marginBottom:12 }}>
+                  {TAG_COLORS.map(col=>(
+                    <div key={col} onClick={()=>setNewColor(col)} style={{ width:26, height:26, borderRadius:"50%", background:col, border:`2.5px solid ${newColor===col?"#fff":"transparent"}`, cursor:"pointer" }} />
+                  ))}
+                </div>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={()=>setCreating(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
+                  <button onClick={createTag} style={{ flex:2, background:newName.trim()?"var(--purple)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newName.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>Créer</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Helper : résoudre les déductions liées pour une catégorie
 // ─────────────────────────────────────────────────────────────────
 function getLinkedIncomeForCat(catId, categories, transactions, period) {
@@ -2455,7 +2651,7 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold }) {
+export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag }) {
   const { transactions, categories, fixedExpenses } = data;
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
@@ -2465,6 +2661,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const [showSavModal,  setShowSavModal]  = useState(false);
   const [showCatModal,  setShowCatModal]  = useState(false);
   const [showSuiviModal,setShowSuiviModal]= useState(false);
+  const [showTagsModal, setShowTagsModal] = useState(false);
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
   const [goalInput,   setGoalInput]   = useState("");
@@ -2613,6 +2810,36 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             </>
           );
         })()}
+
+        <button onClick={() => setShowTagsModal(true)} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          background: "var(--surface)", border: "1px solid var(--border)",
+          borderLeft: "3px solid var(--purple)", borderRadius: "var(--radius-sm)",
+          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: "1.1rem" }}>🏷️</span>
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>
+                Tags
+                {tags.length > 0 && <span style={{ marginLeft: 7, fontSize: ".58rem", background: "rgba(176,144,224,.15)", color: "var(--purple)", padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>{tags.length}</span>}
+              </div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Suivi par projet, événement ou période</div>
+            </div>
+          </div>
+          <span style={{ color: "var(--purple)", fontSize: ".85rem" }}>›</span>
+        </button>
+        {showTagsModal && (
+          <TagsModal
+            onClose={() => setShowTagsModal(false)}
+            tags={tags}
+            transactions={data.transactions}
+            fixedExpenses={data.fixedExpenses}
+            categories={data.categories}
+            onSaveTag={onSaveTag}
+            onDeleteTag={onDeleteTag}
+          />
+        )}
 
         {/* Bouton analyse catégorie */}
         <button onClick={() => setShowCatModal(true)} style={{
@@ -3048,10 +3275,13 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings }) {
-  const [catFilter,   setCatFilter]   = useState("all");
-  const [alertOn,     setAlertOn]     = useState(alertEnabled);
-  const [thresh,      setThresh]      = useState(String(alertThreshold));
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings }) {
+  const [catFilter,     setCatFilter]     = useState("all");
+  const [alertOn,       setAlertOn]       = useState(alertEnabled);
+  const [thresh,        setThresh]        = useState(String(alertThreshold));
+  const [roundOn,       setRoundOn]       = useState(roundingEnabled);
+  const [roundCagId,    setRoundCagId]    = useState(roundingCagnotteId || "");
+  const [roundRule,     setRoundRule]     = useState(roundingRule);
 
   function saveAlert(enabled, value) {
     const t = parseFloat(value) || 0;
@@ -3204,7 +3434,40 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         </>
       )}
 
-      {/* ── Catégories ── */}
+      {/* ── Arrondi automatique ── */}
+      <div className="card" style={{ borderLeft: `3px solid ${roundOn ? "var(--success)" : "var(--border)"}`, marginBottom: 14 }}>
+        <div onClick={() => {
+          const next = !roundOn; setRoundOn(next);
+          onSaveRoundingSettings?.(next, roundCagId || null, roundRule);
+        }} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: roundOn ? 12 : 0 }}>
+          <div style={{ width: 38, height: 22, borderRadius: 11, background: roundOn ? "var(--success)" : "var(--border)", position: "relative", transition: "background .2s", flexShrink: 0 }}>
+            <div style={{ position: "absolute", top: 3, left: roundOn ? 17 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: ".72rem", fontWeight: 800, color: roundOn ? "var(--success)" : "var(--text2)" }}>🐷 Arrondi automatique</div>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Verse la différence dans une cagnotte à chaque dépense</div>
+          </div>
+        </div>
+        {roundOn && (<>
+          <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5 }}>Cagnotte cible</div>
+          <select value={roundCagId} onChange={e => { setRoundCagId(e.target.value); onSaveRoundingSettings?.(roundOn, e.target.value, roundRule); }}
+            style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text)", fontSize: ".78rem", marginBottom: 10 }}>
+            <option value="">Choisir une cagnotte…</option>
+            {data.cagnottes.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+          </select>
+          <div style={{ fontSize: ".6rem", color: "var(--text2)", fontWeight: 700, marginBottom: 6 }}>Arrondir à</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            {[["ceil","L'euro sup."],["5","5 € sup."],["10","10 € sup."]].map(([k,l]) => (
+              <button key={k} onClick={() => { setRoundRule(k); onSaveRoundingSettings?.(roundOn, roundCagId, k); }} style={{
+                background: roundRule===k ? "rgba(104,212,152,.12)" : "transparent",
+                border: `1px solid ${roundRule===k ? "var(--success)" : "var(--border)"}`,
+                borderRadius: 8, padding: "8px 0", color: roundRule===k ? "var(--success)" : "var(--text2)",
+                fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+              }}>{l}</button>
+            ))}
+          </div>
+        </>)}
+      </div>
       <SectionTitle>Gestion Catégories</SectionTitle>
       <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:8 }}>
         {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l]) => (

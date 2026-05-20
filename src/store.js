@@ -68,6 +68,9 @@ export const A = /** @type {const} */ ({
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
   SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
+  SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
+  SAVE_TAG:                 "SAVE_TAG",
+  DELETE_TAG:               "DELETE_TAG",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
   IMPORT_DATA:              "IMPORT_DATA",
   RESET:               "RESET",
@@ -90,9 +93,13 @@ export const DEFAULT_DATA = {
   lastBackupDate: null,
   monthNotes: {},
   recurringTemplates: [],
-  alertEnabled:   false,
-  alertThreshold: 500,
-  categoryThresholds: {},  // { [catId]: number }
+  alertEnabled:         false,
+  alertThreshold:       500,
+  categoryThresholds:   {},
+  tags:                 [],
+  roundingEnabled:      false,
+  roundingCagnotteId:   null,
+  roundingRule:         "ceil",
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -164,11 +171,37 @@ export function reducer(state, action) {
         );
       }
 
-      return {
-        ...state,
-        cagnottes,
-        transactions: [...state.transactions, newTx],
-      };
+      let newTxs = [...state.transactions, newTx];
+
+      // ── Arrondi automatique ──────────────────────────────────
+      if (
+        state.roundingEnabled &&
+        tx.type === "expense" &&
+        state.roundingCagnotteId &&
+        !tx.isRounding
+      ) {
+        const amount  = parseFloat(tx.amount) || 0;
+        const rule    = state.roundingRule || "ceil";
+        const rounded = rule === "5"  ? Math.ceil(amount / 5)  * 5
+                      : rule === "10" ? Math.ceil(amount / 10) * 10
+                      :                 Math.ceil(amount);
+        const roundAmt = parseFloat((rounded - amount).toFixed(2));
+        if (roundAmt > 0.005) {
+          const roundTx = {
+            id: uid("rtx"), type: "epargne",
+            amount: roundAmt, date: tx.date,
+            targetCagId: state.roundingCagnotteId,
+            note: `Arrondi · ${tx.note || ""}`.trim(),
+            isRounding: true,
+          };
+          newTxs = [...newTxs, roundTx];
+          cagnottes = cagnottes.map(c =>
+            c.id === state.roundingCagnotteId ? { ...c, current: c.current + roundAmt } : c
+          );
+        }
+      }
+
+      return { ...state, cagnottes, transactions: newTxs };
     }
 
     case A.DELETE_TRANSACTION:
@@ -351,6 +384,26 @@ export function reducer(state, action) {
       }
       return { ...state, categoryThresholds: thresholds };
     }
+
+    case A.SAVE_ROUNDING_SETTINGS:
+      return { ...state, roundingEnabled: action.enabled, roundingCagnotteId: action.cagnotteId, roundingRule: action.rule };
+
+    case A.SAVE_TAG: {
+      const { tag } = action;
+      if (tag.id) {
+        return { ...state, tags: state.tags.map(t => t.id === tag.id ? { ...t, ...tag } : t) };
+      }
+      return { ...state, tags: [...(state.tags || []), { ...tag, id: uid("tag") }] };
+    }
+
+    case A.DELETE_TAG:
+      return {
+        ...state,
+        tags: (state.tags || []).filter(t => t.id !== action.id),
+        transactions: state.transactions.map(t => ({
+          ...t, tagIds: (t.tagIds || []).filter(tid => tid !== action.id)
+        })),
+      };
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };

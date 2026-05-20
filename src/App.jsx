@@ -82,6 +82,10 @@ export default function App() {
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
   const saveCategoryThreshold  = useCallback((catId, threshold) =>
     dispatch({ type: A.SAVE_CATEGORY_THRESHOLD, catId, threshold }), []);
+  const saveRoundingSettings   = useCallback((enabled, cagnotteId, rule) =>
+    dispatch({ type: A.SAVE_ROUNDING_SETTINGS, enabled, cagnotteId, rule }), []);
+  const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
+  const deleteTag              = useCallback(id   => dispatch({ type: A.DELETE_TAG,  id   }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -422,6 +426,9 @@ export default function App() {
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
         categoryThresholds={data.categoryThresholds || {}}
         onSaveCategoryThreshold={saveCategoryThreshold}
+        tags={data.tags || []}
+        onSaveTag={saveTag}
+        onDeleteTag={deleteTag}
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
         onSaveMonthNote={saveMonthNote}
@@ -447,6 +454,10 @@ export default function App() {
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
+        roundingEnabled={data.roundingEnabled}
+        roundingCagnotteId={data.roundingCagnotteId}
+        roundingRule={data.roundingRule || "ceil"}
+        onSaveRoundingSettings={saveRoundingSettings}
       />
     ),
   };
@@ -497,6 +508,10 @@ export default function App() {
           transactions={data.transactions}
           categories={data.categories}
           cagnottes={data.cagnottes}
+          tags={data.tags || []}
+          roundingEnabled={data.roundingEnabled}
+          roundingCagnotteId={data.roundingCagnotteId}
+          roundingRule={data.roundingRule || "ceil"}
           editingId={transModal.editingId}
           onSave={tx => { saveTransaction(tx); setTransModal(null); }}
           onSaveRecurring={tpl => saveRecurring(tpl)}

@@ -24,7 +24,7 @@ function Field({ label, error, children }) {
 // ─────────────────────────────────────────────────────────────────
 //  Transaction modal
 // ─────────────────────────────────────────────────────────────────
-export function TransModal({ transactions, categories, cagnottes, editingId, onSave, onSaveRecurring, onClose }) {
+export function TransModal({ transactions, categories, cagnottes, tags = [], roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", editingId, onSave, onSaveRecurring, onClose }) {
   const toast = useToast();
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
@@ -36,7 +36,8 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
   const [note,        setNote]        = useState(tx?.note         || "");
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency,   setFrequency]   = useState("monthly");
-  const [occurrences, setOccurrences] = useState(""); // vide = illimité
+  const [occurrences, setOccurrences] = useState("");
+  const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null); // transaction doublon détectée
 
@@ -85,7 +86,7 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
     }
     setDupWarning(null);
 
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note });
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined });
 
     // Sauvegarde du modèle récurrent si coché
     if (isRecurring && !editingId && !isCag) {
@@ -159,6 +160,59 @@ export function TransModal({ transactions, categories, cagnottes, editingId, onS
 
       <Field label="Note">
         <input type="text" placeholder="Description…" value={note} onChange={e => setNote(e.target.value)} />
+
+        {/* ── Tags ── */}
+        {tags.length > 0 && !isCag && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
+              🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {tags.map(tag => {
+                const selected = tagIds.includes(tag.id);
+                return (
+                  <div key={tag.id} onClick={() => setTagIds(ids => selected ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      padding: "4px 10px",
+                      background: selected ? `${tag.color}22` : "var(--surface2)",
+                      border: `1px solid ${selected ? tag.color : "var(--border)"}`,
+                      borderRadius: 20, cursor: "pointer",
+                    }}>
+                    <span style={{ fontSize: ".7rem" }}>{tag.icon}</span>
+                    <span style={{ fontSize: ".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Preview arrondi ── */}
+        {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
+          const parsedA = parseFloat(amount);
+          if (isNaN(parsedA) || parsedA <= 0) return null;
+          const rounded  = roundingRule === "5"  ? Math.ceil(parsedA / 5)  * 5
+                         : roundingRule === "10" ? Math.ceil(parsedA / 10) * 10
+                         :                         Math.ceil(parsedA);
+          const roundAmt = parseFloat((rounded - parsedA).toFixed(2));
+          if (roundAmt < 0.01) return null;
+          const cag = cagnottes.find(c => c.id === roundingCagnotteId);
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(104,212,152,.08)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 9, marginTop: 4 }}>
+              <span style={{ fontSize: ".95rem" }}>🐷</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--success)" }}>
+                  +{String(roundAmt.toFixed(2)).replace(".", ",")} € → {cag?.icon} {cag?.name}
+                </div>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>Arrondi automatique activé</div>
+              </div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>
+                {String(parsedA.toFixed(2)).replace(".", ",")} → {String(rounded.toFixed(2)).replace(".", ",")}
+              </div>
+            </div>
+          );
+        })()}
       </Field>
 
       {/* ── Récurrence (uniquement pour dépenses/revenus, pas cagnottes, pas édition) ── */}
