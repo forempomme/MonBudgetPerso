@@ -260,12 +260,14 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
 
   async function tryBio() {
     try {
-      // @capacitor-community/biometric-auth — graceful degradation si absent
-      const { BiometricAuth } = await import("@capacitor-community/biometric-auth");
-      await BiometricAuth.authenticate({ reason:"Accéder à Gestion du Budget" });
+      // @capacitor-community/biometric-auth doit être installé dans le projet
+      // Accès via le registre de plugins Capacitor (pas d'import statique)
+      const BiometricAuth = window.Capacitor?.Plugins?.BiometricAuth;
+      if (!BiometricAuth) throw new Error("plugin absent");
+      await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
       onUnlock();
     } catch {
-      setError(false); // biométrie échoue → PIN de secours
+      // Biométrie indisponible → PIN de secours (déjà visible)
     }
   }
 
@@ -978,7 +980,18 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const allTags = data.tags || [];
   const recurringTemplates = data.recurringTemplates || [];
 
-  // Récurrentes en attente pour le mois affiché
+  // Versements auto à confirmer ce mois
+  const autoSavingsPending = useMemo(() => {
+    const plans = data.autoSavings || [];
+    const today = new Date();
+    return plans.filter(plan => {
+      if (!plan.enabled) return false;
+      const alreadyDone = transactions.some(t =>
+        t.autoSavingId === plan.id && t.date.startsWith(month)
+      );
+      return !alreadyDone && plan.dayOfMonth <= today.getDate();
+    });
+  }, [data.autoSavings, transactions, month]);
   const recurringPending = useMemo(() => {
     if (!recurringTemplates.length) return [];
     return recurringTemplates.filter(tpl => {
@@ -1360,51 +1373,38 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
       {/* ── Section récurrentes en attente ── */}
       {/* ── Versements auto à confirmer ── */}
-      {viewMode === "list" && !globalSearch && (() => {
-        const autoSavings = data.autoSavings || [];
-        const today = new Date();
-        const pending = autoSavings.filter(plan => {
-          if (!plan.enabled) return false;
-          const alreadyDone = transactions.some(t =>
-            t.autoSavingId === plan.id && t.date.startsWith(month)
-          );
-          return !alreadyDone && plan.dayOfMonth <= today.getDate();
-        });
-        if (!pending.length) return null;
-        return (
-          <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
-              <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--purple)", textTransform:"uppercase", letterSpacing:".08em" }}>🎯 Épargnes à confirmer</div>
-              <span style={{ fontSize:".62rem", color:"var(--text3)" }}>{pending.length}</span>
-            </div>
-            {pending.map(plan => {
-              const cag = cagnottes.find(c => c.id === plan.cagnotteId);
-              return (
-                <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
-                  <span style={{ fontSize:"1rem" }}>{cag?.icon||"🐷"}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:".72rem", fontWeight:700 }}>{cag?.name||"—"}</div>
-                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} · versement mensuel</div>
-                  </div>
-                  <div style={{ display:"flex", gap:5 }}>
-                    <button
-                      onTouchStart={e=>e.stopPropagation()}
-                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
-                        const tx = { type:"epargne", amount:plan.amount, date:`${month}-${String(Math.min(plan.dayOfMonth,28)).padStart(2,"0")}`, targetCagId:plan.cagnotteId, note:`Versement auto · ${cag?.name||""}`, autoSavingId:plan.id };
-                        onConfirmRecurring?.(null, tx);
-                      }}
-                      style={{ background:"var(--purple)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>＋</button>
-                    <button
-                      onTouchStart={e=>e.stopPropagation()}
-                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); }}
-                      style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
-                  </div>
-                </div>
-              );
-            })}
+      {viewMode === "list" && !globalSearch && autoSavingsPending.length > 0 && (
+        <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--purple)", textTransform:"uppercase", letterSpacing:".08em" }}>🎯 Épargnes à confirmer</div>
+            <span style={{ fontSize:".62rem", color:"var(--text3)" }}>{autoSavingsPending.length}</span>
           </div>
-        );
-      })()}
+          {autoSavingsPending.map(plan => {
+            const cag = cagnottes.find(c => c.id === plan.cagnotteId);
+            return (
+              <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+                <span style={{ fontSize:"1rem" }}>{cag?.icon||"🐷"}</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:".72rem", fontWeight:700 }}>{cag?.name||"—"}</div>
+                  <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} · versement mensuel</div>
+                </div>
+                <div style={{ display:"flex", gap:5 }}>
+                  <button
+                    onTouchStart={e=>e.stopPropagation()}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
+                      onConfirmRecurring?.(null, { type:"epargne", amount:plan.amount, date:`${month}-${String(Math.min(plan.dayOfMonth,28)).padStart(2,"0")}`, targetCagId:plan.cagnotteId, note:`Versement auto · ${cag?.name||""}`, autoSavingId:plan.id });
+                    }}
+                    style={{ background:"var(--purple)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>＋</button>
+                  <button
+                    onTouchStart={e=>e.stopPropagation()}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); }}
+                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Récurrentes à confirmer ── */}
         <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
