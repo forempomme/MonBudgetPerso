@@ -61,6 +61,7 @@ export const A = /** @type {const} */ ({
   SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   SET_BACKUP_DATE:   "SET_BACKUP_DATE",
+  ADD_BACKUP_ENTRY:  "ADD_BACKUP_ENTRY",
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
   TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
@@ -68,7 +69,11 @@ export const A = /** @type {const} */ ({
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
   SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
+  SAVE_AUTO_SAVING:         "SAVE_AUTO_SAVING",
+  DELETE_AUTO_SAVING:       "DELETE_AUTO_SAVING",
+  SAVE_SECURITY_SETTINGS:   "SAVE_SECURITY_SETTINGS",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
+  MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
   SAVE_TAG:                 "SAVE_TAG",
   DELETE_TAG:               "DELETE_TAG",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
@@ -90,16 +95,22 @@ export const DEFAULT_DATA = {
   cagnottes: [],
   fixedExpenses: [],
   provisionalExpenses: [],
-  lastBackupDate: null,
+  lastBackupDate:        null,
+  backupHistory:         [],   // [{ id, date, txCount, sizeKo }] — 10 dernières
   monthNotes: {},
   recurringTemplates: [],
   alertEnabled:         false,
   alertThreshold:       500,
   categoryThresholds:   {},
+  autoSavings:          [],    // [{ id, cagnotteId, amount, dayOfMonth, enabled }]
+  pinEnabled:           false,
+  pinHash:              null,  // SHA-256 hex
+  bioEnabled:           false,
   tags:                 [],
-  roundingEnabled:      false,
-  roundingCagnotteId:   null,
-  roundingRule:         "ceil",
+  roundingEnabled:           false,
+  roundingCagnotteId:        null,
+  roundingRule:              "ceil",
+  roundingLastTransferDate:  null,
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -326,6 +337,12 @@ export function reducer(state, action) {
     case A.SET_BACKUP_DATE:
       return { ...state, lastBackupDate: action.date };
 
+    case A.ADD_BACKUP_ENTRY: {
+      const entry = action.entry;
+      const history = [entry, ...(state.backupHistory || [])].slice(0, 10);
+      return { ...state, lastBackupDate: entry.date, backupHistory: history };
+    }
+
     case A.TOGGLE_POINT_TX:
       return {
         ...state,
@@ -388,6 +405,9 @@ export function reducer(state, action) {
     case A.SAVE_ROUNDING_SETTINGS:
       return { ...state, roundingEnabled: action.enabled, roundingCagnotteId: action.cagnotteId, roundingRule: action.rule };
 
+    case A.MARK_ROUNDING_TRANSFERRED:
+      return { ...state, roundingLastTransferDate: action.date };
+
     case A.SAVE_TAG: {
       const { tag } = action;
       if (tag.id) {
@@ -404,6 +424,20 @@ export function reducer(state, action) {
           ...t, tagIds: (t.tagIds || []).filter(tid => tid !== action.id)
         })),
       };
+
+    case A.SAVE_AUTO_SAVING: {
+      const { plan } = action;
+      if (plan.id) {
+        return { ...state, autoSavings: (state.autoSavings||[]).map(p => p.id===plan.id ? {...p,...plan} : p) };
+      }
+      return { ...state, autoSavings: [...(state.autoSavings||[]), { ...plan, id: uid("as") }] };
+    }
+
+    case A.DELETE_AUTO_SAVING:
+      return { ...state, autoSavings: (state.autoSavings||[]).filter(p => p.id !== action.id) };
+
+    case A.SAVE_SECURITY_SETTINGS:
+      return { ...state, pinEnabled: action.pinEnabled, pinHash: action.pinHash, bioEnabled: action.bioEnabled };
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };

@@ -10,7 +10,7 @@ import {
 } from "./components/modals.jsx";
 import {
   AccueilView, CagnottesView, HistoriqueView,
-  FixesView, RapportView, OptionsView,
+  FixesView, RapportView, OptionsView, LockScreen,
 } from "./views.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -78,12 +78,22 @@ export default function App() {
   const saveMonthNote   = useCallback((ym, note) => dispatch({ type: A.SAVE_MONTH_NOTE, ym, note }), []);
   const saveRecurring      = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
   const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
+  const saveAutoSaving        = useCallback(plan => dispatch({ type: A.SAVE_AUTO_SAVING, plan }), []);
+  const deleteAutoSaving      = useCallback(id   => dispatch({ type: A.DELETE_AUTO_SAVING, id }), []);
+  const saveSecuritySettings  = useCallback((pinEnabled, pinHash, bioEnabled) =>
+    dispatch({ type: A.SAVE_SECURITY_SETTINGS, pinEnabled, pinHash, bioEnabled }), []);
+
+  // ── Verrou PIN ────────────────────────────────────────────────
+  const [locked, setLocked] = useState(() => !!(data.pinEnabled && data.pinHash));
+
   const saveAlertSettings      = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
   const saveCategoryThreshold  = useCallback((catId, threshold) =>
     dispatch({ type: A.SAVE_CATEGORY_THRESHOLD, catId, threshold }), []);
-  const saveRoundingSettings   = useCallback((enabled, cagnotteId, rule) =>
+  const saveRoundingSettings      = useCallback((enabled, cagnotteId, rule) =>
     dispatch({ type: A.SAVE_ROUNDING_SETTINGS, enabled, cagnotteId, rule }), []);
+  const markRoundingTransferred   = useCallback(() =>
+    dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: new Date().toISOString().slice(0, 10) }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
   const deleteTag              = useCallback(id   => dispatch({ type: A.DELETE_TAG,  id   }), []);
 
@@ -280,34 +290,22 @@ export default function App() {
     const snapshot = { ...data, lastBackupDate: newDate };
     const json     = JSON.stringify(snapshot, null, 2);
     const fileName = `budget_backup_${newDate.slice(0, 10)}.json`;
+    const sizeKo   = Math.round(json.length / 1024 * 10) / 10;
+    const entry    = { id: `bk_${Date.now()}`, date: newDate, txCount: data.transactions.length, sizeKo };
 
     // ── APK Capacitor ────────────────────────────────────────────
-    // 1. Écrire en cache  2. Ouvrir la feuille de partage Android
-    //    → l'utilisateur choisit : Téléchargements, Drive, email…
     if (window.Capacitor?.isNativePlatform?.()) {
       try {
         const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
         const { Share } = await import("@capacitor/share");
-
-        // Écriture dans le cache de l'app (temporaire, juste pour le partage)
         const { uri } = await Filesystem.writeFile({
-          path:      fileName,
-          data:      json,
-          directory: Directory.Cache,
-          encoding:  Encoding.UTF8,
+          path: fileName, data: json,
+          directory: Directory.Cache, encoding: Encoding.UTF8,
         });
-
-        // Feuille de partage native Android : l'utilisateur choisit l'emplacement
-        await Share.share({
-          title:       "Budget Pro — Sauvegarde",
-          url:         uri,
-          dialogTitle: "Enregistrer la sauvegarde",
-        });
-
-        dispatch({ type: A.SET_BACKUP_DATE, date: newDate });
+        await Share.share({ title: "Budget Pro — Sauvegarde", url: uri, dialogTitle: "Enregistrer la sauvegarde" });
+        dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
         addToast("✓ Sauvegarde exportée");
       } catch (err) {
-        // AbortError = l'utilisateur a annulé le sélecteur → silence
         if (!err?.message?.includes("canceled") && err?.name !== "AbortError") {
           addToast(`Erreur export : ${err?.message ?? err}`, "error");
         }
@@ -321,11 +319,9 @@ export default function App() {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href = url; a.download = fileName; a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      dispatch({ type: A.SET_BACKUP_DATE, date: newDate });
+      dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
       addToast(`✓ Export : ${fileName}`);
     } catch {
       addToast("Erreur lors de l'export", "error");
@@ -379,6 +375,10 @@ export default function App() {
         onGoToHistorique={goToHistoriqueWithFilter}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
+        roundingEnabled={data.roundingEnabled}
+        roundingCagnotteId={data.roundingCagnotteId}
+        roundingLastTransferDate={data.roundingLastTransferDate}
+        onMarkRoundingTransferred={markRoundingTransferred}
       />
     ),
     cagnottes: (
@@ -391,7 +391,7 @@ export default function App() {
       />
     ),
     historique: (
-      <HistoriqueView data={data}
+      <HistoriqueView data={{...data, autoSavings: data.autoSavings||[]}}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
         onDuplicateTrans={duplicateTransaction}
@@ -458,9 +458,27 @@ export default function App() {
         roundingCagnotteId={data.roundingCagnotteId}
         roundingRule={data.roundingRule || "ceil"}
         onSaveRoundingSettings={saveRoundingSettings}
+        autoSavings={data.autoSavings || []}
+        onSaveAutoSaving={saveAutoSaving}
+        onDeleteAutoSaving={deleteAutoSaving}
+        pinEnabled={data.pinEnabled}
+        pinHash={data.pinHash}
+        bioEnabled={data.bioEnabled}
+        onSaveSecuritySettings={saveSecuritySettings}
       />
     ),
   };
+
+  // ── Écran de verrou ──────────────────────────────────────────
+  if (locked) {
+    return (
+      <LockScreen
+        pinHash={data.pinHash}
+        bioEnabled={data.bioEnabled}
+        onUnlock={() => setLocked(false)}
+      />
+    );
+  }
 
   return (
     <ToastCtx.Provider value={addToast}>

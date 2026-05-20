@@ -24,6 +24,147 @@ function Field({ label, error, children }) {
 // ─────────────────────────────────────────────────────────────────
 //  Transaction modal
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  NumPad — clavier numérique custom
+// ─────────────────────────────────────────────────────────────────
+function NumPad({ value, onChange, type, onTypeChange }) {
+  const OPERATORS = ["+", "-"];
+
+  const isSimpleType = type === "expense" || type === "income";
+
+  function evalSimple(expr) {
+    try {
+      const tokens = expr.match(/(\d+\.?\d*|\+|-)/g);
+      if (!tokens) return null;
+      let result = parseFloat(tokens[0]);
+      for (let i = 1; i < tokens.length; i += 2) {
+        const op  = tokens[i];
+        const nxt = parseFloat(tokens[i + 1]);
+        if (isNaN(nxt)) break;
+        if (op === "+") result += nxt;
+        else if (op === "-") result -= nxt;
+      }
+      return isNaN(result) ? null : Math.round(result * 100) / 100;
+    } catch { return null; }
+  }
+
+  function press(k) {
+    onChange(prev => {
+      const last = prev.slice(-1);
+      if (k === "⌫") return prev.slice(0, -1);
+      if (k === "=") {
+        const clean = prev.replace(/,/g, ".");
+        const r = evalSimple(clean);
+        return r !== null ? String(Math.abs(r)).replace(".", ",") : prev;
+      }
+      if (OPERATORS.includes(k)) {
+        if (!prev) return prev;
+        if (OPERATORS.includes(last)) return prev.slice(0, -1) + k;
+        return prev + k;
+      }
+      if (k === ",") {
+        const lastOpIdx = Math.max(...OPERATORS.map(op => prev.lastIndexOf(op)), -1);
+        const segment = lastOpIdx >= 0 ? prev.slice(lastOpIdx + 1) : prev;
+        if (segment.includes(",")) return prev;
+        if (!segment) return prev + "0,";
+        return prev + ",";
+      }
+      return prev + k;
+    });
+  }
+
+  const hasOperator = OPERATORS.some(op => value.includes(op));
+  const displayVal  = value || "0";
+  const preview     = hasOperator ? (() => {
+    const r = evalSimple(value.replace(/,/g, "."));
+    return r !== null ? fmt(Math.abs(r)) : null;
+  })() : null;
+
+  const isExpense = type === "expense";
+  const accentColor = isExpense ? "var(--danger)" : "var(--success)";
+
+  const KEYS = [
+    ["7","8","9","⌫"],
+    ["4","5","6","+"],
+    ["1","2","3","-"],
+    [",","0","="," "],
+  ];
+
+  return (
+    <div>
+      {/* Affichage montant */}
+      <div style={{
+        background: isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
+        border: `1px solid ${isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
+        borderRadius: 12, padding: "10px 14px", marginBottom: 10,
+        display: "flex", alignItems: "center", gap: 10,
+      }}>
+        <div style={{ flex: 1 }}>
+          {hasOperator && (
+            <div style={{ fontSize: ".58rem", color: "var(--text3)", fontFamily: "var(--mono)", marginBottom: 2 }}>
+              {value} =
+            </div>
+          )}
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.8rem", fontWeight: 800, color: accentColor, lineHeight: 1 }}>
+            {isExpense ? "−" : "+"}{displayVal} €
+          </div>
+          {preview && (
+            <div style={{ fontSize: ".62rem", color: "var(--text3)", marginTop: 3 }}>
+              = {isExpense ? "−" : "+"}{preview}
+            </div>
+          )}
+        </div>
+        {/* Bouton bascule type */}
+        {isSimpleType && (
+          <button onClick={() => onTypeChange(isExpense ? "income" : "expense")} style={{
+            display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+            background: isExpense ? "rgba(104,212,152,.1)" : "rgba(200,112,112,.1)",
+            border: `1px solid ${isExpense ? "rgba(104,212,152,.25)" : "rgba(200,112,112,.25)"}`,
+            borderRadius: 9, padding: "7px 10px", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
+          }}>
+            <span style={{ fontSize: ".5rem", color: "var(--text3)" }}>Passer en</span>
+            <span style={{ fontSize: ".65rem", fontWeight: 800, color: isExpense ? "var(--success)" : "var(--danger)" }}>
+              {isExpense ? "Revenu ↑" : "Dépense ↓"}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {/* Grille touches */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {KEYS.map((row, ri) => (
+          <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
+            {row.map((k, ki) => {
+              if (k === " ") return <div key={ki} />;
+              const isOp  = OPERATORS.includes(k);
+              const isEq  = k === "=";
+              const isDel = k === "⌫";
+              return (
+                <button key={ki}
+                  onTouchStart={e => e.stopPropagation()}
+                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); press(k); }}
+                  onClick={() => press(k)}
+                  style={{
+                    height: 50,
+                    background: isOp  ? "rgba(112,184,224,.1)"
+                               : isEq  ? "rgba(104,212,152,.15)"
+                               : isDel ? "rgba(200,112,112,.1)"
+                               : "var(--surface2)",
+                    border: `1px solid ${isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "rgba(200,112,112,.3)" : "var(--border)"}`,
+                    borderRadius: 9,
+                    color: isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "var(--danger)" : "var(--text)",
+                    fontSize: isDel ? "1.05rem" : "1.05rem",
+                    fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                  }}>{k}</button>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function TransModal({ transactions, categories, cagnottes, tags = [], roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", editingId, onSave, onSaveRecurring, onClose }) {
   const toast = useToast();
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
@@ -127,9 +268,12 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
       </Field>
 
       <Field label="Montant (€)" error={errors.amount}>
-        <input type="number" step="0.01" min="0" value={amount}
-          className={errors.amount ? "error" : ""}
-          onChange={e => { setAmount(e.target.value); setErrors(v => ({...v, amount: ""})); }} />
+        <NumPad
+          value={amount}
+          onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({...v, amount: ""})); }}
+          type={type}
+          onTypeChange={t => { setType(t); setErrors({}); }}
+        />
       </Field>
 
       {!isCag && (

@@ -246,7 +246,84 @@ function EmptyIllustration({ type = "transactions", title, sub, cta, onCta, ctaC
 // ─────────────────────────────────────────────────────────────────
 //  ACCUEIL
 // ─────────────────────────────────────────────────────────────────
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold }) {
+// ─────────────────────────────────────────────────────────────────
+//  Écran de verrou PIN
+// ─────────────────────────────────────────────────────────────────
+async function sha256hex(str) {
+  const buf  = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,"0")).join("");
+}
+
+export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
+  const [pin,   setPin]   = useState("");
+  const [error, setError] = useState(false);
+
+  async function tryBio() {
+    try {
+      // @capacitor-community/biometric-auth — graceful degradation si absent
+      const { BiometricAuth } = await import("@capacitor-community/biometric-auth");
+      await BiometricAuth.authenticate({ reason:"Accéder à Gestion du Budget" });
+      onUnlock();
+    } catch {
+      setError(false); // biométrie échoue → PIN de secours
+    }
+  }
+
+  async function pressKey(k) {
+    if (k === "⌫") { setPin(p => p.slice(0,-1)); setError(false); return; }
+    const next = pin + k;
+    setPin(next);
+    if (next.length === 4) {
+      const h = await sha256hex(next);
+      if (h === pinHash) { onUnlock(); }
+      else { setTimeout(() => { setPin(""); setError(true); }, 200); }
+    }
+  }
+
+  const KEYS = [[1,2,3],[4,5,6],[7,8,9],["",0,"⌫"]];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"#060810", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
+      <div style={{ fontSize:"2.8rem", marginBottom:12 }}>🐷</div>
+      <div style={{ fontSize:".95rem", fontWeight:800, marginBottom:4 }}>Gestion du Budget</div>
+      <div style={{ fontSize:".65rem", color:"var(--text3)", marginBottom:28 }}>Entre ton code PIN pour continuer</div>
+
+      {/* Points PIN */}
+      <div style={{ display:"flex", gap:14, marginBottom:28 }}>
+        {[0,1,2,3].map(i => (
+          <div key={i} style={{ width:14, height:14, borderRadius:"50%", background:i<pin.length?"#fff":"transparent", border:"2px solid rgba(255,255,255,.35)", transition:"background .1s" }} />
+        ))}
+      </div>
+
+      {error && <div style={{ fontSize:".65rem", color:"var(--danger)", marginBottom:12, fontWeight:700 }}>PIN incorrect, réessaie</div>}
+
+      {/* Biométrie */}
+      {bioEnabled && (
+        <button onClick={tryBio} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(112,184,224,.1)", border:"1.5px solid var(--accent)", borderRadius:30, padding:"10px 22px", color:"var(--accent)", fontWeight:700, fontSize:".75rem", cursor:"pointer", marginBottom:20, touchAction:"manipulation" }}>
+          <span style={{ fontSize:"1.2rem" }}>👆</span> Empreinte digitale
+        </button>
+      )}
+
+      {/* Clavier */}
+      <div style={{ display:"flex", flexDirection:"column", gap:8, width:"100%", maxWidth:240 }}>
+        {KEYS.map((row, ri) => (
+          <div key={ri} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+            {row.map((k, ki) => (
+              k === ""
+                ? <div key={ki} />
+                : <button key={ki} onClick={() => pressKey(String(k))}
+                    style={{ height:58, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", borderRadius:12, color:"#fff", fontSize:k==="⌫"?"1.2rem":"1.2rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+                    {k}
+                  </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred }) {
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -254,6 +331,19 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const curY      = new Date().getFullYear().toString();
 
   const balance   = useBalance(transactions, fixedExpenses);
+
+  // ── Arrondi stats ─────────────────────────────────────────────
+  const roundStats = useMemo(() => {
+    if (!roundingEnabled || !roundingCagnotteId) return null;
+    const rtxs = transactions.filter(t => t.isRounding && t.targetCagId === roundingCagnotteId);
+    const month = rtxs.filter(t => t.date.startsWith(curM)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const year  = rtxs.filter(t => t.date.startsWith(curY)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const pending = rtxs
+      .filter(t => !roundingLastTransferDate || t.date > roundingLastTransferDate)
+      .reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const cag = cagnottes.find(c => c.id === roundingCagnotteId);
+    return { month, year, pending: parseFloat(pending.toFixed(2)), cagName: cag?.name || "", cagIcon: cag?.icon || "🐷" };
+  }, [transactions, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, curM, curY, cagnottes]);
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
   const prevMonth = useMonthStats(transactions, fixedExpenses, prevM);
   const tf        = useTotalFixes(fixedExpenses);
@@ -406,7 +496,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           alertThreshold={alertThreshold}
         />
 
-        <div style={{ position: "relative" }}>
+        <div style={{ position: "relative", display: "flex", gap: 8 }}>
+          {/* ── Gauche : solde + rapprochement ── */}
+          <div style={{ flex: 1, minWidth: 0 }}>
           <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}>
             Solde Bancaire Estimé
           </div>
@@ -466,6 +558,40 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
                   background: "linear-gradient(90deg, var(--success), var(--accent))",
                   borderRadius: 99, transition: "width .4s ease",
                 }} />
+              </div>
+            </div>
+          )}
+          </div>{/* fin gauche */}
+
+          {/* ── Droite : arrondis vertical (si activé) ── */}
+          {roundStats && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, width: 58 }}>
+              <div style={{ fontSize: ".4rem", color: "rgba(255,255,255,.3)", textAlign: "center", marginBottom: 1 }}>🐷</div>
+              {/* Ce mois */}
+              <div style={{ background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
+                <div style={{ fontSize: ".38rem", color: "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Mois</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.month)}</div>
+              </div>
+              {/* Cette année */}
+              <div style={{ background: "rgba(112,184,224,.08)", border: "1px solid rgba(112,184,224,.15)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
+                <div style={{ fontSize: ".38rem", color: "rgba(112,184,224,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Année</div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--accent)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.year)}</div>
+              </div>
+              {/* À virer */}
+              <div
+                onClick={() => roundStats.pending > 0.005 && onMarkRoundingTransferred?.()}
+                style={{
+                  background: roundStats.pending > 0.005 ? "rgba(200,184,96,.12)" : "rgba(104,212,152,.08)",
+                  border: `1px solid ${roundStats.pending > 0.005 ? "rgba(200,184,96,.3)" : "rgba(104,212,152,.2)"}`,
+                  borderRadius: 5, padding: "3px 5px", textAlign: "center",
+                  cursor: roundStats.pending > 0.005 ? "pointer" : "default",
+                }}>
+                <div style={{ fontSize: ".38rem", color: roundStats.pending > 0.005 ? "rgba(200,184,96,.8)" : "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>
+                  {roundStats.pending > 0.005 ? "À virer" : "Viré ✓"}
+                </div>
+                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: roundStats.pending > 0.005 ? "var(--warning)" : "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>
+                  {roundStats.pending > 0.005 ? fmt(roundStats.pending) : "—"}
+                </div>
               </div>
             </div>
           )}
@@ -823,6 +949,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
   const [showAmtFilter, setShowAmtFilter] = useState(false);
+  const [showFilterPanel, setShowFilterPanel] = useState(false);
 
   // Filtre pointage — initialisé depuis la hero card
   const [pointFilter, setPointFilter] = useState(initPointFilter);
@@ -1036,69 +1163,141 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
             🌐 Recherche sur toutes les périodes — {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
           </div>
         )}
-        <div className="filter-row">
-          {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
-            <div key={k} className={`filter-chip${filter===k?" active":""}`}
-              onClick={() => { setFilter(k); setCatId(""); }}>{l}</div>
-          ))}
-        </div>
 
-        {/* ── Filtre pointage ── */}
-        <div className="filter-row" style={{ marginBottom: 6 }}>
-          {[
-            ["all",      "Toutes",       ""],
-            ["pointed",  "✓ Pointées",   "var(--success)"],
-            ["unpointed","⏳ En attente", "var(--warning)"],
-          ].map(([k, l, col]) => (
-            <div key={k}
-              className={`filter-chip${pointFilter===k?" active":""}`}
-              style={{ color: pointFilter===k && col ? col : undefined }}
-              onClick={() => { setPointFilter(k); onClearPointFilter?.(); }}>
-              {l}
-            </div>
-          ))}
-        </div>
+        {/* ── Filtres compacts ── */}
+        {(() => {
+          const activeCount = [
+            filter !== "all", pointFilter !== "all",
+            sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "list",
+          ].filter(Boolean).length;
+          const activePills = [
+            filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
+            pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
+            sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
+            (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
+            viewMode !== "list"    && { label: "📊 Catégories", clear: () => setViewMode("list") },
+          ].filter(Boolean);
 
-        <div style={{ display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}>
-          <span style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>Tri :</span>
-          {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
-            <span key={k} className={`sort-chip${sort===k?" active":""}`} onClick={() => setSort(k)}>{l}</span>
-          ))}
-          <span className={`sort-chip${showAmtFilter?" active":""}`} onClick={() => setShowAmtFilter(s => !s)} style={{ marginLeft: "auto" }}>
-            💶 {(minAmt||maxAmt) ? "Montant ✦" : "Montant"}
-          </span>
-        </div>
-        {showAmtFilter && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
-            {[["Min (€)", minAmt, setMinAmt],["Max (€)", maxAmt, setMaxAmt]].map(([label, val, setter]) => (
-              <div key={label}>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 3 }}>{label}</div>
-                <input type="number" value={val} min="0" step="10"
-                  onChange={e => setter(e.target.value)}
-                  style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".75rem", fontFamily: "var(--mono)", boxSizing: "border-box" }}/>
+          return (
+            <div>
+              {/* Barre unique */}
+              <div style={{ display: "flex", gap: 5, marginBottom: showFilterPanel || activePills.length > 0 ? 6 : 0 }}>
+                <button onClick={() => setShowFilterPanel(p => !p)} style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  background: activeCount > 0 ? "var(--accent-glow)" : "var(--surface2)",
+                  border: `1px solid ${activeCount > 0 ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 8, padding: "0 10px", height: 36,
+                  color: activeCount > 0 ? "var(--accent)" : "var(--text2)",
+                  fontWeight: 700, fontSize: ".68rem", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
+                }}>
+                  <span>⚙️</span>
+                  <span>Filtres</span>
+                  {activeCount > 0 && (
+                    <span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".52rem", fontWeight: 800 }}>{activeCount}</span>
+                  )}
+                </button>
+                <button onClick={() => setGlobalSearch(g => !g)} style={{
+                  width: 36, height: 36, flexShrink: 0,
+                  background: globalSearch ? "var(--accent-glow)" : "var(--surface2)",
+                  border: `1px solid ${globalSearch ? "var(--accent)" : "var(--border)"}`,
+                  borderRadius: 8, fontSize: ".78rem", cursor: "pointer", color: globalSearch ? "var(--accent)" : "var(--text2)", touchAction: "manipulation",
+                }}>🌐</button>
               </div>
-            ))}
-            {(minAmt||maxAmt) && (
-              <button onClick={() => { setMinAmt(""); setMaxAmt(""); }}
-                style={{ gridColumn: "span 2", background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px", color: "var(--text3)", fontSize: ".65rem", cursor: "pointer" }}>
-                ✕ Effacer le filtre montant
-              </button>
-            )}
-          </div>
-        )}
-      </div>
 
-      {/* ── Toggle Liste / Catégories ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
-        {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
-          <button key={k} onClick={() => setViewMode(k)} style={{
-            background: viewMode===k ? "var(--accent-glow)" : "transparent",
-            border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
-            borderRadius: "var(--radius-sm)", padding: "9px 0",
-            color: viewMode===k ? "var(--accent)" : "var(--text2)",
-            fontWeight: 700, fontSize: ".72rem", cursor: "pointer",
-          }}>{l}</button>
-        ))}
+              {/* Chips filtres actifs */}
+              {!showFilterPanel && activePills.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
+                  {activePills.map((p, i) => (
+                    <span key={i} onClick={p.clear} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: ".58rem", padding: "2px 8px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: 10, color: "var(--accent)", cursor: "pointer" }}>
+                      {p.label} <span style={{ opacity: .7 }}>✕</span>
+                    </span>
+                  ))}
+                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("list"); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
+                    ✕ Tout reset
+                  </span>
+                </div>
+              )}
+
+              {/* Panneau expansible */}
+              {showFilterPanel && (
+                <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 10, marginBottom: 8, display: "flex", flexDirection: "column", gap: 9 }}>
+                  {/* Type */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Type</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 4 }}>
+                      {[["all","Tout"],["income","Revenus"],["expense","Dépenses"],["savings","Cagnottes"]].map(([k,l]) => (
+                        <button key={k} onClick={() => { setFilter(k); setCatId(""); }} style={{
+                          background: filter===k ? "var(--accent-glow)" : "transparent",
+                          border: `1px solid ${filter===k ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 6, padding: "6px 0",
+                          color: filter===k ? "var(--accent)" : "var(--text2)",
+                          fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Pointage */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Pointage</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                      {[["all","Toutes",""],["pointed","✓ Pointées","var(--success)"],["unpointed","⏳ Attente","var(--warning)"]].map(([k,l,col]) => (
+                        <button key={k} onClick={() => { setPointFilter(k); onClearPointFilter?.(); }} style={{
+                          background: pointFilter===k ? "var(--accent-glow)" : "transparent",
+                          border: `1px solid ${pointFilter===k ? (col||"var(--accent)") : "var(--border)"}`,
+                          borderRadius: 6, padding: "6px 0",
+                          color: pointFilter===k ? (col||"var(--accent)") : "var(--text2)",
+                          fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Tri + Montant */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Tri</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {[["date","Date ↓"],["amt_d","Montant ↓"],["amt_a","Montant ↑"]].map(([k,l]) => (
+                          <button key={k} onClick={() => setSort(k)} style={{
+                            background: sort===k ? "var(--accent-glow)" : "transparent",
+                            border: `1px solid ${sort===k ? "var(--accent)" : "var(--border)"}`,
+                            borderRadius: 6, padding: "5px 0",
+                            color: sort===k ? "var(--accent)" : "var(--text2)",
+                            fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
+                          }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Montant</div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        {[["min","Min €", minAmt, setMinAmt],["max","Max €", maxAmt, setMaxAmt]].map(([id,ph,val,setter]) => (
+                          <input key={id} type="number" value={val} min="0" step="10" placeholder={ph}
+                            onChange={e => setter(e.target.value)}
+                            style={{ background: "var(--bg)", border: `1px solid ${val ? "var(--accent)" : "var(--border)"}`, borderRadius: 6, padding: "5px 8px", color: "var(--text)", fontSize: ".7rem", fontFamily: "var(--mono)" }} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {/* Vue */}
+                  <div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Vue</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
+                        <button key={k} onClick={() => setViewMode(k)} style={{
+                          background: viewMode===k ? "var(--accent-glow)" : "transparent",
+                          border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 6, padding: "7px 0",
+                          color: viewMode===k ? "var(--accent)" : "var(--text2)",
+                          fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── 6. Vue Catégories ── */}
@@ -1160,7 +1359,54 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
       )}
 
       {/* ── Section récurrentes en attente ── */}
-      {viewMode === "list" && recurringPending.length > 0 && !globalSearch && (
+      {/* ── Versements auto à confirmer ── */}
+      {viewMode === "list" && !globalSearch && (() => {
+        const autoSavings = data.autoSavings || [];
+        const today = new Date();
+        const pending = autoSavings.filter(plan => {
+          if (!plan.enabled) return false;
+          const alreadyDone = transactions.some(t =>
+            t.autoSavingId === plan.id && t.date.startsWith(month)
+          );
+          return !alreadyDone && plan.dayOfMonth <= today.getDate();
+        });
+        if (!pending.length) return null;
+        return (
+          <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+              <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--purple)", textTransform:"uppercase", letterSpacing:".08em" }}>🎯 Épargnes à confirmer</div>
+              <span style={{ fontSize:".62rem", color:"var(--text3)" }}>{pending.length}</span>
+            </div>
+            {pending.map(plan => {
+              const cag = cagnottes.find(c => c.id === plan.cagnotteId);
+              return (
+                <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+                  <span style={{ fontSize:"1rem" }}>{cag?.icon||"🐷"}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:".72rem", fontWeight:700 }}>{cag?.name||"—"}</div>
+                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} · versement mensuel</div>
+                  </div>
+                  <div style={{ display:"flex", gap:5 }}>
+                    <button
+                      onTouchStart={e=>e.stopPropagation()}
+                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
+                        const tx = { type:"epargne", amount:plan.amount, date:`${month}-${String(Math.min(plan.dayOfMonth,28)).padStart(2,"0")}`, targetCagId:plan.cagnotteId, note:`Versement auto · ${cag?.name||""}`, autoSavingId:plan.id };
+                        onConfirmRecurring?.(null, tx);
+                      }}
+                      style={{ background:"var(--purple)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>＋</button>
+                    <button
+                      onTouchStart={e=>e.stopPropagation()}
+                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); }}
+                      style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ── Récurrentes à confirmer ── */}
         <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
           <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
@@ -3275,13 +3521,23 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
   const [roundOn,       setRoundOn]       = useState(roundingEnabled);
   const [roundCagId,    setRoundCagId]    = useState(roundingCagnotteId || "");
   const [roundRule,     setRoundRule]     = useState(roundingRule);
+  // Versement auto
+  const [addingPlan,    setAddingPlan]    = useState(false);
+  const [planDraft,     setPlanDraft]     = useState({ cagnotteId:"", amount:"", dayOfMonth:"1" });
+  // Sécurité
+  const [pinOn,         setPinOn]         = useState(pinEnabled);
+  const [bioOn,         setBioOn]         = useState(bioEnabled);
+  const [pinSetup,      setPinSetup]      = useState(null); // null | "enter" | "confirm"
+  const [pinEntry,      setPinEntry]      = useState("");
+  const [pinFirst,      setPinFirst]      = useState("");
+  const [pinError,      setPinError]      = useState("");
 
   function saveAlert(enabled, value) {
     const t = parseFloat(value) || 0;
@@ -3371,35 +3627,91 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       </div>
 
       {/* ── Sauvegarde ── */}
-      <div className="card" style={{
-        borderLeft: `3px solid ${backupOk ? "var(--success)" : "var(--danger)"}`,
-        background: backupOk ? "var(--success-glow)" : "var(--danger-glow)",
-        marginBottom: 14,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0,
-            background: backupOk ? "var(--success)" : "var(--danger)",
-            boxShadow: `0 0 8px ${backupOk ? "rgba(104,212,152,.6)" : "rgba(200,112,112,.6)"}`,
-          }}/>
-          <div>
-            <div style={{ fontSize: ".72rem", fontWeight: 700, color: backupOk ? "var(--success)" : "var(--danger)" }}>
-              {daysSinceBackup === null
-                ? "⚠️ Aucune sauvegarde enregistrée"
-                : backupOk
-                  ? `✅ Sauvegardé il y a ${daysSinceBackup} jour${daysSinceBackup > 1 ? "s" : ""}`
-                  : `⚠️ Dernière sauvegarde il y a ${daysSinceBackup} jours`
-              }
+      {(() => {
+        const history = data.backupHistory || [];
+        const [showHist, setShowHist] = useState(false);
+        const last = history[0] || null;
+        const borderCol = backupOk ? "var(--success)" : last ? "var(--warning)" : "var(--danger)";
+        return (
+          <div style={{ marginBottom: 14 }}>
+            {/* Carte dernière sauvegarde */}
+            <div className="card" style={{ borderLeft: `3px solid ${borderCol}`, marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: ".65rem", fontWeight: 800, color: borderCol }}>
+                    {!last
+                      ? "⚠️ Aucune sauvegarde"
+                      : backupOk
+                        ? "✅ Dernière sauvegarde"
+                        : `⚠️ Sauvegarde il y a ${daysSinceBackup} jours`}
+                  </div>
+                  {last && (
+                    <div style={{ fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, marginTop: 4 }}>
+                      {new Date(last.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} à {last.date.slice(11, 16)}
+                    </div>
+                  )}
+                </div>
+                {last && (
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--accent)" }}>{last.sizeKo} ko</div>
+                    <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{last.txCount} transactions</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-primary" style={{ flex: 2 }} onClick={onExport}>💾 Sauvegarder</button>
+                <button className="btn btn-outline"  style={{ flex: 1 }} onClick={onImport}>⬆ Importer</button>
+              </div>
             </div>
-            {data.lastBackupDate && (
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 2 }}>{data.lastBackupDate}</div>
+
+            {/* Bouton historique + liste */}
+            {history.length > 0 && (
+              <div>
+                <button onClick={() => setShowHist(h => !h)} style={{
+                  width: "100%", background: "transparent",
+                  border: `1px solid var(--border)`, borderRadius: 8,
+                  padding: "8px 12px", color: "var(--text3)",
+                  fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  touchAction: "manipulation",
+                }}>
+                  <span>📋 Historique — {history.length} sauvegarde{history.length > 1 ? "s" : ""}</span>
+                  <span style={{ transform: showHist ? "rotate(90deg)" : "none", transition: "transform .2s" }}>›</span>
+                </button>
+                {showHist && (
+                  <div style={{ marginTop: 5, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border)" }}>
+                    {history.map((b, i) => (
+                      <div key={b.id} style={{
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "9px 12px",
+                        borderBottom: i < history.length - 1 ? "1px solid var(--border-soft)" : "none",
+                        background: i === 0 ? "rgba(112,184,224,.04)" : "transparent",
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ fontSize: ".7rem", fontWeight: 700 }}>
+                              {new Date(b.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} à {b.date.slice(11, 16)}
+                            </span>
+                            {i === 0 && <span style={{ fontSize: ".48rem", background: "rgba(104,212,152,.12)", color: "var(--success)", padding: "1px 5px", borderRadius: 6, fontWeight: 800 }}>DERNIER</span>}
+                          </div>
+                          <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{b.txCount} transactions · {b.sizeKo} ko</div>
+                        </div>
+                        <button
+                          onTouchStart={e => e.stopPropagation()}
+                          onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onExport(); }}
+                          onClick={onExport}
+                          style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 10px", color: "var(--accent)", fontSize: ".7rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation", flexShrink: 0 }}>
+                          📥
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        </div>
-        <div className="grid-2">
-          <button className="btn btn-primary" onClick={onExport}>⬇ Exporter JSON</button>
-          <button className="btn btn-outline"  onClick={onImport}>⬆ Importer JSON</button>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── Transactions récurrentes ── */}
       {(data.recurringTemplates || []).length > 0 && (
@@ -3433,6 +3745,138 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           </div>
         </>
       )}
+
+      {/* ── Versements automatiques ── */}
+      <div className="card" style={{ borderLeft:`3px solid var(--purple)`, marginBottom:14 }}>
+        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>🎯 Versements automatiques</div>
+        <div style={{ fontSize:".62rem", color:"var(--text3)", lineHeight:1.5, marginBottom:10 }}>
+          Planifie un virement mensuel fixe vers une cagnotte. Il apparaît dans l'Historique pour confirmation.
+        </div>
+        {autoSavings.map(plan => {
+          const cag = data.cagnottes.find(c => c.id === plan.cagnotteId);
+          return (
+            <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"var(--surface2)", border:`1px solid ${plan.enabled?"rgba(176,144,224,.25)":"var(--border)"}`, borderRadius:9, marginBottom:6 }}>
+              <span style={{ fontSize:".9rem" }}>{cag?.icon||"🐷"}</span>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:".72rem", fontWeight:700 }}>{cag?.name||"—"}</div>
+                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} le {plan.dayOfMonth} de chaque mois</div>
+              </div>
+              <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onSaveAutoSaving?.({...plan,enabled:!plan.enabled});}} onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})}
+                style={{ width:36, height:20, borderRadius:10, background:plan.enabled?"var(--purple)":"var(--border)", position:"relative", cursor:"pointer", transition:"background .2s", flexShrink:0, touchAction:"manipulation" }}>
+                <div style={{ position:"absolute", top:2, left:plan.enabled?17:2, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+              </div>
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={e=>{e.stopPropagation();onDeleteAutoSaving?.(plan.id);}}
+                style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", color:"var(--text3)", fontSize:".65rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
+            </div>
+          );
+        })}
+        {!addingPlan ? (
+          <button onClick={()=>setAddingPlan(true)} style={{ width:"100%", background:"transparent", border:`1.5px dashed var(--purple)`, borderRadius:9, padding:"9px", color:"var(--purple)", fontWeight:700, fontSize:".72rem", cursor:"pointer", touchAction:"manipulation" }}>
+            ＋ Planifier un versement
+          </button>
+        ) : (
+          <div style={{ background:"var(--surface2)", border:`1.5px solid var(--purple)`, borderRadius:10, padding:12 }}>
+            <div style={{ fontSize:".62rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>Nouveau versement auto</div>
+            <select value={planDraft.cagnotteId} onChange={e=>setPlanDraft(d=>({...d,cagnotteId:e.target.value}))}
+              style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"8px 10px", color:"var(--text)", fontSize:".78rem", marginBottom:8 }}>
+              <option value="">Choisir une cagnotte…</option>
+              {data.cagnottes.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </select>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
+              <div>
+                <div style={{ fontSize:".58rem", color:"var(--text2)", marginBottom:3 }}>Montant (€)</div>
+                <input type="number" value={planDraft.amount} min="1" placeholder="50"
+                  onChange={e=>setPlanDraft(d=>({...d,amount:e.target.value}))}
+                  style={{ width:"100%", background:"var(--bg)", border:`1px solid ${planDraft.amount?"var(--purple)":"var(--border)"}`, borderRadius:7, padding:"8px 10px", color:"var(--text)", fontSize:".85rem", fontFamily:"var(--mono)", boxSizing:"border-box" }} />
+              </div>
+              <div>
+                <div style={{ fontSize:".58rem", color:"var(--text2)", marginBottom:3 }}>Jour du mois</div>
+                <select value={planDraft.dayOfMonth} onChange={e=>setPlanDraft(d=>({...d,dayOfMonth:e.target.value}))}
+                  style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:7, padding:"8px 10px", color:"var(--text)", fontSize:".78rem" }}>
+                  {[1,5,10,15,20,25,28].map(d=><option key={d} value={d}>Le {d}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:6 }}>
+              <button onClick={()=>setAddingPlan(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer" }}>Annuler</button>
+              <button onClick={()=>{ if(!planDraft.cagnotteId||!planDraft.amount)return; onSaveAutoSaving?.({cagnotteId:planDraft.cagnotteId,amount:parseFloat(planDraft.amount),dayOfMonth:parseInt(planDraft.dayOfMonth),enabled:true}); setAddingPlan(false); setPlanDraft({cagnotteId:"",amount:"",dayOfMonth:"1"}); }}
+                style={{ flex:2, background:planDraft.cagnotteId&&planDraft.amount?"var(--purple)":"var(--surface2)", border:"none", borderRadius:8, padding:"8px", color:planDraft.cagnotteId&&planDraft.amount?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer", touchAction:"manipulation" }}>
+                Créer
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Sécurité PIN ── */}
+      <div className="card" style={{ borderLeft:`3px solid var(--accent)`, marginBottom:14 }}>
+        <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--accent)", marginBottom:10 }}>🔒 Sécurité</div>
+        {/* Biométrie */}
+        <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();const n=!bioOn;setBioOn(n);onSaveSecuritySettings?.(pinOn,pinHash,n);}} onClick={()=>{ const n=!bioOn;setBioOn(n);onSaveSecuritySettings?.(pinOn,pinHash,n); }}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:bioOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${bioOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:9, marginBottom:8, cursor:"pointer", touchAction:"manipulation" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:".72rem", fontWeight:700, color:bioOn?"var(--accent)":"var(--text2)" }}>Empreinte / FaceID</div>
+            <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>Déverrouillage biométrique Android</div>
+          </div>
+          <div style={{ width:38, height:22, borderRadius:11, background:bioOn?"var(--accent)":"var(--border)", position:"relative", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:bioOn?17:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+          </div>
+        </div>
+        {/* PIN toggle */}
+        <div onTouchEnd={e=>{e.stopPropagation();e.preventDefault();if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}} onClick={()=>{if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:pinOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${pinOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:9, marginBottom: (pinSetup||pinOn)?8:0, cursor:"pointer", touchAction:"manipulation" }}>
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:".72rem", fontWeight:700, color:pinOn?"var(--accent)":"var(--text2)" }}>Code PIN (4 chiffres)</div>
+            <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{pinOn?"Verrou actif à l'ouverture":"Fallback si biométrie indisponible"}</div>
+          </div>
+          <div style={{ width:38, height:22, borderRadius:11, background:pinOn?"var(--accent)":"var(--border)", position:"relative", flexShrink:0 }}>
+            <div style={{ position:"absolute", top:3, left:pinOn?17:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+          </div>
+        </div>
+        {/* Setup PIN inline */}
+        {pinSetup && (
+          <div style={{ background:"var(--surface2)", border:`1.5px solid var(--accent)`, borderRadius:10, padding:12, marginBottom:8 }}>
+            <div style={{ fontSize:".62rem", fontWeight:800, color:"var(--accent)", marginBottom:8 }}>
+              {pinSetup==="enter"?"Choisir un code PIN (4 chiffres)":"Confirmer le code PIN"}
+            </div>
+            <div style={{ display:"flex", gap:12, marginBottom:10, justifyContent:"center" }}>
+              {[0,1,2,3].map(i=>(
+                <div key={i} style={{ width:12, height:12, borderRadius:"50%", background:i<pinEntry.length?"var(--accent)":"transparent", border:"2px solid rgba(112,184,224,.4)", transition:"background .1s" }} />
+              ))}
+            </div>
+            {pinError && <div style={{ fontSize:".6rem", color:"var(--danger)", marginBottom:8, textAlign:"center" }}>{pinError}</div>}
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5, justifyContent:"center", maxWidth:200, margin:"0 auto 10px" }}>
+              {["1","2","3","4","5","6","7","8","9","","0","⌫"].map((k,i)=>(
+                k===""
+                  ? <div key={i} style={{ width:52, height:40 }} />
+                  : <button key={i}
+                      onTouchStart={e=>e.stopPropagation()}
+                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
+                        if(k==="⌫"){setPinEntry(p=>p.slice(0,-1));setPinError("");return;}
+                        const next=pinEntry+k; if(next.length>4)return; setPinEntry(next);
+                        if(next.length===4){
+                          if(pinSetup==="enter"){setPinFirst(next);setPinEntry("");setPinSetup("confirm");}
+                          else{
+                            if(next===pinFirst){sha256hex(next).then(h=>{onSaveSecuritySettings?.(true,h,bioOn);setPinOn(true);setPinSetup(null);setPinEntry("");setPinFirst("");});}
+                            else{setPinEntry("");setPinError("Les codes ne correspondent pas");}
+                          }
+                        }
+                      }}
+                      onClick={()=>{}}
+                      style={{ width:52, height:40, background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8, color:"#e8f0e8", fontSize:k==="⌫"?"1rem":"1rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+                      {k}
+                    </button>
+              ))}
+            </div>
+            <button onClick={()=>{setPinSetup(null);setPinEntry("");setPinFirst("");setPinError("");}} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"7px", color:"var(--text3)", fontSize:".68rem", cursor:"pointer" }}>Annuler</button>
+          </div>
+        )}
+        {pinOn && !pinSetup && (
+          <button onClick={()=>{setPinSetup("enter");setPinEntry("");}} style={{ width:"100%", background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text2)", fontSize:".7rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+            ✏️ Modifier le code PIN
+          </button>
+        )}
+      </div>
 
       {/* ── Arrondi automatique ── */}
       <div className="card" style={{ borderLeft: `3px solid ${roundOn ? "var(--success)" : "var(--border)"}`, marginBottom: 14 }}>
