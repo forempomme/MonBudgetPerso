@@ -78,8 +78,10 @@ export default function App() {
   const saveMonthNote   = useCallback((ym, note) => dispatch({ type: A.SAVE_MONTH_NOTE, ym, note }), []);
   const saveRecurring      = useCallback(tpl => dispatch({ type: A.SAVE_RECURRING, tpl }), []);
   const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
-  const saveAlertSettings  = useCallback((enabled, threshold) =>
+  const saveAlertSettings      = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
+  const saveCategoryThreshold  = useCallback((catId, threshold) =>
+    dispatch({ type: A.SAVE_CATEGORY_THRESHOLD, catId, threshold }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -418,6 +420,8 @@ export default function App() {
     ),
     rapport: (
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
+        categoryThresholds={data.categoryThresholds || {}}
+        onSaveCategoryThreshold={saveCategoryThreshold}
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
         onSaveMonthNote={saveMonthNote}

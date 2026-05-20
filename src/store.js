@@ -67,8 +67,9 @@ export const A = /** @type {const} */ ({
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
-  SAVE_ALERT_SETTINGS: "SAVE_ALERT_SETTINGS",
-  IMPORT_DATA:         "IMPORT_DATA",
+  SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
+  SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
+  IMPORT_DATA:              "IMPORT_DATA",
   RESET:               "RESET",
 });
 
@@ -91,6 +92,7 @@ export const DEFAULT_DATA = {
   recurringTemplates: [],
   alertEnabled:   false,
   alertThreshold: 500,
+  categoryThresholds: {},  // { [catId]: number }
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -339,6 +341,16 @@ export function reducer(state, action) {
 
     case A.SAVE_ALERT_SETTINGS:
       return { ...state, alertEnabled: action.enabled, alertThreshold: action.threshold };
+
+    case A.SAVE_CATEGORY_THRESHOLD: {
+      const thresholds = { ...(state.categoryThresholds || {}) };
+      if (!action.threshold || action.threshold <= 0) {
+        delete thresholds[action.catId];
+      } else {
+        thresholds[action.catId] = action.threshold;
+      }
+      return { ...state, categoryThresholds: thresholds };
+    }
 
     case A.SAVE_MONTH_NOTE: {
       const notes = { ...(state.monthNotes || {}) };

@@ -1984,6 +1984,207 @@ function SavingsRateModal({ onClose, transactions, fixedExpenses, currentYear })
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Modal suivi des catégories
+// ─────────────────────────────────────────────────────────────────
+function SuiviModal({ onClose, categories, transactions, fixedExpenses, thresholds, onSaveThreshold }) {
+  const [tab,    setTab]    = useState("suivi");
+  const [editId, setEditId] = useState(null);
+  const [draft,  setDraft]  = useState("");
+
+  const curYM = currentYM();
+
+  // Dépenses du mois courant par catégorie (transactions + frais fixes)
+  const spentBycat = useMemo(() => {
+    const map = {};
+    transactions
+      .filter(t => t.date.startsWith(curYM) && t.type === "expense")
+      .forEach(t => { map[t.categoryId] = (map[t.categoryId] || 0) + (parseFloat(t.amount) || 0); });
+    fixedExpenses.forEach(f => {
+      const ov = f.monthlyOverrides?.[curYM];
+      const a  = (ov?.amount ?? f.amount) || 0;
+      map[f.categoryId] = (map[f.categoryId] || 0) + a;
+    });
+    return map;
+  }, [transactions, fixedExpenses, curYM]);
+
+  const tracked = categories.filter(c => thresholds[c.id] > 0);
+
+  function saveThreshold(id) {
+    const v = parseFloat(draft);
+    onSaveThreshold?.(id, isNaN(v) || v <= 0 ? 0 : v);
+    setEditId(null); setDraft("");
+  }
+
+  return (
+    <div className="modal" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <div className="modal-title" style={{ marginBottom: 0 }}>🎯 Suivi des catégories</div>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 2 }}>
+              {new Date().toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text2)", cursor: "pointer", fontSize: ".75rem" }}>✕</button>
+        </div>
+
+        {/* Onglets internes */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 14 }}>
+          {[["suivi","📊 Suivi du mois"],["config","⚙️ Configurer"]].map(([k,l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{
+              background: tab===k ? "rgba(112,184,224,.1)" : "transparent",
+              border: `1.5px solid ${tab===k ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: 10, padding: "9px 0",
+              color: tab===k ? "var(--accent)" : "var(--text2)",
+              fontWeight: 700, fontSize: ".7rem", cursor: "pointer",
+            }}>{l}</button>
+          ))}
+        </div>
+
+        {/* ── SUIVI ── */}
+        {tab === "suivi" && (
+          tracked.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 0" }}>
+              <div style={{ fontSize: "2rem", marginBottom: 10 }}>🎯</div>
+              <div style={{ fontSize: ".78rem", fontWeight: 700, marginBottom: 6 }}>Aucune catégorie suivie</div>
+              <div style={{ fontSize: ".65rem", color: "var(--text3)", marginBottom: 14 }}>Configure des seuils dans l'onglet ⚙️</div>
+              <button onClick={() => setTab("config")} style={{ background: "var(--accent)", border: "none", borderRadius: 9, padding: "9px 20px", color: "var(--bg)", fontWeight: 800, fontSize: ".72rem", cursor: "pointer" }}>
+                Configurer →
+              </button>
+            </div>
+          ) : (
+            <div>
+              {/* Résumé 3 chiffres */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 7, marginBottom: 14 }}>
+                {[
+                  { l: "Suivies",   v: tracked.length,                                                          c: "var(--accent)" },
+                  { l: "Dépassées", v: tracked.filter(c => (spentBycat[c.id]||0) >= thresholds[c.id]).length,   c: "var(--danger)" },
+                  { l: "Proches",   v: tracked.filter(c => { const p=(spentBycat[c.id]||0)/thresholds[c.id]; return p>=.8&&p<1; }).length, c: "var(--warning)" },
+                ].map(s => (
+                  <div key={s.l} style={{ background: "var(--surface2)", borderRadius: 9, padding: "8px 0", textAlign: "center" }}>
+                    <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: "1.1rem", color: s.c }}>{s.v}</div>
+                    <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>{s.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Cartes par catégorie suivie */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {tracked.map(cat => {
+                  const spent    = spentBycat[cat.id] || 0;
+                  const limit    = thresholds[cat.id];
+                  const pct      = Math.min(spent / limit * 100, 100);
+                  const over     = spent >= limit;
+                  const near     = !over && pct >= 80;
+                  const barColor = over ? "var(--danger)" : near ? "var(--warning)" : (cat.color || "var(--accent)");
+                  return (
+                    <div key={cat.id} style={{
+                      background: "var(--bg)", borderRadius: 12, padding: "12px 14px",
+                      border: `1px solid ${over ? "rgba(200,112,112,.35)" : "var(--border)"}`,
+                      borderLeft: `3px solid ${barColor}`,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                          <span style={{ fontSize: ".9rem" }}>{cat.icon}</span>
+                          <span style={{ fontSize: ".73rem", fontWeight: 700 }}>{cat.name}</span>
+                        </div>
+                        {over
+                          ? <span style={{ fontSize: ".52rem", background: "rgba(200,112,112,.2)", color: "var(--danger)", padding: "2px 7px", borderRadius: 20, fontWeight: 800 }}>⚠️ Dépassé</span>
+                          : near
+                            ? <span style={{ fontSize: ".52rem", background: "rgba(200,184,96,.15)", color: "var(--warning)", padding: "2px 7px", borderRadius: 20, fontWeight: 800 }}>⚡ Proche</span>
+                            : <span style={{ fontSize: ".52rem", background: "rgba(104,212,152,.1)", color: "var(--success)", padding: "2px 7px", borderRadius: 20, fontWeight: 800 }}>✓ OK</span>
+                        }
+                      </div>
+                      <div style={{ height: 6, background: "var(--surface2)", borderRadius: 99, overflow: "hidden", marginBottom: 6 }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: barColor, borderRadius: 99 }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".63rem" }}>
+                        <span style={{ color: "var(--text2)" }}>
+                          <strong style={{ color: barColor }}>{fmt(spent)}</strong> dépensés
+                        </span>
+                        <span style={{ color: over ? "var(--danger)" : "var(--text3)" }}>
+                          {over
+                            ? <><strong style={{ color: "var(--danger)" }}>+{fmt(spent - limit)}</strong> dépassé</>
+                            : <><strong style={{ color: "var(--success)" }}>{fmt(limit - spent)}</strong> restants</>
+                          }
+                        </span>
+                        <span style={{ color: "var(--text3)" }}>/ {fmt(limit)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ── CONFIGURATION ── */}
+        {tab === "config" && (
+          <div>
+            <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginBottom: 12 }}>
+              Définis un seuil mensuel par catégorie. Tu seras alerté si tu t'en approches ou le dépasses.
+            </div>
+            <div style={{ background: "var(--bg)", borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}>
+              {categories.map((cat, i) => (
+                <div key={cat.id} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "11px 14px",
+                  borderBottom: i < categories.length - 1 ? "1px solid rgba(30,46,72,.5)" : "none",
+                }}>
+                  <span style={{ fontSize: ".9rem", width: 24, textAlign: "center" }}>{cat.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: ".72rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cat.name}</div>
+                    {thresholds[cat.id] > 0 && editId !== cat.id && (
+                      <div style={{ fontSize: ".58rem", color: "var(--accent)", marginTop: 1 }}>Seuil : {fmt(thresholds[cat.id])}</div>
+                    )}
+                  </div>
+                  {editId === cat.id ? (
+                    <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
+                      <input type="number" value={draft} min="0" step="10"
+                        onChange={e => setDraft(e.target.value)}
+                        placeholder="€ / mois"
+                        style={{ width: 80, background: "var(--surface2)", border: "1.5px solid var(--accent)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
+                      <button
+                        onTouchStart={e => e.stopPropagation()}
+                        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); saveThreshold(cat.id); }}
+                        onClick={() => saveThreshold(cat.id)}
+                        style={{ background: "var(--accent)", border: "none", borderRadius: 7, padding: "7px 10px", color: "var(--bg)", fontWeight: 800, fontSize: ".75rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation" }}>✓</button>
+                      <button
+                        onTouchStart={e => e.stopPropagation()}
+                        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setEditId(null); }}
+                        onClick={() => setEditId(null)}
+                        style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 9px", color: "var(--text3)", fontSize: ".75rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation" }}>✕</button>
+                    </div>
+                  ) : (
+                    <button
+                      onTouchStart={e => e.stopPropagation()}
+                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setEditId(cat.id); setDraft(thresholds[cat.id] > 0 ? String(thresholds[cat.id]) : ""); }}
+                      onClick={() => { setEditId(cat.id); setDraft(thresholds[cat.id] > 0 ? String(thresholds[cat.id]) : ""); }}
+                      style={{
+                        background: thresholds[cat.id] > 0 ? "rgba(112,184,224,.1)" : "transparent",
+                        border: `1px solid ${thresholds[cat.id] > 0 ? "var(--accent)" : "var(--border)"}`,
+                        borderRadius: 8, padding: "6px 10px", flexShrink: 0,
+                        color: thresholds[cat.id] > 0 ? "var(--accent)" : "var(--text3)",
+                        fontSize: ".68rem", fontWeight: thresholds[cat.id] > 0 ? 700 : 400,
+                        cursor: "pointer", minHeight: 32, touchAction: "manipulation",
+                      }}>
+                      {thresholds[cat.id] > 0 ? `✏️ ${fmt(thresholds[cat.id])}` : "＋ Ajouter"}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 8, textAlign: "center" }}>
+              Vide ou 0 = pas de suivi pour cette catégorie
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Helper : résoudre les déductions liées pour une catégorie
 // ─────────────────────────────────────────────────────────────────
 function getLinkedIncomeForCat(catId, categories, transactions, period) {
@@ -2254,7 +2455,7 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote }) {
+export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold }) {
   const { transactions, categories, fixedExpenses } = data;
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
@@ -2263,6 +2464,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const [chartFilter,   setChartFilter]   = useState("all");
   const [showSavModal,  setShowSavModal]  = useState(false);
   const [showCatModal,  setShowCatModal]  = useState(false);
+  const [showSuiviModal,setShowSuiviModal]= useState(false);
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
   const [goalInput,   setGoalInput]   = useState("");
@@ -2354,6 +2556,63 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
 
       {/* ══ BILAN : hero + moyennes + graphique + classement + objectif ══ */}
       {rapportTab === "bilan" && (<>
+
+        {/* Bouton suivi catégories */}
+        {(() => {
+          const curYM  = currentYM();
+          const alerts = data.categories.filter(c => {
+            const limit = categoryThresholds[c.id];
+            if (!limit) return false;
+            const spent = data.transactions
+              .filter(t => t.date.startsWith(curYM) && t.type === "expense" && t.categoryId === c.id)
+              .reduce((s, t) => s + (parseFloat(t.amount)||0), 0)
+              + data.fixedExpenses.filter(f=>f.categoryId===c.id)
+                  .reduce((s,f)=>{ const ov=f.monthlyOverrides?.[curYM]; return s+((ov?.amount??f.amount)||0); }, 0);
+            return spent >= limit * 0.8;
+          });
+          return (
+            <>
+              <button onClick={() => setShowSuiviModal(true)} style={{
+                width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+                background: "var(--surface)",
+                border: `1px solid ${alerts.length > 0 ? "rgba(200,112,112,.4)" : "var(--border)"}`,
+                borderLeft: `3px solid ${alerts.length > 0 ? "var(--danger)" : "var(--accent)"}`,
+                borderRadius: "var(--radius-sm)",
+                padding: "11px 14px", marginBottom: 12, cursor: "pointer", touchAction: "manipulation",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: "1.1rem" }}>🎯</span>
+                  <div style={{ textAlign: "left" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <span style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Suivi des catégories</span>
+                      {alerts.length > 0 && (
+                        <span style={{ fontSize: ".52rem", background: "rgba(200,112,112,.2)", color: "var(--danger)", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>
+                          {alerts.length} alerte{alerts.length > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
+                      {Object.keys(categoryThresholds).filter(k => categoryThresholds[k] > 0).length > 0
+                        ? `${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length} catégorie${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length>1?"s":""} suivie${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length>1?"s":""}  · Tap pour le détail`
+                        : "Aucun seuil configuré · Tap pour commencer"}
+                    </div>
+                  </div>
+                </div>
+                <span style={{ color: alerts.length > 0 ? "var(--danger)" : "var(--accent)", fontSize: ".85rem" }}>›</span>
+              </button>
+              {showSuiviModal && (
+                <SuiviModal
+                  onClose={() => setShowSuiviModal(false)}
+                  categories={data.categories}
+                  transactions={data.transactions}
+                  fixedExpenses={data.fixedExpenses}
+                  thresholds={categoryThresholds}
+                  onSaveThreshold={onSaveCategoryThreshold}
+                />
+              )}
+            </>
+          );
+        })()}
 
         {/* Bouton analyse catégorie */}
         <button onClick={() => setShowCatModal(true)} style={{
