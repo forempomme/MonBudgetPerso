@@ -270,8 +270,11 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   }
 
   // Déclenche automatiquement la biométrie à l'ouverture
+  // Délai 300ms : le bridge Capacitor n'est pas encore initialisé au premier render
   useEffect(() => {
-    if (bioEnabled) tryBio();
+    if (!bioEnabled) return;
+    const timer = setTimeout(() => tryBio(), 300);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
