@@ -73,10 +73,11 @@ function NumPad({ value, onChange, type, onTypeChange }) {
     });
   }
 
-  const hasOperator = OPERATORS.some(op => value.includes(op));
-  const displayVal  = value || "0";
+  const val          = String(value ?? "");
+  const hasOperator  = OPERATORS.some(op => val.includes(op));
+  const displayVal   = val || "0";
   const preview     = hasOperator ? (() => {
-    const r = evalSimple(value.replace(/,/g, "."));
+    const r = evalSimple(val.replace(/,/g, "."));
     return r !== null ? fmt(Math.abs(r)) : null;
   })() : null;
 
@@ -170,7 +171,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
   const [type,        setType]        = useState(tx?.type        || "expense");
-  const [amount,      setAmount]      = useState(tx?.amount       || "");
+  const [amount,      setAmount]      = useState(tx?.amount != null ? String(tx.amount) : "");
   const [date,        setDate]        = useState(tx?.date         || todayISO());
   const [catId,       setCatId]       = useState(tx?.categoryId   || "");
   const [cagId,       setCagId]       = useState(tx?.targetCagId  || cagnottes[0]?.id || "");

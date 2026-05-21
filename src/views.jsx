@@ -260,16 +260,20 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
 
   async function tryBio() {
     try {
-      // @capacitor-community/biometric-auth doit être installé dans le projet
-      // Accès via le registre de plugins Capacitor (pas d'import statique)
       const BiometricAuth = window.Capacitor?.Plugins?.BiometricAuth;
       if (!BiometricAuth) throw new Error("plugin absent");
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
       onUnlock();
     } catch {
-      // Biométrie indisponible → PIN de secours (déjà visible)
+      // Biométrie indisponible → PIN de secours affiché
     }
   }
+
+  // Déclenche automatiquement la biométrie à l'ouverture
+  useEffect(() => {
+    if (bioEnabled) tryBio();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function pressKey(k) {
     if (k === "⌫") { setPin(p => p.slice(0,-1)); setError(false); return; }
@@ -3488,12 +3492,12 @@ function Sheet({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, overflowY:"auto", WebkitOverflowScrolling:"touch" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:"var(--bg)", width:"100%", maxWidth:600, borderRadius:"16px 16px 0 0", maxHeight:"87vh", overflowY:"auto", padding:"20px 16px 40px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+      <div style={{ background:"var(--bg)", width:"100%", maxWidth:560, margin:"0 auto", minHeight:"100%", padding:"20px 16px 48px" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
           <div style={{ fontSize:".9rem", fontWeight:800 }}>{title}</div>
-          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px 10px", color:"var(--text2)", cursor:"pointer", fontSize:".75rem", touchAction:"manipulation" }}>✕</button>
+          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"7px 12px", color:"var(--text2)", cursor:"pointer", fontSize:".78rem", touchAction:"manipulation" }}>✕</button>
         </div>
         {children}
       </div>
