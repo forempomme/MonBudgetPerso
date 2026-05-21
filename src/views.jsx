@@ -3605,9 +3605,18 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
   const close = () => setOpenSheet(null);
 
-  // Appui intentionnel : ignore les effleurements < 150 ms
-  const PRESS_DELAY = 150;
-  const touchStartRef = useRef(0);
+  // Détection scroll vs tap
+  const touchPosRef  = useRef({ x: 0, y: 0 });
+  const touchMovedRef = useRef(false);
+
+  // Tooltip "non configuré"
+  const [tooltip, setTooltip] = useState(null);
+  const tooltipTimer = useRef(null);
+  function showTooltip(msg) {
+    clearTimeout(tooltipTimer.current);
+    setTooltip(msg);
+    tooltipTimer.current = setTimeout(() => setTooltip(null), 2500);
+  }
 
   // Badges
   const autoCount   = autoSavings.filter(p=>p.enabled).length;
@@ -3622,7 +3631,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       items:[
         { id:"security", icon:"🔒", label:"PIN & biométrie",
           badge: pinOn?"PIN actif":"Désactivé",
-          badgeColor: pinOn?"var(--success)":"var(--text3)" },
+          configured: pinOn,
+          hint: "PIN et biométrie non configurés" },
       ]
     },
     {
@@ -3630,13 +3640,16 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       items:[
         { id:"autoSavings", icon:"🎯", label:"Versements automatiques",
           badge: autoCount > 0 ? `${autoCount} plan${autoCount>1?"s":""}` : "Inactif",
-          badgeColor: autoCount > 0 ? "var(--purple)" : "var(--text3)" },
+          configured: autoCount > 0,
+          hint: "Aucun versement automatique actif" },
         { id:"rounding", icon:"🐷", label:"Arrondi automatique",
           badge: roundOn && roundCag ? roundCag.name : "Désactivé",
-          badgeColor: roundOn ? "var(--success)" : "var(--text3)" },
+          configured: roundOn && !!roundCag,
+          hint: "Arrondi automatique désactivé" },
         { id:"alert", icon:"🔔", label:"Alerte solde bas",
           badge: alertOn ? `${thresh} €` : "Désactivé",
-          badgeColor: alertOn ? "var(--warning)" : "var(--text3)" },
+          configured: alertOn,
+          hint: "Aucune alerte de solde définie" },
       ]
     },
     {
@@ -3644,13 +3657,16 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       items:[
         { id:"categories", icon:"🏷️", label:"Gestion catégories",
           badge: `${data.categories.length} cat.`,
-          badgeColor:"var(--text3)" },
+          configured: true,
+          hint: "" },
         { id:"links", icon:"🔗", label:"Liaisons",
           badge: linkedCount > 0 ? `${linkedCount} lien${linkedCount>1?"s":""}` : "Aucune",
-          badgeColor: linkedCount > 0 ? "var(--accent)" : "var(--text3)" },
+          configured: linkedCount > 0,
+          hint: "Aucune liaison de catégorie créée" },
         { id:"recurring", icon:"🔄", label:"Récurrentes",
           badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
-          badgeColor: recurCount > 0 ? "var(--text3)" : "var(--text3)" },
+          configured: recurCount > 0,
+          hint: "Aucune transaction récurrente définie" },
       ]
     },
     {
@@ -3658,7 +3674,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       items:[
         { id:"backup", icon:"💾", label:"Sauvegarde",
           badge: last ? `il y a ${daysSinceBackup}j` : "Jamais",
-          badgeColor: backupOk ? "var(--success)" : last ? "var(--warning)" : "var(--danger)" },
+          configured: !!last,
+          hint: "Aucune sauvegarde effectuée" },
       ]
     },
   ];
@@ -3675,9 +3692,9 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
               {group.items.map((item, i) => (
                 <div key={item.id}
-                  onTouchStart={e=>{ e.stopPropagation(); touchStartRef.current = Date.now(); }}
-                  onTouchMove={()=>{ touchStartRef.current = 0; }}
-                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(Date.now()-touchStartRef.current >= PRESS_DELAY) setOpenSheet(item.id); }}
+                  onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
+                  onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
+                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); setOpenSheet(item.id); }}
                   onClick={()=>setOpenSheet(item.id)}
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
@@ -3686,7 +3703,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   }}>
                   <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>{item.icon}</span>
                   <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>{item.label}</span>
-                  <span style={{ fontSize:".58rem", fontWeight:700, color:item.badgeColor, padding:"2px 8px", background:`${item.badgeColor}22`, borderRadius:10, flexShrink:0 }}>
+                  <span style={{ fontSize:".58rem", fontWeight:700, color: item.configured ? "var(--success)" : "var(--warning)", padding:"2px 8px", background: item.configured ? "#1a3a2a" : "#3a2500", borderRadius:10, flexShrink:0 }}>
                     {item.badge}
                   </span>
                   <span style={{ color:"var(--text3)", fontSize:".8rem", flexShrink:0 }}>›</span>
@@ -3698,6 +3715,20 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
         {/* Actions directes */}
         <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
+
+      {/* Toast "non configuré" */}
+      {tooltip && (
+        <div style={{
+          position:"fixed", bottom:80, left:"50%", transform:"translateX(-50%)",
+          background:"#3a2500", border:"1px solid var(--warning)", color:"var(--warning)",
+          borderRadius:10, padding:"9px 16px", fontSize:".7rem", fontWeight:700,
+          zIndex:9999, maxWidth:"80vw", textAlign:"center",
+          boxShadow:"0 4px 20px rgba(0,0,0,.5)",
+          pointerEvents:"none",
+        }}>
+          ⚙️ {tooltip}
+        </div>
+      )}
           <div onClick={onImport} style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", borderBottom:"1px solid var(--border-soft)", cursor:"pointer" }}>
             <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>⬆️</span>
             <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>Importer des données</span>
