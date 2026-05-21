@@ -3554,7 +3554,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, onPushBack, onPopBack }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
@@ -3615,8 +3615,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   // Enregistre/désenregistre dans le back stack quand un sheet est ouvert
   useEffect(() => {
     if (!openSheet) return;
-    props.onPushBack?.(() => setOpenSheet(null));
-    return () => props.onPopBack?.();
+    onPushBack?.(() => setOpenSheet(null));
+    return () => onPopBack?.();
   }, [openSheet]);
 
   // Détection scroll vs tap
