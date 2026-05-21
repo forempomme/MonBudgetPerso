@@ -3048,9 +3048,12 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
                       )}
                     </div>
                     <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-                      {Object.keys(categoryThresholds).filter(k => categoryThresholds[k] > 0).length > 0
-                        ? `${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length} catégorie${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length>1?"s":""} suivie${Object.keys(categoryThresholds).filter(k=>categoryThresholds[k]>0).length>1?"s":""}  · Tap pour le détail`
-                        : "Aucun seuil configuré · Tap pour commencer"}
+                      {(() => {
+                        const tracked = Object.keys(categoryThresholds).filter(k => categoryThresholds[k] > 0);
+                        return tracked.length > 0
+                          ? `${tracked.length} catégorie${tracked.length > 1 ? "s" : ""} suivie${tracked.length > 1 ? "s" : ""}  · Tap pour le détail`
+                          : "Aucun seuil configuré · Tap pour commencer";
+                      })()}
                     </div>
                   </div>
                 </div>

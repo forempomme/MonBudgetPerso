@@ -60,7 +60,6 @@ export const A = /** @type {const} */ ({
   DELETE_CATEGORY:   "DELETE_CATEGORY",
   SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
-  SET_BACKUP_DATE:   "SET_BACKUP_DATE",
   ADD_BACKUP_ENTRY:  "ADD_BACKUP_ENTRY",
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
   TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
@@ -335,9 +334,6 @@ export function reducer(state, action) {
       };
 
     // ── Misc ──────────────────────────────────────────────────────
-    case A.SET_BACKUP_DATE:
-      return { ...state, lastBackupDate: action.date };
-
     case A.ADD_BACKUP_ENTRY: {
       const entry = action.entry;
       const history = [entry, ...(state.backupHistory || [])].slice(0, 10);

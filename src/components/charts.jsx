@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { MONTHS_MINI, PALETTE, polar, fmt, isIncome } from "../utils.js";
+import { MONTHS_MINI, polar, fmt } from "../utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Monthly bar + trend line chart
@@ -86,115 +86,6 @@ export function ChartSVG({ months, chartFilter, onMonthClick }) {
         </>
       )}
     </svg>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Donut chart
-// ─────────────────────────────────────────────────────────────────
-/**
- * @param {{
- *   transactions: import('../store.js').Transaction[],
- *   categories: import('../store.js').Category[],
- *   fixedExpenses: import('../store.js').FixedExpense[],
- *   year: number,
- *   filter: 'expense'|'income',
- * }}
- */
-export function DonutSVG({ transactions, categories, fixedExpenses, year, filter }) {
-  const { entries, total } = useMemo(() => {
-    const yStr  = year.toString();
-    const tf    = fixedExpenses.reduce((s, f) => s + f.amount, 0);
-    const isCur = year === new Date().getFullYear();
-    const map   = {};
-
-    if (filter === "expense" && tf > 0 && isCur) map["__fixes__"] = tf;
-
-    transactions.filter(t => t.date.startsWith(yStr)).forEach(t => {
-      const a = parseFloat(t.amount) || 0;
-      const k = t.categoryId || "__other__";
-      if (filter === "expense" && t.type === "expense")
-        map[k] = (map[k] || 0) + a;
-      if (filter === "income" && isIncome(t.type))
-        map[k] = (map[k] || 0) + a;
-    });
-
-    const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
-    const total   = entries.reduce((s, [, v]) => s + v, 0);
-    return { entries, total };
-  }, [transactions, fixedExpenses, categories, year, filter]);
-
-  const cx = 65, cy = 65, outerR = 56, innerR = 36;
-
-  if (total === 0) return (
-    <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-      <svg viewBox="0 0 130 130" width="130" height="130">
-        <text x="65" y="70" textAnchor="middle" fill="#3a4a68" fontSize={10} fontFamily="DM Sans">
-          Aucune donnée
-        </text>
-      </svg>
-    </div>
-  );
-
-  let angle = -90;
-  const slices = [], legend = [];
-
-  entries.forEach(([catId, val], i) => {
-    const pct   = val / total;
-    if (pct < 0.005) return;
-    const color = PALETTE[i % PALETTE.length];
-    const sweep = pct * 360;
-    const p1 = polar(cx, cy, outerR, angle);
-    const p2 = polar(cx, cy, outerR, angle + sweep);
-    const p3 = polar(cx, cy, innerR, angle + sweep);
-    const p4 = polar(cx, cy, innerR, angle);
-    const lg  = sweep > 180 ? 1 : 0;
-    const d   = [
-      `M${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`,
-      `A${outerR} ${outerR} 0 ${lg} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`,
-      `L${p3.x.toFixed(2)} ${p3.y.toFixed(2)}`,
-      `A${innerR} ${innerR} 0 ${lg} 0 ${p4.x.toFixed(2)} ${p4.y.toFixed(2)} Z`,
-    ].join(" ");
-
-    slices.push(
-      <path key={catId} d={d} fill={color} opacity=".88"
-        style={{ transition: "opacity .2s", cursor: "pointer" }}
-        onMouseOver={e => (e.target.style.opacity = 1)}
-        onMouseOut={e  => (e.target.style.opacity = .88)} />
-    );
-    angle += sweep;
-
-    const cat  = categories.find(c => c.id === catId);
-    const name = catId === "__fixes__"  ? "🔄 Frais fixes"
-               : catId === "__other__"  ? "❓ Sans catégorie"
-               : `${cat?.icon ?? ""} ${cat?.name ?? catId}`;
-    legend.push({ color, name, pct });
-  });
-
-  return (
-    <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-      <svg viewBox="0 0 130 130" width="130" height="130"
-        style={{ flexShrink: 0, overflow: "visible" }}>
-        {slices}
-        <text x={cx} y={cy - 6} textAnchor="middle" fill="#7a8aaa" fontSize={8} fontFamily="DM Sans">Total</text>
-        <text x={cx} y={cy + 8} textAnchor="middle" fill="#e8eef8" fontSize={9.5} fontWeight="700" fontFamily="DM Sans">
-          {fmt(total).replace(" €", "")}
-        </text>
-        <text x={cx} y={cy + 20} textAnchor="middle" fill="#7a8aaa" fontSize={7.5} fontFamily="DM Sans">€</text>
-      </svg>
-
-      <div style={{ flex: 1, minWidth: 120, maxHeight: 130, overflowY: "auto" }}>
-        {legend.map((l, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7, fontSize: ".73rem" }}>
-            <div style={{ width: 9, height: 9, borderRadius: 2, background: l.color, flexShrink: 0 }} />
-            <div style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.name}</div>
-            <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--text2)", fontSize: ".7rem" }}>
-              {(l.pct * 100).toFixed(0)}%
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

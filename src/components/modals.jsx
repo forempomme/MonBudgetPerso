@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, uid, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
