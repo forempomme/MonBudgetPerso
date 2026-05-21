@@ -3605,6 +3605,10 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
   const close = () => setOpenSheet(null);
 
+  // Appui intentionnel : ignore les effleurements < 150 ms
+  const PRESS_DELAY = 150;
+  const touchStartRef = useRef(0);
+
   // Badges
   const autoCount   = autoSavings.filter(p=>p.enabled).length;
   const roundCag    = data.cagnottes.find(c=>c.id===roundingCagnotteId);
@@ -3671,8 +3675,9 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
               {group.items.map((item, i) => (
                 <div key={item.id}
-                  onTouchStart={e=>e.stopPropagation()}
-                  onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();setOpenSheet(item.id); }}
+                  onTouchStart={e=>{ e.stopPropagation(); touchStartRef.current = Date.now(); }}
+                  onTouchMove={()=>{ touchStartRef.current = 0; }}
+                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(Date.now()-touchStartRef.current >= PRESS_DELAY) setOpenSheet(item.id); }}
                   onClick={()=>setOpenSheet(item.id)}
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
