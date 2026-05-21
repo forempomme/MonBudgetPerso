@@ -1,7 +1,8 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A } from "./store.js";
-import { LS_KEY, uid, APP_NAME } from "./utils.js";
+import { LS_KEY, uid, APP_NAME, APP_VERSION } from "./utils.js";
+import appLogo from "../Assets/android-icons/mipmap-xxxhdpi/ic_launcher_round.png";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
@@ -513,6 +514,7 @@ export default function App() {
 
   return (
     <ToastCtx.Provider value={addToast}>
+
       {/* ── Header ── */}
       <header className="bp-header">
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
@@ -525,9 +527,22 @@ export default function App() {
             {PAGE_TITLES[tab] ?? tab}
           </h1>
         </div>
-        <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
-          {theme === "dark" ? "☀️" : "🌙"}
-        </button>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{
+            display:"flex", alignItems:"center", gap:6,
+            background:"var(--surface2)", border:"1px solid var(--border)",
+            borderRadius:20, padding:"4px 10px 4px 5px",
+          }}>
+            <img src={appLogo} style={{ width:20, height:20, borderRadius:"50%", opacity:.85 }} alt="logo" />
+            <span style={{
+              fontSize:".58rem", fontWeight:700, color:"var(--text2)",
+              fontFamily:"'Courier New',monospace", letterSpacing:".06em",
+            }}>v{APP_VERSION}</span>
+          </div>
+          <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? "☀️" : "🌙"}
+          </button>
+        </div>
       </header>
 
       {/* ── Main content ── */}
