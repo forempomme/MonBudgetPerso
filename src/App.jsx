@@ -125,6 +125,21 @@ export default function App() {
   // ── App title ────────────────────────────────────────────────
   useEffect(() => { document.title = APP_NAME; }, []);
 
+  // ── Versements automatiques : applique au démarrage si conditions remplies ──
+  useEffect(() => {
+    const now    = new Date();
+    const ym     = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const today  = now.getDate();
+    const date   = now.toISOString().slice(0, 10);
+    (data.autoSavings || []).forEach(plan => {
+      if (!plan.enabled)                  return; // plan désactivé
+      if (plan.lastAppliedYm === ym)      return; // déjà appliqué ce mois-ci
+      if (today < plan.dayOfMonth)        return; // pas encore le bon jour
+      dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Persist to localStorage on every data change ─────────────
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify(data));
