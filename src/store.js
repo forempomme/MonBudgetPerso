@@ -71,6 +71,7 @@ export const A = /** @type {const} */ ({
   SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
   SAVE_AUTO_SAVING:         "SAVE_AUTO_SAVING",
   DELETE_AUTO_SAVING:       "DELETE_AUTO_SAVING",
+  APPLY_AUTO_SAVING:        "APPLY_AUTO_SAVING",
   SAVE_SECURITY_SETTINGS:   "SAVE_SECURITY_SETTINGS",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
   MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
@@ -435,6 +436,30 @@ export function reducer(state, action) {
 
     case A.DELETE_AUTO_SAVING:
       return { ...state, autoSavings: (state.autoSavings||[]).filter(p => p.id !== action.id) };
+
+    case A.APPLY_AUTO_SAVING: {
+      const plan = (state.autoSavings||[]).find(p => p.id === action.planId);
+      if (!plan) return state;
+      const newTx = {
+        id: uid("ast"),
+        type: "epargne",
+        amount: parseFloat(plan.amount),
+        date: action.date,
+        targetCagId: plan.cagnotteId,
+        note: "Versement automatique",
+        isAutoSaving: true,
+      };
+      return {
+        ...state,
+        transactions: [...state.transactions, newTx],
+        cagnottes: state.cagnottes.map(c =>
+          c.id === plan.cagnotteId ? { ...c, current: c.current + parseFloat(plan.amount) } : c
+        ),
+        autoSavings: state.autoSavings.map(p =>
+          p.id === action.planId ? { ...p, lastAppliedYm: action.ym } : p
+        ),
+      };
+    }
 
     case A.SAVE_SECURITY_SETTINGS:
       return { ...state, pinEnabled: action.pinEnabled, pinHash: action.pinHash, bioEnabled: action.bioEnabled };
