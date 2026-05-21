@@ -156,12 +156,17 @@ export default function App() {
   // ── File import ref ──────────────────────────────────────────
   const importRef = useRef();
 
+  // ── Back stack : couches internes aux vues (sheets, panels) ─────
+  const backStackRef = useRef([]);
+  const pushBack = useCallback(fn => { backStackRef.current = [...backStackRef.current, fn]; }, []);
+  const popBack  = useCallback(()  => { backStackRef.current = backStackRef.current.slice(0, -1); }, []);
+
   // ── Bouton retour physique Android via @capacitor/app ────────
   // Ref toujours fraîche pour éviter les stale closures dans le listener
   const backHandlerRef = useRef(null);
 
   backHandlerRef.current = () => {
-    // Priorité 1 : fermer le modal le plus récent
+    // Priorité 1 : fermer le modal le plus récent (niveau app)
     if (confirmModal)  { setConfirmModal(null);   return; }
     if (cagHistModal)  { setCagHistModal(null);   return; }
     if (monthModal)    { setMonthModal(null);     return; }
@@ -171,7 +176,14 @@ export default function App() {
     if (cagModal)      { setCagModal(null);       return; }
     if (fixedModal)    { setFixedModal(null);     return; }
     if (transModal)    { setTransModal(null);     return; }
-    // Priorité 2 : onglet précédent
+    // Priorité 2 : fermer la couche interne à la vue (sheet, panel…)
+    if (backStackRef.current.length > 0) {
+      const fn = backStackRef.current[backStackRef.current.length - 1];
+      backStackRef.current = backStackRef.current.slice(0, -1);
+      fn();
+      return;
+    }
+    // Priorité 3 : onglet précédent
     if (canGoBack) { goBack(); return; }
     // Rien → quitter l'app (Capacitor gère le comportement système)
   };
@@ -447,6 +459,8 @@ export default function App() {
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
         onSaveMonthNote={saveMonthNote}
+        onPushBack={pushBack}
+        onPopBack={popBack}
       />
     ),
     options: (
@@ -480,6 +494,8 @@ export default function App() {
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
         onSaveSecuritySettings={saveSecuritySettings}
+        onPushBack={pushBack}
+        onPopBack={popBack}
       />
     ),
   };

@@ -2903,7 +2903,7 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag }) {
+export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onPushBack, onPopBack }) {
   const { transactions, categories, fixedExpenses } = data;
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
@@ -2917,6 +2917,13 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   const [savGoal,     setSavGoal]     = useState(0);
   const [editGoal,    setEditGoal]    = useState(false);
   const [goalInput,   setGoalInput]   = useState("");
+
+  // Enregistre les modals locaux dans le back stack
+  useEffect(() => { if (!showSavModal)   return; onPushBack?.(() => setShowSavModal(false));   return () => onPopBack?.(); }, [showSavModal]);
+  useEffect(() => { if (!showCatModal)   return; onPushBack?.(() => setShowCatModal(false));   return () => onPopBack?.(); }, [showCatModal]);
+  useEffect(() => { if (!showSuiviModal) return; onPushBack?.(() => setShowSuiviModal(false)); return () => onPopBack?.(); }, [showSuiviModal]);
+  useEffect(() => { if (!showTagsModal)  return; onPushBack?.(() => setShowTagsModal(false));  return () => onPopBack?.(); }, [showTagsModal]);
+  useEffect(() => { if (!editGoal)       return; onPushBack?.(() => setEditGoal(false));       return () => onPopBack?.(); }, [editGoal]);
 
   const yInc = yearly.inc, yExp = yearly.exp, ySav = yearly.sav;
   const yNet = yInc - yExp;
@@ -3604,6 +3611,13 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const [showBackupHist, setShowBackupHist] = useState(false);
 
   const close = () => setOpenSheet(null);
+
+  // Enregistre/désenregistre dans le back stack quand un sheet est ouvert
+  useEffect(() => {
+    if (!openSheet) return;
+    props.onPushBack?.(() => setOpenSheet(null));
+    return () => props.onPopBack?.();
+  }, [openSheet]);
 
   // Détection scroll vs tap
   const touchPosRef  = useRef({ x: 0, y: 0 });
