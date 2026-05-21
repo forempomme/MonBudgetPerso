@@ -260,12 +260,11 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
 
   async function tryBio() {
     try {
-      const BiometricAuth = window.Capacitor?.Plugins?.BiometricAuth;
-      if (!BiometricAuth) throw new Error("plugin absent");
+      const { BiometricAuth } = await import("@aparajita/capacitor-biometric-auth");
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
       onUnlock();
     } catch {
-      // Biométrie indisponible → PIN de secours affiché
+      // Biométrie indisponible ou refusée → PIN de secours affiché
     }
   }
 
