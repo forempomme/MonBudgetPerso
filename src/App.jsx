@@ -213,6 +213,7 @@ export default function App() {
   // Using a discriminated union pattern: null = closed, object = open with config
   const [transModal,    setTransModal]    = useState(null); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
+  const [accueilEdit,   setAccueilEdit]   = useState(false);
   const [fixedModal,    setFixedModal]    = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
   const [transferModal, setTransferModal] = useState(false);
@@ -407,6 +408,8 @@ export default function App() {
         roundingCagnotteId={data.roundingCagnotteId}
         roundingLastTransferDate={data.roundingLastTransferDate}
         onMarkRoundingTransferred={markRoundingTransferred}
+        editMode={accueilEdit}
+        onExitEditMode={() => setAccueilEdit(false)}
       />
     ),
     cagnottes: (
@@ -565,14 +568,19 @@ export default function App() {
         <div onClick={() => setFabOpen(false)}
           style={{ position:"fixed", inset:0, zIndex:89 }} />
       )}
-      <div style={{ position:"fixed", bottom:70, right:16, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
+      <div style={{ position:"fixed", bottom:110, right:18, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
         {fabOpen && [
-          { type:"expense", icon:"💸", label:"Dépense",  color:"var(--danger)"  },
-          { type:"income",  icon:"💰", label:"Revenu",   color:"var(--success)" },
-          { type:"epargne", icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
+          { type:"expense",      icon:"💸", label:"Dépense",  color:"var(--danger)"  },
+          { type:"income",       icon:"💰", label:"Revenu",   color:"var(--success)" },
+          { type:"epargne",      icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
+          { type:"edit_accueil", icon:"✏️", label:"Accueil",  color:"var(--warning)" },
         ].map((item, i) => (
           <div key={item.type}
-            onClick={() => { setFabOpen(false); setTransModal({ editingId: null, defaultType: item.type }); }}
+            onClick={() => {
+              setFabOpen(false);
+              if (item.type === "edit_accueil") { navigateTo("accueil"); setAccueilEdit(true); }
+              else setTransModal({ editingId: null, defaultType: item.type });
+            }}
             style={{
               display:"flex", alignItems:"center", gap:10, cursor:"pointer",
               animation:`fabItemIn .2s ${i * 0.05}s both cubic-bezier(.34,1.56,.64,1)`,
@@ -591,9 +599,10 @@ export default function App() {
             }}>{item.icon}</div>
           </div>
         ))}
+        {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative */}
         <button className="fab"
           onClick={() => setFabOpen(o => !o)}
-          style={{ transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
+          style={{ position:"relative", bottom:"auto", right:"auto", transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
           ＋
         </button>
       </div>
