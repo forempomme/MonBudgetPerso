@@ -569,36 +569,46 @@ export default function App() {
           style={{ position:"fixed", inset:0, zIndex:89 }} />
       )}
       <div style={{ position:"fixed", bottom:110, right:18, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
-        {fabOpen && [
-          { type:"expense",      icon:"💸", label:"Dépense",  color:"var(--danger)"  },
-          { type:"income",       icon:"💰", label:"Revenu",   color:"var(--success)" },
-          { type:"epargne",      icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
-          { type:"edit_accueil", icon:"✏️", label:"Accueil",  color:"var(--warning)" },
-        ].map((item, i) => (
-          <div key={item.type}
-            onClick={() => {
-              setFabOpen(false);
-              if (item.type === "edit_accueil") { navigateTo("accueil"); setAccueilEdit(true); }
-              else setTransModal({ editingId: null, defaultType: item.type });
-            }}
-            style={{
-              display:"flex", alignItems:"center", gap:10, cursor:"pointer",
-              animation:`fabItemIn .2s ${i * 0.05}s both cubic-bezier(.34,1.56,.64,1)`,
-            }}>
-            <span style={{
-              background:"var(--surface)", border:"1px solid var(--border)",
-              borderRadius:8, padding:"4px 12px",
-              fontSize:".66rem", fontWeight:700, color:item.color,
-              boxShadow:"0 4px 16px rgba(0,0,0,.4)",
-            }}>{item.label}</span>
-            <div style={{
-              width:40, height:40, borderRadius:"50%",
-              background:"var(--surface2)", border:`1.5px solid ${item.color}55`,
-              display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.1rem",
-              boxShadow:`0 4px 16px rgba(0,0,0,.3)`,
-            }}>{item.icon}</div>
+        {fabOpen && (
+          <div style={{
+            background:"var(--surface)", border:"1px solid var(--border)",
+            borderRadius:14, padding:"8px",
+            boxShadow:"0 8px 32px rgba(0,0,0,.6)",
+            display:"flex", flexDirection:"column", gap:6,
+            animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
+          }}>
+          {[
+            { type:"expense",      icon:"💸", label:"Dépense",  color:"var(--danger)"  },
+            { type:"income",       icon:"💰", label:"Revenu",   color:"var(--success)" },
+            { type:"epargne",      icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
+            { type:"edit_accueil", icon:"✏️", label:"Accueil",  color:"var(--warning)" },
+          ].map((item, i) => (
+            <div key={item.type}
+              onClick={() => {
+                setFabOpen(false);
+                if (item.type === "edit_accueil") { navigateTo("accueil"); setAccueilEdit(true); }
+                else setTransModal({ editingId: null, defaultType: item.type });
+              }}
+              style={{
+                display:"flex", alignItems:"center", gap:10, cursor:"pointer",
+                padding:"6px 8px", borderRadius:9,
+                background:"var(--surface2)",
+                border:`1px solid var(--border)`,
+                animation:`fabItemIn .2s ${i * 0.04}s both cubic-bezier(.34,1.56,.64,1)`,
+              }}>
+              <span style={{
+                flex:1,
+                fontSize:".68rem", fontWeight:700, color:item.color,
+              }}>{item.label}</span>
+              <div style={{
+                width:34, height:34, borderRadius:"50%",
+                background:`${item.color}18`, border:`1.5px solid ${item.color}44`,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:".95rem",
+              }}>{item.icon}</div>
+            </div>
+          ))}
           </div>
-        ))}
+        )}
         {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative */}
         <button className="fab"
           onClick={() => setFabOpen(o => !o)}

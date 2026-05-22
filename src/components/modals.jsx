@@ -4,6 +4,9 @@ import { fmt, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
+// Helper : parse un montant saisi avec virgule ou point comme séparateur décimal
+const parseAmt = s => parseFloat(String(s ?? "").replace(",", ".")) || 0;
+
 // ─── Shared field-error display ──────────────────────────────────
 function FieldError({ msg }) {
   if (!msg) return null;
@@ -192,7 +195,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
     const d = new Date(txDate + "T12:00:00");
     return transactions.find(t => {
       if (t.type !== txType) return false;
-      if (Math.abs((parseFloat(t.amount)||0) - parseFloat(amt)) > 0.01) return false;
+      if (Math.abs((parseFloat(t.amount)||0) - parseAmt(amt)) > 0.01) return false;
       if (t.categoryId !== catId) return false;
       const td = new Date(t.date + "T12:00:00");
       return Math.abs((d - td) / 86400000) <= 7;
@@ -201,7 +204,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
 
   function validate() {
     const e = {};
-    const a = parseFloat(amount);
+    const a = parseAmt(amount);
     if (!amount || isNaN(a) || a <= 0)  e.amount = "Montant requis et doit être > 0";
     if (!date)                           e.date   = "Date requise";
     if (isCag && !cagId)                 e.cag    = "Sélectionnez une cagnotte";
@@ -215,7 +218,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
 
   function handleSave(force = false) {
     if (!validate()) return;
-    const parsedAmt = parseFloat(amount);
+    const parsedAmt = parseAmt(amount);
 
     // Vérification doublon (seulement à la première tentative)
     if (!force && !isCag) {
@@ -335,7 +338,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
 
         {/* ── Preview arrondi ── */}
         {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
-          const parsedA = parseFloat(amount);
+          const parsedA = parseAmt(amount);
           if (isNaN(parsedA) || parsedA <= 0) return null;
           const rounded  = roundingRule === "5"  ? Math.ceil(parsedA / 5)  * 5
                          : roundingRule === "10" ? Math.ceil(parsedA / 10) * 10
@@ -475,7 +478,7 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
   function validate() {
     const e = {};
     if (!name.trim())                               e.name = "Nom requis";
-    const a = parseFloat(amt);
+    const a = parseAmt(amt);
     if (!amt || isNaN(a) || a <= 0)                 e.amt  = "Montant requis et doit être > 0";
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -483,7 +486,7 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
 
   function handleSave() {
     if (!validate()) return;
-    onSave({ idx: editingIdx, fixed: { name: name.trim(), amount: parseFloat(amt), categoryId: catId } });
+    onSave({ idx: editingIdx, fixed: { name: name.trim(), amount: parseAmt(amt), categoryId: catId } });
     toast(editingIdx != null ? "Frais fixe modifié" : "Frais fixe ajouté");
   }
 
@@ -524,7 +527,7 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
   const [errors,     setErrors]     = useState({});
 
   const calcInfo = (() => {
-    const t = parseFloat(target), cur = parseFloat(current) || 0;
+    const t = parseAmt(target), cur = parseAmt(current) || 0;
     if (!t || !targetDate) return null;
     const rem = t - cur;
     const today = new Date(), tgt = new Date(targetDate);
@@ -548,9 +551,9 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
     onSave({
       id: editingId || null,
       name: name.trim(),
-      target: parseFloat(target) || null,
+      target: parseAmt(target) || null,
       targetDate: targetDate || null,
-      current: parseFloat(current) || 0,
+      current: parseAmt(current) || 0,
     });
     toast(editingId ? "Cagnotte modifiée" : "Cagnotte créée");
   }
@@ -591,7 +594,7 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 
   function validate() {
     const e = {};
-    const a = parseFloat(amt);
+    const a = parseAmt(amt);
     if (!amt || isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
     if (fromId === toId)             e.from = "Source et destination identiques";
     if (!e.amt) {
@@ -604,7 +607,7 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 
   function handleSave() {
     if (!validate()) return;
-    onSave({ amt: parseFloat(amt), fromId, toId });
+    onSave({ amt: parseAmt(amt), fromId, toId });
     toast("Transfert effectué");
   }
 
