@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { ItemRow, Delta, Sparkline } from "./components/index.jsx";
+import { Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
@@ -331,7 +331,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   );
 }
 
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -474,12 +474,6 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
   const cagTotal = useMemo(() => cagnottes.reduce((s,c) => s + c.current, 0), [cagnottes]);
   const provTotal = useMemo(() => provisionalExpenses.reduce((s,p) => s + (p.amount || 0), 0), [provisionalExpenses]);
   const balanceAfterProv = balance - provTotal;
-  const recent   = useMemo(() =>
-    [...transactions].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0,5),
-    [transactions]
-  );
-  const curYearNum = new Date().getFullYear();
-  const months     = useYearMonths(transactions, fixedExpenses, curYearNum);
   const showBackup = !data.lastBackupDate ||
     (Date.now() - new Date(data.lastBackupDate)) / 86400000 > 7;
 
@@ -756,30 +750,6 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
       </Sec>
 
-      <Sec id="chart">
-      <SectionTitle>📊 Flux mensuels {curY}</SectionTitle>
-      <div className="card" style={{ padding: 14 }}>
-        <ChartSVG months={months} chartFilter="all"
-          onMonthClick={i => onShowMonthDetail?.(curYearNum, i)} />
-        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ color: "var(--success)" }}>■ Revenus</span>
-          <span style={{ color: "var(--danger)"  }}>■ Dépenses</span>
-          <span style={{ color: "var(--accent)"  }}>— Solde net</span>
-        </div>
-      </div>
-      </Sec>
-
-      <SectionTitle>5 Dernières opérations</SectionTitle>
-      <div className="card" style={{ padding: "0 16px" }}>
-        {recent.length === 0
-          ? <EmptyIllustration type="operations" title="Aucune opération" sub="Ajoute un revenu ou une dépense pour commencer" />
-          : recent.map(t => (
-              <ItemRow key={t.id} t={t}
-                categories={data.categories} cagnottes={cagnottes}
-                onEdit={onEditTrans} onDelete={onDeleteTrans} />
-            ))
-        }
-      </div>
     </div>
   );
 }
@@ -941,16 +911,8 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
     }
   }
   function onSwipeEnd(e) {
-    const totalDx = e.changedTouches[0].clientX - swipeStart.current.x;
-    if (isHSwipe.current) {
-      if (totalDx > 50 && swipeOffset === 0) {
-        // Swipe droit depuis position fermée → pointer/dépointer
-        onToggle?.(item.id);
-      } else if (REVEAL_W && swipeOffset < -REVEAL_W / 2) {
-        setSwipeOffset(-REVEAL_W);
-      } else {
-        setSwipeOffset(0);
-      }
+    if (isHSwipe.current && REVEAL_W) {
+      setSwipeOffset(swipeOffset < -REVEAL_W / 2 ? -REVEAL_W : 0);
     }
     isHSwipe.current = false;
   }
@@ -1244,46 +1206,6 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
-  const [copySheet, setCopySheet] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  function copyToClipboard(mode) {
-    const txMonth = transactions.filter(t => t.date.startsWith(month) && t.type !== "epargne");
-    let text = "";
-    const MONTHS_FR_COPY = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
-    const [y, mo] = month.split("-").map(Number);
-    const monthLabel = `${MONTHS_FR_COPY[mo - 1]} ${y}`;
-
-    if (mode === "categories") {
-      const bycat = {};
-      txMonth.filter(t => t.type === "expense").forEach(t => {
-        const cat = categories.find(c => c.id === t.categoryId);
-        const key = cat ? `${cat.icon} ${cat.name}` : "❓ Sans catégorie";
-        if (!bycat[key]) bycat[key] = { total: 0, count: 0 };
-        bycat[key].total += parseFloat(t.amount) || 0;
-        bycat[key].count++;
-      });
-      const lines = Object.entries(bycat).sort((a,b) => b[1].total - a[1].total)
-        .map(([k,v]) => `${k.padEnd(24)} −${v.total.toFixed(2).padStart(9)} € (${v.count})`);
-      const total = Object.values(bycat).reduce((s,v) => s + v.total, 0);
-      text = `📊 Dépenses par catégorie — ${monthLabel}\n${"─".repeat(42)}\n${lines.join("\n")}\n${"─".repeat(42)}\nTOTAL${" ".repeat(28)}−${total.toFixed(2)} €`;
-    } else {
-      const expenses = txMonth.filter(t => t.type === "expense").sort((a,b) => a.date.localeCompare(b.date));
-      const lines = expenses.map(t => {
-        const cat = categories.find(c => c.id === t.categoryId);
-        const label = (t.note || cat?.name || "—").slice(0, 22);
-        return `${t.date.slice(8)}/${t.date.slice(5,7)}  ${label.padEnd(24)} −${(parseFloat(t.amount)||0).toFixed(2).padStart(9)} €`;
-      });
-      const total = expenses.reduce((s,t) => s + (parseFloat(t.amount)||0), 0);
-      text = `💸 Dépenses — ${monthLabel}\n${"─".repeat(42)}\n${lines.join("\n")}\n${"─".repeat(42)}\nTOTAL${" ".repeat(28)}−${total.toFixed(2)} €`;
-    }
-
-    navigator.clipboard.writeText(text)
-      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); })
-      .catch(() => {});
-    setCopySheet(false);
-  }
-
   return (
     <div>
       {/* ── 5. Navigation mois ── */}
@@ -1293,53 +1215,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
           <div style={{ fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800 }}>{MONTHS_FR[monthIdx]}</div>
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{year}</div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <button onClick={() => setCopySheet(true)} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, width:32, height:32, color:"var(--text3)", fontSize:".8rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }} title="Copier les dépenses">📋</button>
-          <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
-        </div>
+        <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
       </div>
-
-      {/* ── Toast copié ── */}
-      {copied && (
-        <div style={{ position:"fixed", bottom:80, left:"50%", transform:"translateX(-50%)", background:"var(--success)", color:"var(--bg)", borderRadius:10, padding:"8px 18px", fontSize:".7rem", fontWeight:800, zIndex:300, whiteSpace:"nowrap", boxShadow:"0 4px 20px rgba(0,0,0,.4)", pointerEvents:"none" }}>
-          ✓ Copié dans le presse-papier
-        </div>
-      )}
-
-      {/* ── Sheet copie ── */}
-      {copySheet && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.75)", backdropFilter:"blur(4px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }} onClick={() => setCopySheet(false)}>
-          <div style={{ background:"var(--surface)", borderRadius:"16px 16px 0 0", border:"1px solid var(--border)", padding:"16px 16px 28px" }} onClick={e => e.stopPropagation()}>
-            <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
-            <div style={{ fontSize:".75rem", fontWeight:800, color:"var(--text)", marginBottom:2 }}>📋 Copier les dépenses</div>
-            <div style={{ fontSize:".58rem", color:"var(--text3)", marginBottom:16 }}>
-              {MONTHS_FR[monthIdx]} {year} · Le texte sera copié dans le presse-papier, prêt à coller dans SMS, Notes ou email
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              <button onClick={() => copyToClipboard("categories")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-                  <span style={{ fontSize:"1rem" }}>📊</span>
-                  <span>Par catégorie</span>
-                </div>
-                <div style={{ fontSize:".54rem", color:"var(--text3)", fontWeight:400, paddingLeft:30 }}>
-                  Total par catégorie + nb transactions<br/>
-                  <span style={{ fontFamily:"var(--mono)", color:"var(--text3)" }}>🍽️ Restaurant        −182,80 € (3)</span>
-                </div>
-              </button>
-              <button onClick={() => copyToClipboard("all")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left" }}>
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
-                  <span style={{ fontSize:"1rem" }}>📋</span>
-                  <span>Ligne par ligne</span>
-                </div>
-                <div style={{ fontSize:".54rem", color:"var(--text3)", fontWeight:400, paddingLeft:30 }}>
-                  Chaque dépense avec sa date<br/>
-                  <span style={{ fontFamily:"var(--mono)", color:"var(--text3)" }}>01/05  Pizza           −25,90 €</span>
-                </div>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Donut + barre budget ── */}
       <div className="card" style={{ padding: 14, marginBottom: 10 }}>
@@ -2242,6 +2119,16 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
                   <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>
                     {fmt(f.amount)}
                   </div>
+                  {f.prevAmount != null && f.prevAmount !== f.amount && (
+                    <div style={{
+                      fontSize: ".5rem", fontWeight: 800,
+                      color: f.amount > f.prevAmount ? "var(--danger)" : "var(--success)",
+                      display: "flex", alignItems: "center", gap: 2, marginTop: 1,
+                    }}>
+                      {f.amount > f.prevAmount ? "▲" : "▼"}
+                      {Math.abs(f.amount - f.prevAmount).toFixed(2)} €
+                    </div>
+                  )}
                   {/* Boutons visibles au tap uniquement */}
                   {selected === selKey && (
                     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>

@@ -395,9 +395,6 @@ export default function App() {
     accueil: (
       <AccueilView data={data}
         onShowDetail={(type, period) => setDetailModal({ type, period })}
-        onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
-        onEditTrans={id => setTransModal({ editingId: id })}
-        onDeleteTrans={deleteTransaction}
         onSwitchTab={navigateTo}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
