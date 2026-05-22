@@ -1460,7 +1460,6 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
             );
           })}
         </div>
-      )}
 
       {/* ── Section frais fixes ── */}
       {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && (        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
