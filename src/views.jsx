@@ -925,7 +925,6 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
     isHSwipe.current = false;
   }
   function onSwipeMove(e) {
-    if (!REVEAL_W) return;
     const dx = e.touches[0].clientX - swipeStart.current.x;
     const dy = e.touches[0].clientY - swipeStart.current.y;
     if (!isHSwipe.current && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
@@ -933,16 +932,26 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
       isHSwipe.current = Math.abs(dx) > Math.abs(dy);
       if (!isHSwipe.current) return;
     }
-    if (dx < 0) {
+    if (dx < 0 && REVEAL_W) {
       e.preventDefault();
       setSwipeOffset(Math.max(dx, -REVEAL_W));
-    } else if (swipeOffset < 0) {
-      setSwipeOffset(Math.min(0, swipeOffset - dx));
+    } else if (dx > 0 && swipeOffset < 0) {
+      e.preventDefault();
+      setSwipeOffset(Math.min(0, swipeOffset + dx));
     }
   }
-  function onSwipeEnd() {
-    if (!REVEAL_W) return;
-    setSwipeOffset(swipeOffset < -REVEAL_W / 2 ? -REVEAL_W : 0);
+  function onSwipeEnd(e) {
+    const totalDx = e.changedTouches[0].clientX - swipeStart.current.x;
+    if (isHSwipe.current) {
+      if (totalDx > 50 && swipeOffset === 0) {
+        // Swipe droit depuis position fermée → pointer/dépointer
+        onToggle?.(item.id);
+      } else if (REVEAL_W && swipeOffset < -REVEAL_W / 2) {
+        setSwipeOffset(-REVEAL_W);
+      } else {
+        setSwipeOffset(0);
+      }
+    }
     isHSwipe.current = false;
   }
   function closeSwipe() { setSwipeOffset(0); }
@@ -1235,8 +1244,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
-  const swipeTouchX = useRef(0);
   const [copySheet, setCopySheet] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   function copyToClipboard(mode) {
     const txMonth = transactions.filter(t => t.date.startsWith(month) && t.type !== "epargne");
@@ -1269,19 +1278,14 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
       text = `💸 Dépenses — ${monthLabel}\n${"─".repeat(42)}\n${lines.join("\n")}\n${"─".repeat(42)}\nTOTAL${" ".repeat(28)}−${total.toFixed(2)} €`;
     }
 
-    navigator.clipboard.writeText(text).catch(() => {});
+    navigator.clipboard.writeText(text)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); })
+      .catch(() => {});
     setCopySheet(false);
   }
 
   return (
-    <div
-      onTouchStart={e => { swipeTouchX.current = e.touches[0].clientX; }}
-      onTouchEnd={e => {
-        const dx = e.changedTouches[0].clientX - swipeTouchX.current;
-        if (dx < -50) nextMonth();
-        else if (dx > 50) prevMonth();
-      }}
-    >
+    <div>
       {/* ── 5. Navigation mois ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "10px 16px", marginBottom: 10 }}>
         <button onClick={prevMonth} style={{ background: "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: "var(--accent)", fontSize: "1.1rem", cursor: "pointer" }}>◀</button>
@@ -1295,26 +1299,41 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
         </div>
       </div>
 
+      {/* ── Toast copié ── */}
+      {copied && (
+        <div style={{ position:"fixed", bottom:80, left:"50%", transform:"translateX(-50%)", background:"var(--success)", color:"var(--bg)", borderRadius:10, padding:"8px 18px", fontSize:".7rem", fontWeight:800, zIndex:300, whiteSpace:"nowrap", boxShadow:"0 4px 20px rgba(0,0,0,.4)", pointerEvents:"none" }}>
+          ✓ Copié dans le presse-papier
+        </div>
+      )}
+
       {/* ── Sheet copie ── */}
       {copySheet && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.7)", backdropFilter:"blur(4px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }} onClick={() => setCopySheet(false)}>
-          <div style={{ background:"var(--surface)", borderRadius:"16px 16px 0 0", border:"1px solid var(--border)", padding:"16px 16px 24px" }} onClick={e => e.stopPropagation()}>
+        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.75)", backdropFilter:"blur(4px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }} onClick={() => setCopySheet(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:"16px 16px 0 0", border:"1px solid var(--border)", padding:"16px 16px 28px" }} onClick={e => e.stopPropagation()}>
             <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
-            <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--text)", marginBottom:6 }}>📋 Copier les dépenses — {MONTHS_FR[monthIdx]} {year}</div>
-            <div style={{ fontSize:".58rem", color:"var(--text3)", marginBottom:14 }}>Choisissez le format à copier dans le presse-papier</div>
+            <div style={{ fontSize:".75rem", fontWeight:800, color:"var(--text)", marginBottom:2 }}>📋 Copier les dépenses</div>
+            <div style={{ fontSize:".58rem", color:"var(--text3)", marginBottom:16 }}>
+              {MONTHS_FR[monthIdx]} {year} · Le texte sera copié dans le presse-papier, prêt à coller dans SMS, Notes ou email
+            </div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              <button onClick={() => copyToClipboard("categories")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:"1rem" }}>📊</span>
-                <div>
-                  <div>Par catégorie</div>
-                  <div style={{ fontSize:".56rem", color:"var(--text3)", fontWeight:400, marginTop:2 }}>Total par catégorie avec nombre de transactions</div>
+              <button onClick={() => copyToClipboard("categories")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+                  <span style={{ fontSize:"1rem" }}>📊</span>
+                  <span>Par catégorie</span>
+                </div>
+                <div style={{ fontSize:".54rem", color:"var(--text3)", fontWeight:400, paddingLeft:30 }}>
+                  Total par catégorie + nb transactions<br/>
+                  <span style={{ fontFamily:"var(--mono)", color:"var(--text3)" }}>🍽️ Restaurant        −182,80 € (3)</span>
                 </div>
               </button>
-              <button onClick={() => copyToClipboard("all")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:"1rem" }}>📋</span>
-                <div>
-                  <div>Toutes les dépenses</div>
-                  <div style={{ fontSize:".56rem", color:"var(--text3)", fontWeight:400, marginTop:2 }}>Liste détaillée avec dates et montants</div>
+              <button onClick={() => copyToClipboard("all")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:4 }}>
+                  <span style={{ fontSize:"1rem" }}>📋</span>
+                  <span>Ligne par ligne</span>
+                </div>
+                <div style={{ fontSize:".54rem", color:"var(--text3)", fontWeight:400, paddingLeft:30 }}>
+                  Chaque dépense avec sa date<br/>
+                  <span style={{ fontFamily:"var(--mono)", color:"var(--text3)" }}>01/05  Pizza           −25,90 €</span>
                 </div>
               </button>
             </div>
