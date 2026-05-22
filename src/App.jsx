@@ -211,7 +211,8 @@ export default function App() {
   }, []);
 
   // Using a discriminated union pattern: null = closed, object = open with config
-  const [transModal,    setTransModal]    = useState(null); // null | { editingId: string|null }
+  const [transModal,    setTransModal]    = useState(null); // null | { editingId: string|null, defaultType?: string }
+  const [fabOpen,       setFabOpen]       = useState(false);
   const [fixedModal,    setFixedModal]    = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
   const [transferModal, setTransferModal] = useState(false);
@@ -559,8 +560,49 @@ export default function App() {
         ))}
       </div>
 
-      {/* ── FAB ── */}
-      <button className="fab" onClick={() => setTransModal({ editingId: null })}>＋</button>
+      {/* ── FAB + quick menu ── */}
+      {fabOpen && (
+        <div onClick={() => setFabOpen(false)}
+          style={{ position:"fixed", inset:0, zIndex:89 }} />
+      )}
+      <div style={{ position:"fixed", bottom:70, right:16, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
+        {fabOpen && [
+          { type:"expense", icon:"💸", label:"Dépense",  color:"var(--danger)"  },
+          { type:"income",  icon:"💰", label:"Revenu",   color:"var(--success)" },
+          { type:"epargne", icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
+        ].map((item, i) => (
+          <div key={item.type}
+            onClick={() => { setFabOpen(false); setTransModal({ editingId: null, defaultType: item.type }); }}
+            style={{
+              display:"flex", alignItems:"center", gap:10, cursor:"pointer",
+              animation:`fabItemIn .2s ${i * 0.05}s both cubic-bezier(.34,1.56,.64,1)`,
+            }}>
+            <span style={{
+              background:"var(--surface)", border:"1px solid var(--border)",
+              borderRadius:8, padding:"4px 12px",
+              fontSize:".66rem", fontWeight:700, color:item.color,
+              boxShadow:"0 4px 16px rgba(0,0,0,.4)",
+            }}>{item.label}</span>
+            <div style={{
+              width:40, height:40, borderRadius:"50%",
+              background:"var(--surface2)", border:`1.5px solid ${item.color}55`,
+              display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.1rem",
+              boxShadow:`0 4px 16px rgba(0,0,0,.3)`,
+            }}>{item.icon}</div>
+          </div>
+        ))}
+        <button className="fab"
+          onClick={() => setFabOpen(o => !o)}
+          style={{ transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
+          ＋
+        </button>
+      </div>
+      <style>{`
+        @keyframes fabItemIn {
+          from { opacity:0; transform:scale(.7) translateY(10px); }
+          to   { opacity:1; transform:scale(1) translateY(0); }
+        }
+      `}</style>
 
       {/* ── Hidden file input ── */}
       <input ref={importRef} type="file" hidden accept=".json" onChange={handleImportFile} />
@@ -576,6 +618,7 @@ export default function App() {
           roundingCagnotteId={data.roundingCagnotteId}
           roundingRule={data.roundingRule || "ceil"}
           editingId={transModal.editingId}
+          defaultType={transModal.defaultType || "expense"}
           onSave={tx => { saveTransaction(tx); setTransModal(null); }}
           onSaveRecurring={tpl => saveRecurring(tpl)}
           onClose={() => setTransModal(null)}
