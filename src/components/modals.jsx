@@ -166,11 +166,11 @@ function NumPad({ value, onChange, type, onTypeChange }) {
   );
 }
 
-export function TransModal({ transactions, categories, cagnottes, tags = [], roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", editingId, onSave, onSaveRecurring, onClose }) {
+export function TransModal({ transactions, categories, cagnottes, tags = [], roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", editingId, defaultType = "expense", onSave, onSaveRecurring, onClose }) {
   const toast = useToast();
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
-  const [type,        setType]        = useState(tx?.type        || "expense");
+  const [type,        setType]        = useState(tx?.type || defaultType);
   const [amount,      setAmount]      = useState(tx?.amount != null ? String(tx.amount) : "");
   const [date,        setDate]        = useState(tx?.date         || todayISO());
   const [catId,       setCatId]       = useState(tx?.categoryId   || "");
