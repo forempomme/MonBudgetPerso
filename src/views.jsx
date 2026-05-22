@@ -814,9 +814,20 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
                   <div className="cag-amt">{fmt(c.current)}{c.target ? ` / ${fmt(c.target)}` : ""}</div>
                   {c.target && (
                     <>
-                      <div className="progress-bg"><div className="progress-fill" style={{ width: `${pct}%` }} /></div>
-                      <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, fontWeight: 700 }}>{pct.toFixed(0)}%</div>
+                      <div className="progress-bg" style={{ marginTop:8, height:6 }}>
+                        <div className="progress-fill" style={{ width:`${pct}%`, boxShadow:`0 0 8px var(--khaki)44` }} />
+                      </div>
+                      <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:4, fontWeight:700, display:"flex", justifyContent:"space-between" }}>
+                        <span style={{ color: pct >= 100 ? "var(--success)" : "var(--khaki)", fontWeight:800 }}>{pct.toFixed(0)}%</span>
+                        <span>{fmt(Math.max(0, c.target - c.current))} restant</span>
+                      </div>
                     </>
+                  )}
+                  {!c.target && (
+                    <div style={{ fontSize:".55rem", color:"var(--accent)", marginTop:6, opacity:.7 }}
+                      onClick={e => { e.stopPropagation(); onEditCag(c.id); }}>
+                      ＋ Définir un objectif
+                    </div>
                   )}
                   {neededPerMonth && (
                     <div style={{ fontSize: ".58rem", color: "var(--accent)", marginTop: 5, fontFamily: "var(--mono)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
@@ -1100,8 +1111,17 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
+  const swipeTouchX = useRef(0);
+
   return (
-    <div>
+    <div
+      onTouchStart={e => { swipeTouchX.current = e.touches[0].clientX; }}
+      onTouchEnd={e => {
+        const dx = e.changedTouches[0].clientX - swipeTouchX.current;
+        if (dx < -50) nextMonth();
+        else if (dx > 50) prevMonth();
+      }}
+    >
       {/* ── 5. Navigation mois ── */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "10px 16px", marginBottom: 10 }}>
         <button onClick={prevMonth} style={{ background: "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: "var(--accent)", fontSize: "1.1rem", cursor: "pointer" }}>◀</button>
