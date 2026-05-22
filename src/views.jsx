@@ -954,6 +954,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [sort,     setSort]     = useState("date");
   const [catId,    setCatId]    = useState("");
   const [viewMode, setViewMode] = useState("list");
+  const [calSelectedDay, setCalSelectedDay] = useState(null);
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
   const [showAmtFilter, setShowAmtFilter] = useState(false);
@@ -1195,6 +1196,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
             sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
             (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
             viewMode !== "list"    && { label: "📊 Catégories", clear: () => setViewMode("list") },
+            viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("list") },
           ].filter(Boolean);
 
           return (
@@ -1300,8 +1302,8 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                   {/* Vue */}
                   <div>
                     <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Vue</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                      {[["list","📋 Liste"],["cats","📊 Catégories"]].map(([k,l]) => (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                      {[["list","📋 Liste"],["cats","📊 Catégories"],["calendar","📅 Calendrier"]].map(([k,l]) => (
                         <button key={k} onClick={() => setViewMode(k)} style={{
                           background: viewMode===k ? "var(--accent-glow)" : "transparent",
                           border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
@@ -1325,7 +1327,128 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
           onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("list"); }} />
       )}
 
-      {/* Filtre catégorie actif */}
+      {/* ── 6b. Vue Calendrier ── */}
+      {viewMode === "calendar" && (() => {
+        const [y, mo] = month.split("-").map(Number);
+        const firstDow   = new Date(y, mo - 1, 1).getDay();
+        const firstMon   = firstDow === 0 ? 6 : firstDow - 1; // lundi = 0
+        const daysInMonth = new Date(y, mo, 0).getDate();
+        const today      = new Date();
+        const isCurrentMonth = today.getFullYear() === y && today.getMonth() + 1 === mo;
+        const todayDay   = today.getDate();
+
+        // Grouper les transactions par jour
+        const byDay = {};
+        transactions.filter(t => t.date.startsWith(month)).forEach(t => {
+          const d = parseInt(t.date.slice(8), 10);
+          if (!byDay[d]) byDay[d] = [];
+          byDay[d].push(t);
+        });
+
+        const cells = [];
+        for (let i = 0; i < firstMon; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+        const selTxs = calSelectedDay ? (byDay[calSelectedDay] || []) : [];
+        const selNet = selTxs.reduce((s, t) => s + (isIncome(t.type) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
+
+        return (
+          <div>
+            <div className="card" style={{ padding: "12px 10px 8px" }}>
+              {/* En-têtes jours */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", marginBottom: 6 }}>
+                {["L","M","M","J","V","S","D"].map((d, i) => (
+                  <div key={i} style={{ textAlign: "center", fontSize: ".52rem", fontWeight: 700, color: i >= 5 ? "var(--accent)" : "var(--text3)", padding: "2px 0" }}>{d}</div>
+                ))}
+              </div>
+              {/* Cases */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2 }}>
+                {cells.map((day, i) => {
+                  if (!day) return <div key={i} />;
+                  const txs  = byDay[day] || [];
+                  const net  = txs.reduce((s, t) => s + (isIncome(t.type) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
+                  const hasTx = txs.length > 0;
+                  const isPos = net >= 0;
+                  const isSel = calSelectedDay === day;
+                  const isTod = isCurrentMonth && day === todayDay;
+
+                  return (
+                    <div key={day}
+                      onClick={() => setCalSelectedDay(isSel ? null : day)}
+                      style={{
+                        borderRadius: 7, padding: "5px 2px 4px",
+                        background: isSel ? "var(--accent-glow)" : isTod ? "rgba(200,184,96,.10)" : hasTx ? (isPos ? "rgba(104,200,122,.08)" : "rgba(224,104,112,.08)") : "transparent",
+                        border: isTod ? "1.5px solid var(--warning)" : isSel ? "1px solid var(--accent)" : hasTx ? `1px solid ${isPos ? "rgba(104,200,122,.22)" : "rgba(224,104,112,.18)"}` : "1px solid transparent",
+                        cursor: hasTx ? "pointer" : "default",
+                        display: "flex", flexDirection: "column", alignItems: "center", gap: 1.5,
+                        transition: "background .12s",
+                      }}>
+                      <span style={{ fontSize: ".6rem", fontWeight: isTod ? 800 : 500, color: isSel ? "var(--accent)" : isTod ? "var(--warning)" : hasTx ? "var(--text)" : "var(--text3)" }}>
+                        {day}
+                      </span>
+                      {hasTx && (
+                        <div style={{ display: "flex", gap: 1.5, flexWrap: "wrap", justifyContent: "center" }}>
+                          {txs.slice(0, 4).map((t, j) => (
+                            <div key={j} style={{ width: 3, height: 3, borderRadius: "50%", background: isIncome(t.type) ? "var(--success)" : "var(--danger)", opacity: .85 }} />
+                          ))}
+                        </div>
+                      )}
+                      {hasTx && (
+                        <span style={{ fontSize: ".38rem", fontWeight: 700, color: isPos ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)" }}>
+                          {isPos ? "+" : ""}{Math.round(net)}€
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Légende */}
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
+                {[["var(--success)","Revenus"],["var(--danger)","Dépenses"],["var(--warning)","Aujourd'hui"]].map(([color, label]) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: 2, background: color }} />
+                    <span style={{ fontSize: ".48rem", color: "var(--text3)" }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Détail du jour sélectionné */}
+            {calSelectedDay && selTxs.length > 0 && (
+              <div className="card" style={{ padding: 0, overflow: "hidden", marginTop: 8 }}>
+                <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--accent)" }}>
+                    {calSelectedDay} {["Jan","Fév","Mar","Avr","Mai","Jui","Jul","Aoû","Sep","Oct","Nov","Déc")[mo - 1]} {y}
+                  </span>
+                  <span style={{ fontSize: ".62rem", fontWeight: 700, color: selNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)" }}>
+                    {selNet >= 0 ? "+" : ""}{selNet.toFixed(2)} €
+                  </span>
+                </div>
+                {selTxs.map((t, i) => {
+                  const cat = categories.find(c => c.id === t.categoryId);
+                  const inc = isIncome(t.type);
+                  return (
+                    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: i < selTxs.length - 1 ? "1px solid var(--border-soft)" : "none" }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".85rem", flexShrink: 0 }}>
+                        {cat?.icon ?? (inc ? "💰" : "💸")}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: ".72rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note || cat?.name || "—"}</div>
+                        <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"}</div>
+                      </div>
+                      <span style={{ fontSize: ".72rem", fontWeight: 800, color: inc ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)", flexShrink: 0 }}>
+                        {inc ? "+" : "−"}{fmt(t.amount)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Filtre catégorie actif ── */}
       {viewMode === "list" && catId && (() => {
         const activeCat = categories.find(c => c.id === catId);
         return activeCat ? (
