@@ -1418,7 +1418,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
               <div className="card" style={{ padding: 0, overflow: "hidden", marginTop: 8 }}>
                 <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--accent)" }}>
-                    {calSelectedDay} {["Jan","Fév","Mar","Avr","Mai","Jui","Jul","Aoû","Sep","Oct","Nov","Déc")[mo - 1]} {y}
+                    {calSelectedDay} {["Jan","Fév","Mar","Avr","Mai","Jui","Jul","Aoû","Sep","Oct","Nov","Déc"][mo - 1]} {y}
                   </span>
                   <span style={{ fontSize: ".62rem", fontWeight: 700, color: selNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)" }}>
                     {selNet >= 0 ? "+" : ""}{selNet.toFixed(2)} €
