@@ -331,7 +331,42 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   );
 }
 
-export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred }) {
+export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans, onDeleteTrans, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode }) {
+
+  // Sections masquables — persistées en localStorage
+  const [hidden, setHidden] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("accueil_hidden") || "[]"); }
+    catch { return []; }
+  });
+  function toggleSection(id) {
+    setHidden(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem("accueil_hidden", JSON.stringify(next));
+      return next;
+    });
+  }
+
+  // Wrapper de section masquable
+  function Sec({ id, children }) {
+    const isHidden = hidden.includes(id);
+    if (isHidden && !editMode) return null;
+    return (
+      <div style={{ position:"relative", opacity: isHidden ? .25 : 1, transition:"opacity .2s" }}>
+        {editMode && (
+          <button onClick={() => toggleSection(id)} style={{
+            position:"absolute", top:4, right:4, zIndex:10,
+            background: isHidden ? "var(--accent)" : "var(--surface2)",
+            border:`1px solid ${isHidden ? "var(--accent)" : "var(--border)"}`,
+            borderRadius:6, padding:"2px 8px",
+            fontSize:".52rem", fontWeight:700,
+            color: isHidden ? "var(--bg)" : "var(--text3)",
+            cursor:"pointer", pointerEvents:"all",
+          }}>{isHidden ? "👁 Afficher" : "🚫 Masquer"}</button>
+        )}
+        {children}
+      </div>
+    );
+  }
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -455,6 +490,22 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
 
   return (
     <div>
+      {editMode && (
+        <div style={{
+          display:"flex", justifyContent:"space-between", alignItems:"center",
+          background:"rgba(200,184,96,.1)", border:"1px solid var(--warning)44",
+          borderRadius:10, padding:"8px 14px", marginBottom:10,
+        }}>
+          <span style={{ fontSize:".62rem", color:"var(--warning)", fontWeight:700 }}>
+            ✏️ Mode édition — masquez les sections inutiles
+          </span>
+          <button onClick={onExitEditMode} style={{
+            background:"var(--warning)", border:"none", borderRadius:7,
+            padding:"4px 12px", color:"var(--bg)", fontSize:".6rem", fontWeight:800, cursor:"pointer",
+          }}>✓ Terminer</button>
+        </div>
+      )}
+
       {showBackup && (
         <div className="backup-alert" onClick={() => onSwitchTab("options")}>
           ⚠️ AUCUNE SAUVEGARDE JSON DEPUIS 7 JOURS
@@ -607,6 +658,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
       </div>
 
       {/* ── 🐷 Cagnottes + 📌 Fixes ── */}
+      <Sec id="cagnottes_fixes">
       <div className="grid-2">
         <div className="stat-mini dash-cagnotte" onClick={() => onShowDetail("cagnottes", "all")}>
           <div className="stat-label">🐷 Cagnottes</div>
@@ -618,7 +670,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           <div className="stat-val" style={{ color: "var(--warning)" }}>{fmt(tf)}</div>
         </div>
       </div>
+      </Sec>
 
+      <Sec id="mois">
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}>
@@ -658,6 +712,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       </div>
 
+      </Sec>
+
+      <Sec id="annee">
       <SectionTitle>📅 Année en cours</SectionTitle>
       <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "year")}>
@@ -697,6 +754,9 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
         </div>
       </div>
 
+      </Sec>
+
+      <Sec id="chart">
       <SectionTitle>📊 Flux mensuels {curY}</SectionTitle>
       <div className="card" style={{ padding: 14 }}>
         <ChartSVG months={months} chartFilter="all"
@@ -707,6 +767,7 @@ export function AccueilView({ data, onShowDetail, onShowMonthDetail, onEditTrans
           <span style={{ color: "var(--accent)"  }}>— Solde net</span>
         </div>
       </div>
+      </Sec>
 
       <SectionTitle>5 Dernières opérations</SectionTitle>
       <div className="card" style={{ padding: "0 16px" }}>
@@ -847,11 +908,44 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE — ligne pointable (transactions + frais fixes)
 // ─────────────────────────────────────────────────────────────────
-function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
+function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDelete }) {
   const [editing,     setEditing]     = useState(false);
   const [draftName,   setDraftName]   = useState("");
   const [draftAmount, setDraftAmount] = useState("");
   const isInc = item.type === "income" || item.type === "dissolution_cagnotte";
+
+  // Swipe gauche → révèle Edit + Delete
+  const swipeStart = useRef({ x:0, y:0 });
+  const isHSwipe   = useRef(false);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const REVEAL_W = onEdit || onDelete ? 120 : 0;
+
+  function onSwipeStart(e) {
+    swipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    isHSwipe.current = false;
+  }
+  function onSwipeMove(e) {
+    if (!REVEAL_W) return;
+    const dx = e.touches[0].clientX - swipeStart.current.x;
+    const dy = e.touches[0].clientY - swipeStart.current.y;
+    if (!isHSwipe.current && Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (!isHSwipe.current) {
+      isHSwipe.current = Math.abs(dx) > Math.abs(dy);
+      if (!isHSwipe.current) return;
+    }
+    if (dx < 0) {
+      e.preventDefault();
+      setSwipeOffset(Math.max(dx, -REVEAL_W));
+    } else if (swipeOffset < 0) {
+      setSwipeOffset(Math.min(0, swipeOffset - dx));
+    }
+  }
+  function onSwipeEnd() {
+    if (!REVEAL_W) return;
+    setSwipeOffset(swipeOffset < -REVEAL_W / 2 ? -REVEAL_W : 0);
+    isHSwipe.current = false;
+  }
+  function closeSwipe() { setSwipeOffset(0); }
 
   function startEdit() {
     setDraftName(item.name || "");
@@ -865,11 +959,40 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
   }
 
   return (
-    <div>
+    <div style={{ position:"relative", overflow:"hidden" }}>
+      {/* Boutons d'action révélés par swipe gauche */}
+      {REVEAL_W > 0 && (
+        <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL_W, display:"flex" }}>
+          {onEdit && (
+            <button onClick={() => { closeSwipe(); onEdit(item.id); }} style={{
+              flex:1, background:"var(--accent)", border:"none",
+              color:"var(--bg)", fontSize:".65rem", fontWeight:800, cursor:"pointer",
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
+            }}>✏️<span>Modifier</span></button>
+          )}
+          {onDelete && (
+            <button onClick={() => { closeSwipe(); onDelete(item.id); }} style={{
+              flex:1, background:"var(--danger)", border:"none",
+              color:"#fff", fontSize:".65rem", fontWeight:800, cursor:"pointer",
+              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
+            }}>🗑<span>Supprimer</span></button>
+          )}
+        </div>
+      )}
+
+      {/* Ligne principale */}
+      <div
+        onTouchStart={onSwipeStart}
+        onTouchMove={onSwipeMove}
+        onTouchEnd={onSwipeEnd}
+        style={{
+          transform:`translateX(${swipeOffset}px)`,
+          transition: (swipeOffset === 0 || swipeOffset === -REVEAL_W) ? "transform .22s ease" : "none",
+        }}>
       <div style={{
         display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
         borderBottom: editing ? "none" : "1px solid var(--border-soft)",
-        background: item.pointed ? "rgba(104,212,152,.04)" : "transparent",
+        background: item.pointed ? "rgba(104,212,152,.04)" : "var(--surface)",
         transition: "background .2s",
       }}>
         {/* Bouton pointage */}
@@ -949,6 +1072,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed }) {
           </div>
         </div>
       )}
+      </div>{/* end swipe translateX */}
     </div>
   );
 }
@@ -1112,6 +1236,42 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
   const swipeTouchX = useRef(0);
+  const [copySheet, setCopySheet] = useState(false);
+
+  function copyToClipboard(mode) {
+    const txMonth = transactions.filter(t => t.date.startsWith(month) && t.type !== "epargne");
+    let text = "";
+    const MONTHS_FR_COPY = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+    const [y, mo] = month.split("-").map(Number);
+    const monthLabel = `${MONTHS_FR_COPY[mo - 1]} ${y}`;
+
+    if (mode === "categories") {
+      const bycat = {};
+      txMonth.filter(t => t.type === "expense").forEach(t => {
+        const cat = categories.find(c => c.id === t.categoryId);
+        const key = cat ? `${cat.icon} ${cat.name}` : "❓ Sans catégorie";
+        if (!bycat[key]) bycat[key] = { total: 0, count: 0 };
+        bycat[key].total += parseFloat(t.amount) || 0;
+        bycat[key].count++;
+      });
+      const lines = Object.entries(bycat).sort((a,b) => b[1].total - a[1].total)
+        .map(([k,v]) => `${k.padEnd(24)} −${v.total.toFixed(2).padStart(9)} € (${v.count})`);
+      const total = Object.values(bycat).reduce((s,v) => s + v.total, 0);
+      text = `📊 Dépenses par catégorie — ${monthLabel}\n${"─".repeat(42)}\n${lines.join("\n")}\n${"─".repeat(42)}\nTOTAL${" ".repeat(28)}−${total.toFixed(2)} €`;
+    } else {
+      const expenses = txMonth.filter(t => t.type === "expense").sort((a,b) => a.date.localeCompare(b.date));
+      const lines = expenses.map(t => {
+        const cat = categories.find(c => c.id === t.categoryId);
+        const label = (t.note || cat?.name || "—").slice(0, 22);
+        return `${t.date.slice(8)}/${t.date.slice(5,7)}  ${label.padEnd(24)} −${(parseFloat(t.amount)||0).toFixed(2).padStart(9)} €`;
+      });
+      const total = expenses.reduce((s,t) => s + (parseFloat(t.amount)||0), 0);
+      text = `💸 Dépenses — ${monthLabel}\n${"─".repeat(42)}\n${lines.join("\n")}\n${"─".repeat(42)}\nTOTAL${" ".repeat(28)}−${total.toFixed(2)} €`;
+    }
+
+    navigator.clipboard.writeText(text).catch(() => {});
+    setCopySheet(false);
+  }
 
   return (
     <div
@@ -1129,8 +1289,38 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
           <div style={{ fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800 }}>{MONTHS_FR[monthIdx]}</div>
           <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{year}</div>
         </div>
-        <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <button onClick={() => setCopySheet(true)} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, width:32, height:32, color:"var(--text3)", fontSize:".8rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }} title="Copier les dépenses">📋</button>
+          <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
+        </div>
       </div>
+
+      {/* ── Sheet copie ── */}
+      {copySheet && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.7)", backdropFilter:"blur(4px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }} onClick={() => setCopySheet(false)}>
+          <div style={{ background:"var(--surface)", borderRadius:"16px 16px 0 0", border:"1px solid var(--border)", padding:"16px 16px 24px" }} onClick={e => e.stopPropagation()}>
+            <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
+            <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--text)", marginBottom:6 }}>📋 Copier les dépenses — {MONTHS_FR[monthIdx]} {year}</div>
+            <div style={{ fontSize:".58rem", color:"var(--text3)", marginBottom:14 }}>Choisissez le format à copier dans le presse-papier</div>
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              <button onClick={() => copyToClipboard("categories")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:"1rem" }}>📊</span>
+                <div>
+                  <div>Par catégorie</div>
+                  <div style={{ fontSize:".56rem", color:"var(--text3)", fontWeight:400, marginTop:2 }}>Total par catégorie avec nombre de transactions</div>
+                </div>
+              </button>
+              <button onClick={() => copyToClipboard("all")} style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, padding:"12px 14px", color:"var(--text)", fontSize:".68rem", fontWeight:700, cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:"1rem" }}>📋</span>
+                <div>
+                  <div>Toutes les dépenses</div>
+                  <div style={{ fontSize:".56rem", color:"var(--text3)", fontWeight:400, marginTop:2 }}>Liste détaillée avec dates et montants</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Donut + barre budget ── */}
       <div className="card" style={{ padding: 14, marginBottom: 10 }}>
@@ -1510,7 +1700,9 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                       : dayTxs.map(t => (
                           <PointRow key={t.id}
                             item={{ ...t, name: txLabel(t, categories, cagnottes), cat: categories.find(c => c.id === t.categoryId) }}
-                            onToggle={onTogglePointTx} />
+                            onToggle={onTogglePointTx}
+                            onEdit={id => onEditTrans(id)}
+                            onDelete={id => onDeleteTrans(id)} />
                         ))
                     }
                   </div>
