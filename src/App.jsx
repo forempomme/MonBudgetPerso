@@ -85,7 +85,7 @@ export default function App() {
 
   // ── Verrou PIN ────────────────────────────────────────────────
   const [locked, setLocked]     = useState(() => !!(data.pinEnabled && data.pinHash));
-  const backgroundedAtRef       = useRef(0);
+  const backgroundedAtRef       = useRef(Date.now()); // initialisé à now pour éviter un faux re-verrou au démarrage
   const lastUnlockRef           = useRef(Date.now());
   const LOCK_TOLERANCE_MS       = 30_000; // 30s de tolérance après déverrouillage
 
