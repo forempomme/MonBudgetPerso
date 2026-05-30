@@ -262,7 +262,16 @@ export function reducer(state, action) {
       const { idx, fixed } = action;
       const newFixed = [...state.fixedExpenses];
       if (idx != null) {
-        newFixed[idx] = { ...newFixed[idx], ...fixed };
+        const old = newFixed[idx];
+        const amountChanged = fixed.amount !== undefined && fixed.amount !== old.amount;
+        const now = new Date();
+        const curYM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+        newFixed[idx] = {
+          ...old,
+          ...fixed,
+          prevAmount:   amountChanged ? old.amount  : old.prevAmount,
+          prevAmountYM: amountChanged ? curYM        : old.prevAmountYM,
+        };
       } else {
         newFixed.push({ ...fixed, id: uid("f") });
       }

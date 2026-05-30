@@ -84,7 +84,10 @@ export default function App() {
     dispatch({ type: A.SAVE_SECURITY_SETTINGS, pinEnabled, pinHash, bioEnabled }), []);
 
   // ── Verrou PIN ────────────────────────────────────────────────
-  const [locked, setLocked] = useState(() => !!(data.pinEnabled && data.pinHash));
+  const [locked, setLocked]     = useState(() => !!(data.pinEnabled && data.pinHash));
+  const backgroundedAtRef       = useRef(0);
+  const lastUnlockRef           = useRef(Date.now());
+  const LOCK_TOLERANCE_MS       = 30_000; // 30s de tolérance après déverrouillage
 
   const saveAlertSettings      = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
@@ -125,20 +128,40 @@ export default function App() {
   // ── App title ────────────────────────────────────────────────
   useEffect(() => { document.title = APP_NAME; }, []);
 
-  // ── Versements automatiques : applique au démarrage si conditions remplies ──
-  useEffect(() => {
-    const now    = new Date();
-    const ym     = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-    const today  = now.getDate();
-    const date   = now.toISOString().slice(0, 10);
+  // ── Versements automatiques ───────────────────────────────────
+  const checkAutoSavings = useCallback(() => {
+    const now   = new Date();
+    const ym    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const today = now.getDate();
+    const date  = now.toISOString().slice(0, 10);
     (data.autoSavings || []).forEach(plan => {
-      if (!plan.enabled)                  return; // plan désactivé
-      if (plan.lastAppliedYm === ym)      return; // déjà appliqué ce mois-ci
-      if (today < plan.dayOfMonth)        return; // pas encore le bon jour
+      if (!plan.enabled)             return;
+      if (plan.lastAppliedYm === ym) return;
+      if (today < plan.dayOfMonth)   return;
       dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [data.autoSavings, dispatch]);
+
+  // Déclenchement au démarrage
+  useEffect(() => { checkAutoSavings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Lifecycle Capacitor : reprise background + re-verrou ──────
+  useEffect(() => {
+    const CapApp = window.Capacitor?.Plugins?.App;
+    if (!CapApp) return;
+    let handle;
+    CapApp.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) {
+        backgroundedAtRef.current = Date.now();
+      } else {
+        checkAutoSavings();
+        const elapsed = Date.now() - backgroundedAtRef.current;
+        if (data.pinEnabled && data.pinHash && elapsed > LOCK_TOLERANCE_MS)
+          setLocked(true);
+      }
+    }).then(h => { handle = h; });
+    return () => { handle?.remove?.(); };
+  }, [checkAutoSavings, data.pinEnabled, data.pinHash, LOCK_TOLERANCE_MS]);
 
   // ── Persist to localStorage on every data change ─────────────
   useEffect(() => {
@@ -158,8 +181,14 @@ export default function App() {
 
   // ── Back stack : couches internes aux vues (sheets, panels) ─────
   const backStackRef = useRef([]);
-  const pushBack = useCallback(fn => { backStackRef.current = [...backStackRef.current, fn]; }, []);
-  const popBack  = useCallback(()  => { backStackRef.current = backStackRef.current.slice(0, -1); }, []);
+  const backIdRef    = useRef(0);
+  const pushBack = useCallback(fn => {
+    const id = ++backIdRef.current;
+    backStackRef.current = [...backStackRef.current, { id, fn }];
+  }, []);
+  const popBack = useCallback(() => {
+    backStackRef.current = backStackRef.current.slice(0, -1);
+  }, []);
 
   // ── Bouton retour physique Android via @capacitor/app ────────
   // Ref toujours fraîche pour éviter les stale closures dans le listener
@@ -178,9 +207,9 @@ export default function App() {
     if (transModal)    { setTransModal(null);     return; }
     // Priorité 2 : fermer la couche interne à la vue (sheet, panel…)
     if (backStackRef.current.length > 0) {
-      const fn = backStackRef.current[backStackRef.current.length - 1];
+      const top = backStackRef.current[backStackRef.current.length - 1];
       backStackRef.current = backStackRef.current.slice(0, -1);
-      fn();
+      top.fn();
       return;
     }
     // Priorité 3 : onglet précédent
@@ -507,7 +536,7 @@ export default function App() {
       <LockScreen
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
-        onUnlock={() => setLocked(false)}
+        onUnlock={() => { lastUnlockRef.current = Date.now(); setLocked(false); }}
       />
     );
   }

@@ -2119,7 +2119,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
                   <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>
                     {fmt(f.amount)}
                   </div>
-                  {f.prevAmount != null && f.prevAmount !== f.amount && (
+                  {f.prevAmount != null && f.prevAmount !== f.amount && f.prevAmountYM !== currentYM() && (
                     <div style={{
                       fontSize: ".5rem", fontWeight: 800,
                       color: f.amount > f.prevAmount ? "var(--danger)" : "var(--success)",
