@@ -84,10 +84,7 @@ export default function App() {
     dispatch({ type: A.SAVE_SECURITY_SETTINGS, pinEnabled, pinHash, bioEnabled }), []);
 
   // ── Verrou PIN ────────────────────────────────────────────────
-  const [locked, setLocked]     = useState(() => !!(data.pinEnabled && data.pinHash));
-  const backgroundedAtRef       = useRef(Date.now()); // initialisé à now pour éviter un faux re-verrou au démarrage
-  const lastUnlockRef           = useRef(Date.now());
-  const LOCK_TOLERANCE_MS       = 30_000; // 30s de tolérance après déverrouillage
+  const [locked, setLocked] = useState(() => !!(data.pinEnabled && data.pinHash));
 
   const saveAlertSettings      = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
@@ -129,7 +126,8 @@ export default function App() {
   useEffect(() => { document.title = APP_NAME; }, []);
 
   // ── Versements automatiques ───────────────────────────────────
-  const checkAutoSavings = useCallback(() => {
+  // Déclenchement au démarrage uniquement (cold start)
+  useEffect(() => {
     const now   = new Date();
     const ym    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
     const today = now.getDate();
@@ -140,28 +138,8 @@ export default function App() {
       if (today < plan.dayOfMonth)   return;
       dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
     });
-  }, [data.autoSavings, dispatch]);
-
-  // Déclenchement au démarrage
-  useEffect(() => { checkAutoSavings(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Lifecycle Capacitor : reprise background + re-verrou ──────
-  useEffect(() => {
-    const CapApp = window.Capacitor?.Plugins?.App;
-    if (!CapApp) return;
-    let handle;
-    CapApp.addListener("appStateChange", ({ isActive }) => {
-      if (!isActive) {
-        backgroundedAtRef.current = Date.now();
-      } else {
-        checkAutoSavings();
-        const elapsed = Date.now() - backgroundedAtRef.current;
-        if (data.pinEnabled && data.pinHash && elapsed > LOCK_TOLERANCE_MS)
-          setLocked(true);
-      }
-    }).then(h => { handle = h; });
-    return () => { handle?.remove?.(); };
-  }, [checkAutoSavings, data.pinEnabled, data.pinHash, LOCK_TOLERANCE_MS]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Persist to localStorage on every data change ─────────────
   useEffect(() => {
@@ -536,7 +514,7 @@ export default function App() {
       <LockScreen
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
-        onUnlock={() => { lastUnlockRef.current = Date.now(); setLocked(false); }}
+        onUnlock={() => setLocked(false)}
       />
     );
   }
