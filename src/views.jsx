@@ -472,6 +472,25 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   const pyStats = usePriorYearStats(transactions, fixedExpenses);
   const cagTotal = useMemo(() => cagnottes.reduce((s,c) => s + c.current, 0), [cagnottes]);
+
+  // ── Récap cagnotte par période ────────────────────────────────
+  const [cagSheet, setCagSheet] = useState(null); // null | "month" | "year"
+
+  const cagBreakdown = useMemo(() => {
+    const prefix = cagSheet === "month" ? curM : cagSheet === "year" ? curY : null;
+    if (!prefix) return [];
+    const byId = {};
+    transactions.filter(t => t.date.startsWith(prefix) && (t.type === "epargne" || t.type === "decagnottage")).forEach(t => {
+      const id = t.targetCagId || "__other__";
+      if (!byId[id]) byId[id] = { added: 0, withdrawn: 0 };
+      if (t.type === "epargne")      byId[id].added     += parseFloat(t.amount) || 0;
+      if (t.type === "decagnottage") byId[id].withdrawn += parseFloat(t.amount) || 0;
+    });
+    return Object.entries(byId).map(([id, vals]) => ({
+      cag: cagnottes.find(c => c.id === id) || null,
+      ...vals,
+    })).sort((a, b) => (b.added - b.withdrawn) - (a.added - a.withdrawn));
+  }, [cagSheet, curM, curY, transactions, cagnottes]);
   const provTotal = useMemo(() => provisionalExpenses.reduce((s,p) => s + (p.amount || 0), 0), [provisionalExpenses]);
   const balanceAfterProv = balance - provTotal;
   const showBackup = !data.lastBackupDate ||
@@ -683,7 +702,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
 
         {/* Option B — Épargne + Retraits sur une carte */}
-        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)" }}>
+        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)", cursor:"pointer" }} onClick={() => setCagSheet("month")}>
           <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
             <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
@@ -725,7 +744,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
 
         {/* Option B — Épargne + Retraits année */}
-        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)" }}>
+        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)", cursor:"pointer" }} onClick={() => setCagSheet("year")}>
           <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
             <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
@@ -750,12 +769,74 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
       </Sec>
 
+      {/* ── Récap cagnotte ── */}
+      {cagSheet && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.75)", backdropFilter:"blur(5px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+          onClick={() => setCagSheet(null)}>
+          <div style={{ background:"var(--surface)", borderRadius:"18px 18px 0 0", border:"1px solid var(--border)", padding:"16px 16px 32px" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
+
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <div>
+                <div style={{ fontSize:".75rem", fontWeight:800, color:"var(--text)" }}>
+                  🐷 {cagSheet === "month" ? `Épargne — ${MONTHS_FR[new Date().getMonth()]} ${new Date().getFullYear()}` : `Épargne — ${new Date().getFullYear()}`}
+                </div>
+                <div style={{ fontSize:".55rem", color:"var(--text3)", marginTop:2 }}>Répartition par cagnotte</div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontFamily:"var(--mono)", fontSize:".82rem", fontWeight:800, color:"var(--purple)" }}>
+                  {fmt(cagBreakdown.reduce((s,c) => s + c.added, 0))}
+                </div>
+                {cagBreakdown.some(c => c.withdrawn > 0) && (
+                  <div style={{ fontSize:".52rem", color:"var(--danger)", marginTop:1 }}>
+                    −{fmt(cagBreakdown.reduce((s,c) => s + c.withdrawn, 0))} retiré
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lignes par cagnotte */}
+            {cagBreakdown.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"20px 0", fontSize:".65rem", color:"var(--text3)" }}>
+                Aucun mouvement sur cette période
+              </div>
+            ) : cagBreakdown.map((row, i) => (
+              <div key={i} style={{
+                display:"flex", alignItems:"center", gap:10,
+                padding:"10px 12px", borderRadius:10,
+                background:"var(--surface2)", border:"1px solid var(--border-soft)",
+                marginBottom:6,
+              }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:"rgba(160,120,224,.12)", border:"1px solid rgba(160,120,224,.3)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem", flexShrink:0 }}>
+                  🎯
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:".66rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {row.cag?.name ?? "Cagnotte supprimée"}
+                  </div>
+                  <div style={{ display:"flex", gap:8, marginTop:2 }}>
+                    {row.added > 0 && <span style={{ fontSize:".5rem", color:"var(--success)", fontWeight:700 }}>+{fmt(row.added)}</span>}
+                    {row.withdrawn > 0 && <span style={{ fontSize:".5rem", color:"var(--danger)", fontWeight:700 }}>−{fmt(row.withdrawn)}</span>}
+                  </div>
+                </div>
+                <div style={{ fontFamily:"var(--mono)", fontSize:".66rem", fontWeight:800, color: row.added - row.withdrawn >= 0 ? "var(--purple)" : "var(--danger)", flexShrink:0 }}>
+                  {row.added - row.withdrawn >= 0 ? "+" : "−"}{fmt(Math.abs(row.added - row.withdrawn))}
+                </div>
+              </div>
+            ))}
+
+            <button onClick={() => setCagSheet(null)} style={{ width:"100%", marginTop:4, background:"none", border:"1px solid var(--border)", borderRadius:10, padding:"9px", color:"var(--text3)", fontSize:".63rem", cursor:"pointer" }}>
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────
-//  CAGNOTTES
 // ─────────────────────────────────────────────────────────────────
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory }) {
   const { cagnottes, transactions } = data;
