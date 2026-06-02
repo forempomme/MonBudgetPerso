@@ -1133,7 +1133,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -1710,13 +1710,13 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                 <div style={{ display:"flex", gap:5 }}>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
-                      onConfirmRecurring?.(null, { type:"epargne", amount:plan.amount, date:`${month}-${String(Math.min(plan.dayOfMonth,28)).padStart(2,"0")}`, targetCagId:plan.cagnotteId, note:`Versement auto · ${cag?.name||""}`, autoSavingId:plan.id });
-                    }}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onApplyAutoSaving?.(plan.id); }}
+                    onClick={() => onApplyAutoSaving?.(plan.id)}
                     style={{ background:"var(--purple)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>＋</button>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); }}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onSkipAutoSaving?.(plan.id); }}
+                    onClick={() => onSkipAutoSaving?.(plan.id)}
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
                 </div>
               </div>

@@ -436,13 +436,24 @@ export default function App() {
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={(tpl, month) => {
           const [y, m] = month.split("-").map(Number);
-          const lastDay = new Date(y, m, 0).getDate(); // dernier jour du mois
+          const lastDay = new Date(y, m, 0).getDate();
           const day = Math.min(new Date().getDate(), lastDay);
           dispatch({ type: A.SAVE_TRANSACTION, tx: {
             type: tpl.type, amount: tpl.amount,
             date: `${month}-${String(day).padStart(2,"0")}`,
             categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
           }});
+        }}
+        onApplyAutoSaving={planId => {
+          const now  = new Date();
+          const ym   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+          const date = now.toISOString().slice(0, 10);
+          dispatch({ type: A.APPLY_AUTO_SAVING, planId, ym, date });
+        }}
+        onSkipAutoSaving={planId => {
+          const now = new Date();
+          const ym  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+          dispatch({ type: A.SAVE_AUTO_SAVING, plan: { id: planId, lastAppliedYm: ym } });
         }}
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}

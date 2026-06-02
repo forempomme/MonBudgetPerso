@@ -477,6 +477,7 @@ export function reducer(state, action) {
         targetCagId: plan.cagnotteId,
         note: "Versement automatique",
         isAutoSaving: true,
+        autoSavingId: plan.id,
       };
       return {
         ...state,
