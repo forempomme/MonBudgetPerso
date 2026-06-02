@@ -1073,6 +1073,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
               {item.name || item.note || "—"}
             </span>
             {isFixed && <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>FIXE</span>}
+            {item.isAutoSaving && <span style={{ fontSize: ".5rem", background: "rgba(160,120,224,.15)", color: "var(--purple)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>AUTO</span>}
             {isFixed && item.isOverridden && <span style={{ fontSize: ".5rem", background: "var(--accent-glow)", color: "var(--accent)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>modifié</span>}
           </div>
           {item.date && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{item.date.slice(8)}/{item.date.slice(5,7)}</div>}

@@ -215,11 +215,29 @@ export function reducer(state, action) {
       return { ...state, cagnottes, transactions: newTxs };
     }
 
-    case A.DELETE_TRANSACTION:
+    case A.DELETE_TRANSACTION: {
+      const tx = state.transactions.find(t => t.id === action.id);
+      let cagnottes = state.cagnottes;
+      // Restaurer l'effet sur la cagnotte si applicable
+      if (tx?.type === "epargne") {
+        cagnottes = cagnottes.map(c =>
+          c.id === tx.targetCagId
+            ? { ...c, current: c.current - (parseFloat(tx.amount) || 0) }
+            : c
+        );
+      } else if (tx?.type === "decagnottage") {
+        cagnottes = cagnottes.map(c =>
+          c.id === tx.targetCagId
+            ? { ...c, current: c.current + (parseFloat(tx.amount) || 0) }
+            : c
+        );
+      }
       return {
         ...state,
+        cagnottes,
         transactions: state.transactions.filter(t => t.id !== action.id),
       };
+    }
     // ── Cagnottes ─────────────────────────────────────────────────
     case A.SAVE_CAGNOTTE: {
       const { cag } = action;
@@ -436,7 +454,13 @@ export function reducer(state, action) {
       if (plan.id) {
         return { ...state, autoSavings: (state.autoSavings||[]).map(p => p.id===plan.id ? {...p,...plan} : p) };
       }
-      return { ...state, autoSavings: [...(state.autoSavings||[]), { ...plan, id: uid("as") }] };
+      // Nouveau plan : si le jour déclencheur est déjà passé ce mois-ci,
+      // on marque le mois courant comme appliqué → démarrage le mois prochain
+      const now    = new Date();
+      const today  = now.getDate();
+      const curYM  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+      const lastAppliedYm = today >= plan.dayOfMonth ? curYM : null;
+      return { ...state, autoSavings: [...(state.autoSavings||[]), { ...plan, id: uid("as"), lastAppliedYm }] };
     }
 
     case A.DELETE_AUTO_SAVING:
