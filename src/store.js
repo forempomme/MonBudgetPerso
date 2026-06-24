@@ -304,7 +304,29 @@ export function reducer(state, action) {
 
     // ── Transfer between cagnottes ────────────────────────────────
     case A.EXECUTE_TRANSFER: {
-      const { fromId, toId, amt } = action;
+      const { fromId, toId, amt, date } = action;
+
+      // Retrait vers le compte courant
+      if (toId === "__account__") {
+        const cag = state.cagnottes.find(c => c.id === fromId);
+        const newTx = {
+          id: uid("ret"),
+          type: "dissolution_cagnotte",
+          amount: amt,
+          date: date || new Date().toISOString().slice(0, 10),
+          targetCagId: fromId,
+          note: `Retrait — ${cag?.name ?? "cagnotte"}`,
+        };
+        return {
+          ...state,
+          cagnottes: state.cagnottes.map(c =>
+            c.id === fromId ? { ...c, current: c.current - amt } : c
+          ),
+          transactions: [...state.transactions, newTx],
+        };
+      }
+
+      // Transfert entre cagnottes (comportement existant)
       return {
         ...state,
         cagnottes: state.cagnottes.map(c =>

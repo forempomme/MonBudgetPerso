@@ -301,7 +301,7 @@ export default function App() {
   }, [addToast]);
 
   function executeTransfer(payload) {
-    dispatch({ type: A.EXECUTE_TRANSFER, ...payload });
+    dispatch({ type: A.EXECUTE_TRANSFER, ...payload, date: new Date().toISOString().slice(0, 10) });
     setTransferModal(false);
   }
 

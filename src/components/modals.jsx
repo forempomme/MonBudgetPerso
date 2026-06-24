@@ -587,16 +587,19 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────
 export function TransferModal({ cagnottes, onSave, onClose }) {
   const toast  = useToast();
-  const [amt,    setAmt]  = useState("");
-  const [fromId, setFrom] = useState(cagnottes[0]?.id || "");
-  const [toId,   setTo]   = useState(cagnottes[1]?.id || cagnottes[0]?.id || "");
+  const [mode,   setMode]  = useState("transfer"); // "transfer" | "withdraw"
+  const [amt,    setAmt]   = useState("");
+  const [fromId, setFrom]  = useState(cagnottes[0]?.id || "");
+  const [toId,   setTo]    = useState(cagnottes[1]?.id || cagnottes[0]?.id || "");
   const [errors, setErrors] = useState({});
+
+  const isWithdraw = mode === "withdraw";
 
   function validate() {
     const e = {};
     const a = parseAmt(amt);
     if (!amt || isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
-    if (fromId === toId)             e.from = "Source et destination identiques";
+    if (!isWithdraw && fromId === toId) e.from = "Source et destination identiques";
     if (!e.amt) {
       const from = cagnottes.find(c => c.id === fromId);
       if (from && from.current < a) e.amt = `Fonds insuffisants (${fmt(from.current)} disponible)`;
@@ -607,30 +610,55 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 
   function handleSave() {
     if (!validate()) return;
-    onSave({ amt: parseAmt(amt), fromId, toId });
-    toast("Transfert effectué");
+    onSave({ amt: parseAmt(amt), fromId, toId: isWithdraw ? "__account__" : toId });
+    toast(isWithdraw ? "Retrait effectué" : "Transfert effectué");
   }
 
   return (
-    <Modal onClose={onClose} title="Transfert entre cagnottes">
+    <Modal onClose={onClose} title={isWithdraw ? "Retrait vers le compte" : "Transfert entre cagnottes"}>
+      {/* Toggle mode */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:16 }}>
+        {[["transfer","↔ Entre cagnottes"],["withdraw","↑ Vers le compte"]].map(([m, label]) => (
+          <button key={m} onClick={() => { setMode(m); setErrors({}); }} style={{
+            padding:"8px 6px", borderRadius:9, border:`1px solid ${mode===m ? "var(--accent)" : "var(--border)"}`,
+            background: mode===m ? "var(--accent-glow)" : "var(--surface2)",
+            color: mode===m ? "var(--accent)" : "var(--text3)",
+            fontSize:".65rem", fontWeight:700, cursor:"pointer",
+          }}>{label}</button>
+        ))}
+      </div>
+
       <Field label="Montant (€)" error={errors.amt}>
         <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
           onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
       </Field>
-      <Field label="Source (retirer de…)" error={errors.from}>
+
+      <Field label="Retirer de…" error={errors.from}>
         <select value={fromId} className={errors.from ? "error" : ""}
           onChange={e => { setFrom(e.target.value); setErrors(v => ({...v, from: ""})); }}>
           {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name} ({fmt(c.current)})</option>)}
         </select>
       </Field>
-      <Field label="Destination (ajouter à…)">
-        <select value={toId} onChange={e => setTo(e.target.value)}>
-          {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </Field>
+
+      {!isWithdraw && (
+        <Field label="Ajouter à…">
+          <select value={toId} onChange={e => setTo(e.target.value)}>
+            {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {isWithdraw && (
+        <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:9, padding:"10px 14px", fontSize:".65rem", color:"var(--text3)", marginBottom:12 }}>
+          🏦 Le montant sera ajouté à votre solde bancaire estimé
+        </div>
+      )}
+
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>Transférer</button>
+        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>
+          {isWithdraw ? "Retirer" : "Transférer"}
+        </button>
       </div>
     </Modal>
   );
