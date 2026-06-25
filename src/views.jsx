@@ -505,7 +505,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   }, [data.scheduledTransactions]);
 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [tabUpcoming,   setTabUpcoming]   = useState("both"); // "both"|"fixes"|"scheduled"
+  const [tabUpcoming,   setTabUpcoming]   = useState("both");
+  const [openUpcoming,  setOpenUpcoming]  = useState(false);
 
   // Frais fixes non pointés ce mois
   const unpointedFixes = useMemo(() =>
@@ -722,27 +723,42 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
         return (
           <div className="card" style={{ padding:0, overflow:"hidden" }}>
-            {/* Header */}
-            <div style={{ borderBottom:"1px solid var(--border-soft)" }}>
-              <div style={{ padding:"9px 14px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".08em" }}>🔮 À venir</span>
-                <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+            {/* Header cliquable avec chips résumé */}
+            <div onClick={() => setOpenUpcoming(o => !o)} style={{ cursor:"pointer", userSelect:"none" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 14px", borderBottom: openUpcoming ? "1px solid var(--border-soft)" : "none" }}>
+                <span style={{ fontSize:".65rem" }}>🔮</span>
+                <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
+                {!openUpcoming && (
+                  <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                    {fixItems.length > 0 && (
+                      <span style={{ fontSize:".5rem", fontWeight:700, padding:"2px 7px", borderRadius:20, background:"rgba(112,184,224,.12)", color:"var(--accent)", border:"1px solid rgba(112,184,224,.25)" }}>↻ {fixItems.length}</span>
+                    )}
+                    {schedItems.length > 0 && (
+                      <span style={{ fontSize:".5rem", fontWeight:700, padding:"2px 7px", borderRadius:20, background:"rgba(200,184,96,.12)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.25)" }}>📅 {schedItems.length}</span>
+                    )}
+                    <span style={{ fontFamily:"var(--mono)", fontSize:".58rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+                  </div>
+                )}
+                {openUpcoming && <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>}
+                <span style={{ color:"var(--text3)", fontSize:".7rem", transform:openUpcoming?"rotate(90deg)":"none", transition:"transform .2s", marginLeft:2 }}>›</span>
               </div>
-              <div style={{ display:"flex", gap:0, padding:"6px 10px 0" }}>
-                {[["both","Tout"],["fixes","Récurrents"],["scheduled","Programmés"]].map(([k,l]) => (
-                  <button key={k} onClick={() => setTabUpcoming(k)} style={{
-                    padding:"3px 10px 5px", fontSize:".52rem", fontWeight:700,
-                    background:"none", border:"none", borderRadius:0, cursor:"pointer",
-                    color: tabUpcoming===k ? "var(--accent)" : "var(--text3)",
-                    borderBottom: tabUpcoming===k ? "2px solid var(--accent)" : "2px solid transparent",
-                    transition:"all .15s",
-                  }}>{l}</button>
-                ))}
-              </div>
+              {openUpcoming && (
+                <div style={{ display:"flex", padding:"0 10px", borderBottom:"1px solid var(--border-soft)" }}>
+                  {[["both","Tout"],["fixes","Récurrents"],["scheduled","Programmés"]].map(([k,l]) => (
+                    <button key={k} onClick={e => { e.stopPropagation(); setTabUpcoming(k); }} style={{
+                      padding:"4px 10px 5px", fontSize:".52rem", fontWeight:700,
+                      background:"none", border:"none", borderRadius:0, cursor:"pointer",
+                      color: tabUpcoming===k ? "var(--accent)" : "var(--text3)",
+                      borderBottom: tabUpcoming===k ? "2px solid var(--accent)" : "2px solid transparent",
+                      transition:"all .15s",
+                    }}>{l}</button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Lignes */}
-            {visibleItems.map((item, i) => {
+            {/* Lignes — uniquement si ouvert */}
+            {openUpcoming && visibleItems.map((item, i) => {
               const isFix  = item._type === "fix";
               const cat    = data.categories?.find(c => c.id === item.categoryId);
               const icon   = isFix ? (cat?.icon ?? "📌") : (data.categories?.find(c => c.id === item.categoryId)?.icon ?? "📅");
@@ -786,8 +802,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               );
             })}
 
-            {/* Total si 2+ items */}
-            {allItems.length > 1 && (
+            {/* Total si 2+ items et ouvert */}
+            {openUpcoming && allItems.length > 1 && (
               <div style={{ padding:"7px 14px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"var(--surface2)" }}>
                 <span style={{ fontSize:".54rem", color:"var(--text3)" }}>Total à venir</span>
                 <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
