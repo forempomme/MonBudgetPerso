@@ -21,19 +21,11 @@ function isPointable(type) {
 // ─────────────────────────────────────────────────────────────────
 function SectionTitle({ children, style }) {
   return (
-    <div
-      className="section-title"
-      style={{
-        fontFamily: "'Inter', 'SF Pro Display', system-ui, -apple-system, sans-serif",
-        fontWeight: 800,
-        fontSize: ".8rem",
-        letterSpacing: ".07em",
-        textTransform: "uppercase",
-        color: "var(--text1)",
-        ...style,
-      }}
-    >
-      {children}
+    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, ...style }}>
+      <div style={{ width:3, height:16, background:"var(--accent)", borderRadius:2, flexShrink:0 }}/>
+      <span style={{ fontWeight:800, fontSize:".54rem", letterSpacing:".1em", textTransform:"uppercase", color:"var(--text2)" }}>
+        {children}
+      </span>
     </div>
   );
 }
@@ -816,21 +808,25 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       <Sec id="mois">
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
       <div className="grid-2">
-        <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}>
-          <div className="stat-label">💰 Revenus</div>
+        <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}
+          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(104,200,122,.7),transparent)" }}/>
+          <div className="stat-label" style={{ color:"rgba(104,200,122,.75)" }}>💰 Revenus</div>
           <div className="stat-val type-income">{fmt(curMonth.inc)}</div>
           <Delta cur={curMonth.inc} prev={prevMonth.inc} />
           <span className="stat-arrow">›</span>
         </div>
-        <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "month")}>
-          <div className="stat-label">💸 Dépenses</div>
+        <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "month")}
+          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(224,104,112,.7),transparent)" }}/>
+          <div className="stat-label" style={{ color:"rgba(224,104,112,.75)" }}>💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(curMonth.exp)}</div>
           <Delta cur={curMonth.exp} prev={prevMonth.exp} inverted />
           <span className="stat-arrow">›</span>
         </div>
 
         {/* Option B — Épargne + Retraits sur une carte */}
-        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)", cursor:"pointer" }} onClick={() => setCagSheet("month")}>
+        <div className="stat-mini" style={{ background:"linear-gradient(135deg,rgba(160,120,224,.08),rgba(160,120,224,.02))", border:"1px solid rgba(160,120,224,.2)", borderLeft:"3px solid var(--purple)", cursor:"pointer", position:"relative", overflow:"hidden" }} onClick={() => setCagSheet("month")}>
           <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
             <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
@@ -845,7 +841,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           </div>
         </div>
 
-        <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "month")}>
+        <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "month")}
+          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(112,184,224,.6),transparent)" }}/>
           <div className="stat-label">📊 Dép. variables</div>
           <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(curMonth.expVar)}</div>
           <Delta cur={curMonth.expVar} prev={prevMonth.expVar} inverted />
@@ -858,21 +856,25 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       <Sec id="annee">
       <SectionTitle>📅 Année en cours</SectionTitle>
       <div className="grid-2">
-        <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "year")}>
-          <div className="stat-label">💰 Revenus</div>
+        <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "year")}
+          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(104,200,122,.7),transparent)" }}/>
+          <div className="stat-label" style={{ color:"rgba(104,200,122,.75)" }}>💰 Revenus</div>
           <div className="stat-val type-income">{fmt(yInc)}</div>
           <Delta cur={yInc} prev={pyStats.inc} />
           <span className="stat-arrow">›</span>
         </div>
-        <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "year")}>
-          <div className="stat-label">💸 Dépenses</div>
+        <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "year")}
+          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(224,104,112,.7),transparent)" }}/>
+          <div className="stat-label" style={{ color:"rgba(224,104,112,.75)" }}>💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(yExp)}</div>
           <Delta cur={yExp} prev={pyStats.exp} inverted />
           <span className="stat-arrow">›</span>
         </div>
 
         {/* Option B — Épargne + Retraits année */}
-        <div className="stat-mini" style={{ borderLeft: "3px solid var(--purple)", cursor:"pointer" }} onClick={() => setCagSheet("year")}>
+        <div className="stat-mini" style={{ background:"linear-gradient(135deg,rgba(160,120,224,.08),rgba(160,120,224,.02))", border:"1px solid rgba(160,120,224,.2)", borderLeft:"3px solid var(--purple)", cursor:"pointer", position:"relative", overflow:"hidden" }} onClick={() => setCagSheet("year")}>
           <div className="stat-label" style={{ marginBottom: 6 }}>🐷 Cagnotte</div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 5, borderBottom: "1px solid var(--border-soft)", marginBottom: 5 }}>
             <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>↑ Épargné</span>
@@ -887,7 +889,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           </div>
         </div>
 
-        <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "year")}>
+        <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "year")}
+          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden" }}>
+          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(112,184,224,.6),transparent)" }}/>
           <div className="stat-label">📊 Dép. variables</div>
           <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(yExpVar)}</div>
           <Delta cur={yExpVar} prev={pyStats.expVar} inverted />

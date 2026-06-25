@@ -642,7 +642,7 @@ export default function App() {
         {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative */}
         <button className="fab"
           onClick={() => setFabOpen(o => !o)}
-          style={{ position:"relative", bottom:"auto", right:"auto", transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
+          style={{ position:"relative", bottom:"auto", right:"auto", background:"linear-gradient(135deg,#5ab8e0,#3090c0)", boxShadow:"0 6px 24px rgba(80,160,210,.5)", transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
           ＋
         </button>
       </div>
