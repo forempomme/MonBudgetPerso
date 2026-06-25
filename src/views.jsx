@@ -331,7 +331,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   );
 }
 
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode, onDeleteScheduled }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -496,6 +496,24 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   const showBackup = !data.lastBackupDate ||
     (Date.now() - new Date(data.lastBackupDate)) / 86400000 > 7;
 
+  // Transactions programmées futures (hors mois courant)
+  const upcomingScheduled = useMemo(() => {
+    const nextM = currentYM().slice(0, 7);
+    return (data.scheduledTransactions || [])
+      .filter(s => !s.confirmed && s.date > (nextM + "-99"))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [data.scheduledTransactions]);
+
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+
+  function daysUntil(dateStr) {
+    const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+    if (diff <= 1)  return "demain";
+    if (diff < 7)   return `dans ${diff} j`;
+    if (diff < 60)  return `dans ${Math.round(diff/7)} sem.`;
+    return `dans ${Math.round(diff/30)} mois`;
+  }
+
   // ── Couleur dynamique du solde ────────────────────────────────
   // Blanc par défaut, jaune sous 100 €, rouge en négatif
   const balanceColor = balance < 0 ? "#ef4444" : balance < 100 ? "#fbbf24" : "#ffffff";
@@ -516,6 +534,81 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
             background:"var(--warning)", border:"none", borderRadius:7,
             padding:"4px 12px", color:"var(--bg)", fontSize:".6rem", fontWeight:800, cursor:"pointer",
           }}>✓ Terminer</button>
+        </div>
+      )}
+
+      {/* ── Transactions programmées à venir ── */}
+      {upcomingScheduled.length > 0 && (
+        <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
+          <div style={{ padding:"9px 14px", borderBottom:"1px solid var(--border-soft)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(200,184,96,.05)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:".75rem" }}>📅</span>
+              <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--warning)", textTransform:"uppercase", letterSpacing:".08em" }}>À venir</span>
+            </div>
+            <span style={{ background:"rgba(200,184,96,.15)", border:"1px solid rgba(200,184,96,.3)", borderRadius:10, padding:"1px 7px", fontSize:".5rem", fontWeight:800, color:"var(--warning)" }}>
+              {upcomingScheduled.length}
+            </span>
+          </div>
+
+          {upcomingScheduled.map((s, i) => {
+            const cat = data.categories?.find(c => c.id === s.categoryId);
+            const isConfirming = deleteConfirm === s.id;
+            return (
+              <div key={s.id} style={{ borderBottom: i < upcomingScheduled.length-1 ? "1px solid var(--border-soft)" : "none" }}>
+                {isConfirming ? (
+                  /* Confirmation inline */
+                  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"rgba(224,104,112,.06)" }}>
+                    <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Supprimer "{s.note || "cette programmée"}" ?</span>
+                    <button onClick={() => { onDeleteScheduled?.(s.id); setDeleteConfirm(null); }}
+                      style={{ background:"var(--danger)", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:".62rem", fontWeight:800, cursor:"pointer" }}>
+                      Oui
+                    </button>
+                    <button onClick={() => setDeleteConfirm(null)}
+                      style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--text3)", fontSize:".62rem", cursor:"pointer" }}>
+                      Non
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px" }}>
+                    <div style={{ width:32, height:32, borderRadius:9, flexShrink:0, background:"rgba(200,184,96,.10)", border:"1px solid rgba(200,184,96,.25)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem" }}>
+                      {cat?.icon ?? "📅"}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:".68rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {s.note || cat?.name || "Dépense programmée"}
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
+                        <span style={{ fontSize:".52rem", color:"var(--text3)" }}>
+                          {new Date(s.date).toLocaleDateString("fr-FR", { day:"numeric", month:"long" })}
+                        </span>
+                        <span style={{ fontSize:".44rem", color:"var(--warning)", background:"rgba(200,184,96,.12)", padding:"0 5px", borderRadius:4, fontWeight:700 }}>
+                          {daysUntil(s.date)}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                      <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:"var(--warning)" }}>
+                        −{fmt(s.amount)}
+                      </span>
+                      <button onClick={() => setDeleteConfirm(s.id)} style={{ width:20, height:20, borderRadius:"50%", background:"transparent", border:"1px solid var(--border)", color:"var(--text3)", fontSize:".55rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Total si 2+ programmées */}
+          {upcomingScheduled.length > 1 && (
+            <div style={{ padding:"7px 14px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"var(--surface2)" }}>
+              <span style={{ fontSize:".55rem", color:"var(--text3)" }}>Total programmé</span>
+              <span style={{ fontFamily:"var(--mono)", fontSize:".62rem", fontWeight:800, color:"var(--warning)" }}>
+                −{fmt(upcomingScheduled.reduce((s,i) => s + (parseFloat(i.amount)||0), 0))}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1073,7 +1166,8 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
               {item.name || item.note || "—"}
             </span>
             {isFixed && <span style={{ fontSize: ".5rem", background: "var(--warning-glow)", color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>FIXE</span>}
-            {item.isAutoSaving && <span style={{ fontSize: ".5rem", background: "rgba(160,120,224,.15)", color: "var(--purple)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>AUTO</span>}
+            {item.isAutoSaving  && <span style={{ fontSize: ".5rem", background: "rgba(160,120,224,.15)", color: "var(--purple)",  padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>AUTO</span>}
+            {item.fromScheduled && <span style={{ fontSize: ".5rem", background: "rgba(200,184,96,.15)",  color: "var(--warning)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>PROG</span>}
             {isFixed && item.isOverridden && <span style={{ fontSize: ".5rem", background: "var(--accent-glow)", color: "var(--accent)", padding: "1px 5px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>modifié</span>}
           </div>
           {item.date && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>{item.date.slice(8)}/{item.date.slice(5,7)}</div>}
@@ -1133,7 +1227,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -1187,6 +1281,13 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
       return !alreadyDone && plan.dayOfMonth <= today.getDate();
     });
   }, [data.autoSavings, transactions, month]);
+
+  const scheduledPending = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return (data.scheduledTransactions || []).filter(s =>
+      !s.confirmed && s.date.startsWith(month) && s.date > today
+    );
+  }, [data.scheduledTransactions, month]);
   const recurringPending = useMemo(() => {
     if (!recurringTemplates.length) return [];
     return recurringTemplates.filter(tpl => {
@@ -1717,6 +1818,40 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                     onTouchStart={e=>e.stopPropagation()}
                     onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onSkipAutoSaving?.(plan.id); }}
                     onClick={() => onSkipAutoSaving?.(plan.id)}
+                    style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Programmées en attente ce mois ── */}
+      {viewMode === "list" && !globalSearch && scheduledPending.length > 0 && (
+        <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--warning)", textTransform:"uppercase", letterSpacing:".08em" }}>📅 Programmées ce mois</div>
+            <span style={{ fontSize:".62rem", color:"var(--text3)" }}>{scheduledPending.length}</span>
+          </div>
+          {scheduledPending.map(s => {
+            const cat = categories.find(c => c.id === s.categoryId);
+            return (
+              <div key={s.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
+                <span style={{ fontSize:"1rem" }}>{cat?.icon ?? "📅"}</span>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:".72rem", fontWeight:700 }}>{s.note || cat?.name || "Dépense programmée"}</div>
+                  <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(s.amount)} · prévu le {s.date.slice(8)}</div>
+                </div>
+                <div style={{ display:"flex", gap:5 }}>
+                  <button
+                    onTouchStart={e=>e.stopPropagation()}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onConfirmScheduled?.(s.id); }}
+                    onClick={() => onConfirmScheduled?.(s.id)}
+                    style={{ background:"var(--warning)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✓</button>
+                  <button
+                    onTouchStart={e=>e.stopPropagation()}
+                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onDeleteScheduled?.(s.id); }}
+                    onClick={() => onDeleteScheduled?.(s.id)}
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
                 </div>
               </div>
