@@ -504,6 +504,8 @@ export function reducer(state, action) {
         scheduledTransactions: (state.scheduledTransactions||[]).filter(s => s.id !== action.id),
       };
     }
+
+    case A.SAVE_AUTO_SAVING: {
       const { plan } = action;
       if (plan.id) {
         return { ...state, autoSavings: (state.autoSavings||[]).map(p => p.id===plan.id ? {...p,...plan} : p) };
