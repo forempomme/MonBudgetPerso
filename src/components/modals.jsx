@@ -665,6 +665,72 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Scheduled transaction modal
+// ─────────────────────────────────────────────────────────────────
+export function ScheduledModal({ categories, onSave, onClose }) {
+  const toast = useToast();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const defaultDate = tomorrow.toISOString().slice(0, 10);
+
+  const [amount, setAmount]   = useState("");
+  const [date,   setDate]     = useState(defaultDate);
+  const [catId,  setCatId]    = useState("");
+  const [note,   setNote]     = useState("");
+  const [errors, setErrors]   = useState({});
+
+  const expenseCats = categories.filter(c => c.type === "expense" || !c.type);
+  const today = new Date().toISOString().slice(0, 10);
+
+  function validate() {
+    const e = {};
+    const a = parseAmt(amount);
+    if (!amount || isNaN(a) || a <= 0) e.amount = "Montant requis";
+    if (!date || date <= today)        e.date   = "La date doit être dans le futur";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  function handleSave() {
+    if (!validate()) return;
+    onSave({ amount: parseAmt(amount), date, categoryId: catId || null, note });
+    toast("Transaction programmée ajoutée");
+  }
+
+  return (
+    <Modal onClose={onClose} title="📅 Transaction programmée">
+      <Field label="Montant (€)" error={errors.amount}>
+        <input type="number" step="0.01" min="0" value={amount}
+          className={errors.amount ? "error" : ""}
+          onChange={e => { setAmount(e.target.value); setErrors(v => ({...v, amount:""})); }} />
+      </Field>
+      <Field label="Date prévue" error={errors.date}>
+        <input type="date" value={date} min={today}
+          className={errors.date ? "error" : ""}
+          onChange={e => { setDate(e.target.value); setErrors(v => ({...v, date:""})); }} />
+      </Field>
+      <Field label="Catégorie (optionnel)">
+        <select value={catId} onChange={e => setCatId(e.target.value)}>
+          <option value="">— Sans catégorie —</option>
+          {expenseCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Note (optionnel)">
+        <input type="text" value={note} placeholder="Ex: Précommande Switch 2"
+          onChange={e => setNote(e.target.value)} />
+      </Field>
+      <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:9, padding:"9px 14px", fontSize:".62rem", color:"var(--text3)", marginBottom:12 }}>
+        📅 Cette dépense sera automatiquement confirmée à la date prévue et décomptée de votre solde.
+      </div>
+      <div className="grid-2" style={{ marginBottom:0 }}>
+        <button className="btn btn-outline" style={{ width:"100%" }} onClick={onClose}>Annuler</button>
+        <button className="btn btn-primary" style={{ width:"100%" }} onClick={handleSave}>Programmer</button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Category modal
 // ─────────────────────────────────────────────────────────────────
 export function CatModal({ editingCat, onSave, onClose }) {
