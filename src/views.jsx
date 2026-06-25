@@ -505,6 +505,13 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   }, [data.scheduledTransactions]);
 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [tabUpcoming,   setTabUpcoming]   = useState("both"); // "both"|"fixes"|"scheduled"
+
+  // Frais fixes non pointés ce mois
+  const unpointedFixes = useMemo(() =>
+    fixedExpenses.filter(f => !f.pointedMonths?.[curM]),
+    [fixedExpenses, curM]
+  );
 
   function daysUntil(dateStr) {
     const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
@@ -534,81 +541,6 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
             background:"var(--warning)", border:"none", borderRadius:7,
             padding:"4px 12px", color:"var(--bg)", fontSize:".6rem", fontWeight:800, cursor:"pointer",
           }}>✓ Terminer</button>
-        </div>
-      )}
-
-      {/* ── Transactions programmées à venir ── */}
-      {upcomingScheduled.length > 0 && (
-        <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
-          <div style={{ padding:"9px 14px", borderBottom:"1px solid var(--border-soft)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(200,184,96,.05)" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontSize:".75rem" }}>📅</span>
-              <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--warning)", textTransform:"uppercase", letterSpacing:".08em" }}>À venir</span>
-            </div>
-            <span style={{ background:"rgba(200,184,96,.15)", border:"1px solid rgba(200,184,96,.3)", borderRadius:10, padding:"1px 7px", fontSize:".5rem", fontWeight:800, color:"var(--warning)" }}>
-              {upcomingScheduled.length}
-            </span>
-          </div>
-
-          {upcomingScheduled.map((s, i) => {
-            const cat = data.categories?.find(c => c.id === s.categoryId);
-            const isConfirming = deleteConfirm === s.id;
-            return (
-              <div key={s.id} style={{ borderBottom: i < upcomingScheduled.length-1 ? "1px solid var(--border-soft)" : "none" }}>
-                {isConfirming ? (
-                  /* Confirmation inline */
-                  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"rgba(224,104,112,.06)" }}>
-                    <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Supprimer "{s.note || "cette programmée"}" ?</span>
-                    <button onClick={() => { onDeleteScheduled?.(s.id); setDeleteConfirm(null); }}
-                      style={{ background:"var(--danger)", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:".62rem", fontWeight:800, cursor:"pointer" }}>
-                      Oui
-                    </button>
-                    <button onClick={() => setDeleteConfirm(null)}
-                      style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--text3)", fontSize:".62rem", cursor:"pointer" }}>
-                      Non
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px" }}>
-                    <div style={{ width:32, height:32, borderRadius:9, flexShrink:0, background:"rgba(200,184,96,.10)", border:"1px solid rgba(200,184,96,.25)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem" }}>
-                      {cat?.icon ?? "📅"}
-                    </div>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:".68rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {s.note || cat?.name || "Dépense programmée"}
-                      </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
-                        <span style={{ fontSize:".52rem", color:"var(--text3)" }}>
-                          {new Date(s.date).toLocaleDateString("fr-FR", { day:"numeric", month:"long" })}
-                        </span>
-                        <span style={{ fontSize:".44rem", color:"var(--warning)", background:"rgba(200,184,96,.12)", padding:"0 5px", borderRadius:4, fontWeight:700 }}>
-                          {daysUntil(s.date)}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-                      <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:"var(--warning)" }}>
-                        −{fmt(s.amount)}
-                      </span>
-                      <button onClick={() => setDeleteConfirm(s.id)} style={{ width:20, height:20, borderRadius:"50%", background:"transparent", border:"1px solid var(--border)", color:"var(--text3)", fontSize:".55rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Total si 2+ programmées */}
-          {upcomingScheduled.length > 1 && (
-            <div style={{ padding:"7px 14px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"var(--surface2)" }}>
-              <span style={{ fontSize:".55rem", color:"var(--text3)" }}>Total programmé</span>
-              <span style={{ fontFamily:"var(--mono)", fontSize:".62rem", fontWeight:800, color:"var(--warning)" }}>
-                −{fmt(upcomingScheduled.reduce((s,i) => s + (parseFloat(i.amount)||0), 0))}
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -777,6 +709,93 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
       </div>
       </Sec>
+
+      {/* ── À venir : fixes non pointés + programmés ── */}
+      {(unpointedFixes.length > 0 || upcomingScheduled.length > 0) && (() => {
+        const fixItems      = unpointedFixes.map(f => ({ ...f, _type:"fix" }));
+        const schedItems    = upcomingScheduled.map(s => ({ ...s, _type:"scheduled" }));
+        const allItems      = [...fixItems, ...schedItems];
+        const visibleItems  = tabUpcoming === "fixes"     ? fixItems
+                            : tabUpcoming === "scheduled" ? schedItems
+                            : allItems;
+        const total = allItems.reduce((s, i) => s + (parseFloat(i.amount)||0), 0);
+
+        return (
+          <div className="card" style={{ padding:0, overflow:"hidden" }}>
+            {/* Header */}
+            <div style={{ borderBottom:"1px solid var(--border-soft)" }}>
+              <div style={{ padding:"9px 14px 0", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".08em" }}>🔮 À venir</span>
+                <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+              </div>
+              <div style={{ display:"flex", gap:0, padding:"6px 10px 0" }}>
+                {[["both","Tout"],["fixes","Récurrents"],["scheduled","Programmés"]].map(([k,l]) => (
+                  <button key={k} onClick={() => setTabUpcoming(k)} style={{
+                    padding:"3px 10px 5px", fontSize:".52rem", fontWeight:700,
+                    background:"none", border:"none", borderRadius:0, cursor:"pointer",
+                    color: tabUpcoming===k ? "var(--accent)" : "var(--text3)",
+                    borderBottom: tabUpcoming===k ? "2px solid var(--accent)" : "2px solid transparent",
+                    transition:"all .15s",
+                  }}>{l}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Lignes */}
+            {visibleItems.map((item, i) => {
+              const isFix  = item._type === "fix";
+              const cat    = data.categories?.find(c => c.id === item.categoryId);
+              const icon   = isFix ? (cat?.icon ?? "📌") : (data.categories?.find(c => c.id === item.categoryId)?.icon ?? "📅");
+              const label  = isFix ? item.name : (item.note || cat?.name || "Dépense programmée");
+              const sub    = isFix ? "Ce mois · non pointé" : new Date(item.date).toLocaleDateString("fr-FR", { day:"numeric", month:"long" });
+              const badge  = isFix ? null : daysUntil(item.date);
+              const isConf = !isFix && deleteConfirm === item.id;
+
+              return (
+                <div key={item.id} style={{ borderBottom: i < visibleItems.length-1 ? "1px solid var(--border-soft)" : "none" }}>
+                  {isConf ? (
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"rgba(224,104,112,.06)" }}>
+                      <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Supprimer "{item.note || "cette programmée"}" ?</span>
+                      <button onClick={() => { onDeleteScheduled?.(item.id); setDeleteConfirm(null); }} style={{ background:"var(--danger)", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:".62rem", fontWeight:800, cursor:"pointer" }}>Oui</button>
+                      <button onClick={() => setDeleteConfirm(null)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--text3)", fontSize:".62rem", cursor:"pointer" }}>Non</button>
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 14px" }}>
+                      <div style={{ position:"relative", flexShrink:0 }}>
+                        <div style={{ width:30, height:30, borderRadius:8, background: isFix ? "rgba(112,184,224,.1)" : "rgba(200,184,96,.1)", border:`1px solid ${isFix ? "var(--accent)" : "var(--warning)"}33`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:".8rem" }}>{icon}</div>
+                        <div style={{ position:"absolute", bottom:-2, right:-3, width:10, height:10, borderRadius:"50%", background: isFix ? "var(--accent)" : "var(--warning)", border:"1.5px solid var(--bg)", fontSize:".35rem", color:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>
+                          {isFix ? "↻" : "·"}
+                        </div>
+                      </div>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:".66rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:1 }}>
+                          <span style={{ fontSize:".5rem", color:"var(--text3)" }}>{sub}</span>
+                          {badge && <span style={{ fontSize:".44rem", fontWeight:700, padding:"0 4px", borderRadius:3, background:"rgba(200,184,96,.12)", color:"var(--warning)" }}>{badge}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                        <span style={{ fontFamily:"var(--mono)", fontSize:".65rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(item.amount)}</span>
+                        {!isFix && (
+                          <button onClick={() => setDeleteConfirm(item.id)} style={{ width:18, height:18, borderRadius:"50%", background:"transparent", border:"1px solid var(--border)", color:"var(--text3)", fontSize:".5rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Total si 2+ items */}
+            {allItems.length > 1 && (
+              <div style={{ padding:"7px 14px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"var(--surface2)" }}>
+                <span style={{ fontSize:".54rem", color:"var(--text3)" }}>Total à venir</span>
+                <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <Sec id="mois">
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
