@@ -6,6 +6,7 @@ import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
   TransModal, FixedModal, CagModal, TransferModal, CatModal,
+  ScheduledModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
 } from "./components/modals.jsx";
 import {
@@ -138,6 +139,14 @@ export default function App() {
       if (today < plan.dayOfMonth)   return;
       dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
     });
+    // Confirmation automatique des transactions programmées du mois courant
+    (data.scheduledTransactions || []).forEach(s => {
+      if (s.confirmed) return;
+      if (!s.date.startsWith(ym)) return;
+      const scheduledDay = parseInt(s.date.slice(8), 10);
+      if (today < scheduledDay) return; // pas encore le bon jour
+      dispatch({ type: A.CONFIRM_SCHEDULED, id: s.id });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -218,7 +227,8 @@ export default function App() {
   }, []);
 
   // Using a discriminated union pattern: null = closed, object = open with config
-  const [transModal,    setTransModal]    = useState(null); // null | { editingId: string|null, defaultType?: string }
+  const [transModal,    setTransModal]    = useState(null);
+  const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
   const [accueilEdit,   setAccueilEdit]   = useState(false);
   const [fixedModal,    setFixedModal]    = useState(null); // null | { editingIdx: number|null }
@@ -414,6 +424,7 @@ export default function App() {
         onMarkRoundingTransferred={markRoundingTransferred}
         editMode={accueilEdit}
         onExitEditMode={() => setAccueilEdit(false)}
+        onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
       />
     ),
     cagnottes: (
@@ -455,6 +466,8 @@ export default function App() {
           const ym  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
           dispatch({ type: A.SAVE_AUTO_SAVING, plan: { id: planId, lastAppliedYm: ym } });
         }}
+        onConfirmScheduled={id => dispatch({ type: A.CONFIRM_SCHEDULED, id })}
+        onDeleteScheduled={id  => dispatch({ type: A.DELETE_SCHEDULED,  id })}
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}
       />
@@ -593,15 +606,17 @@ export default function App() {
             animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
           }}>
           {[
-            { type:"expense",      icon:"💸", label:"Dépense",  color:"var(--danger)"  },
-            { type:"income",       icon:"💰", label:"Revenu",   color:"var(--success)" },
-            { type:"epargne",      icon:"🐷", label:"Épargne",  color:"var(--purple)"  },
-            { type:"edit_accueil", icon:"✏️", label:"Accueil",  color:"var(--warning)" },
+            { type:"expense",      icon:"💸", label:"Dépense",    color:"var(--danger)"  },
+            { type:"income",       icon:"💰", label:"Revenu",     color:"var(--success)" },
+            { type:"epargne",      icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
+            { type:"scheduled",    icon:"📅", label:"Programmée", color:"var(--warning)" },
+            { type:"edit_accueil", icon:"✏️", label:"Accueil",    color:"var(--accent)"  },
           ].map((item, i) => (
             <div key={item.type}
               onClick={() => {
                 setFabOpen(false);
                 if (item.type === "edit_accueil") { navigateTo("accueil"); setAccueilEdit(true); }
+                else if (item.type === "scheduled") setScheduledModal(true);
                 else setTransModal({ editingId: null, defaultType: item.type });
               }}
               style={{
@@ -642,6 +657,14 @@ export default function App() {
       <input ref={importRef} type="file" hidden accept=".json" onChange={handleImportFile} />
 
       {/* ── Modals ── */}
+      {scheduledModal && (
+        <ScheduledModal
+          categories={data.categories}
+          onSave={s => { dispatch({ type: A.SAVE_SCHEDULED, scheduled: s }); setScheduledModal(false); }}
+          onClose={() => setScheduledModal(false)}
+        />
+      )}
+
       {transModal && (
         <TransModal
           transactions={data.transactions}
