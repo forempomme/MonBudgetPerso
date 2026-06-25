@@ -71,6 +71,9 @@ export const A = /** @type {const} */ ({
   SAVE_AUTO_SAVING:         "SAVE_AUTO_SAVING",
   DELETE_AUTO_SAVING:       "DELETE_AUTO_SAVING",
   APPLY_AUTO_SAVING:        "APPLY_AUTO_SAVING",
+  SAVE_SCHEDULED:           "SAVE_SCHEDULED",
+  DELETE_SCHEDULED:         "DELETE_SCHEDULED",
+  CONFIRM_SCHEDULED:        "CONFIRM_SCHEDULED",
   SAVE_SECURITY_SETTINGS:   "SAVE_SECURITY_SETTINGS",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
   MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
@@ -102,7 +105,8 @@ export const DEFAULT_DATA = {
   alertEnabled:         false,
   alertThreshold:       500,
   categoryThresholds:   {},
-  autoSavings:          [],    // [{ id, cagnotteId, amount, dayOfMonth, enabled }]
+  autoSavings:          [],
+  scheduledTransactions:[],    // [{ id, amount, date, categoryId, note, confirmed }]    // [{ id, cagnotteId, amount, dayOfMonth, enabled }]
   pinEnabled:           false,
   pinHash:              null,  // SHA-256 hex
   bioEnabled:           false,
@@ -471,7 +475,35 @@ export function reducer(state, action) {
         })),
       };
 
-    case A.SAVE_AUTO_SAVING: {
+    case A.SAVE_SCHEDULED: {
+      const { scheduled } = action;
+      if (scheduled.id) {
+        return { ...state, scheduledTransactions: (state.scheduledTransactions||[]).map(s => s.id===scheduled.id ? {...s,...scheduled} : s) };
+      }
+      return { ...state, scheduledTransactions: [...(state.scheduledTransactions||[]), { ...scheduled, id: uid("sch"), confirmed: false }] };
+    }
+
+    case A.DELETE_SCHEDULED:
+      return { ...state, scheduledTransactions: (state.scheduledTransactions||[]).filter(s => s.id !== action.id) };
+
+    case A.CONFIRM_SCHEDULED: {
+      const s = (state.scheduledTransactions||[]).find(s => s.id === action.id);
+      if (!s) return state;
+      const newTx = {
+        id: uid("scht"),
+        type: "expense",
+        amount: parseFloat(s.amount),
+        date: s.date,
+        categoryId: s.categoryId,
+        note: s.note || "",
+        fromScheduled: true,
+      };
+      return {
+        ...state,
+        transactions: [...state.transactions, newTx],
+        scheduledTransactions: (state.scheduledTransactions||[]).filter(s => s.id !== action.id),
+      };
+    }
       const { plan } = action;
       if (plan.id) {
         return { ...state, autoSavings: (state.autoSavings||[]).map(p => p.id===plan.id ? {...p,...plan} : p) };
