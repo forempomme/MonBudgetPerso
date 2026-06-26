@@ -189,6 +189,38 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
   const isCag = type === "epargne" || type === "decagnottage";
   const cats  = categories.filter(c => type === "income" ? c.type === "income" : c.type === "expense");
 
+  // Date shortcuts
+  const [dateMode, setDateMode] = useState(() => {
+    if (editingId) {
+      const d0 = todayISO();
+      const d1 = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
+      const d2 = (() => { const d = new Date(); d.setDate(d.getDate()-2); return d.toISOString().slice(0,10); })();
+      if (tx?.date === d0) return "today";
+      if (tx?.date === d1) return "yesterday";
+      if (tx?.date === d2) return "2days";
+      return "other";
+    }
+    return "today";
+  });
+
+  function handleDateMode(mode) {
+    setDateMode(mode);
+    if (mode === "other") return;
+    const d = new Date();
+    if (mode === "yesterday") d.setDate(d.getDate()-1);
+    if (mode === "2days")     d.setDate(d.getDate()-2);
+    setDate(d.toISOString().slice(0,10));
+    setErrors(v => ({...v, date:""}));
+  }
+
+  // Visual helpers
+  const typeColor = type === "expense" ? "var(--danger)"
+                  : type === "income"  ? "var(--success)"
+                  : "var(--purple)";
+  const typeIcon  = type === "expense" ? "💸" : type === "income" ? "💰" : "🐷";
+  const typeVerb  = type === "expense" ? "dépense" : type === "income" ? "revenu"
+                  : type === "epargne" ? "mise de côté" : "retrait cagnotte";
+
   // Détecte un doublon potentiel : même montant + même catégorie dans les 7 derniers jours
   function findDuplicate(amt, catId, txDate, txType) {
     if (!amt || editingId) return null;
@@ -262,37 +294,116 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
 
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier l'opération" : "Nouvelle opération"}>
-      <Field label="Type">
-        <select value={type} onChange={e => { setType(e.target.value); setErrors({}); }}>
-          <option value="expense">Dépense</option>
-          <option value="income">Revenu</option>
-          <option value="epargne">Épargne (Mise de côté)</option>
-          <option value="decagnottage">Décagnottage (Sortie de cagnotte)</option>
-        </select>
-      </Field>
 
-      <Field label="Montant (€)" error={errors.amount}>
-        <NumPad
-          value={amount}
-          onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({...v, amount: ""})); }}
-          type={type}
-          onTypeChange={t => { setType(t); setErrors({}); }}
-        />
-      </Field>
+      {/* ── 1. Sélecteur de type — pills visuels ── */}
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:7, marginBottom: isCag ? 8 : 14 }}>
+        {[
+          { v:"expense",  icon:"💸", label:"Dépense",  color:"var(--danger)"  },
+          { v:"income",   icon:"💰", label:"Revenu",   color:"var(--success)" },
+          { v:"cagnotte", icon:"🐷", label:"Cagnotte", color:"var(--purple)"  },
+        ].map(t => {
+          const active = t.v === "cagnotte" ? isCag : type === t.v;
+          const col    = t.color;
+          return (
+            <button key={t.v}
+              onClick={() => {
+                if (t.v === "cagnotte") { if (!isCag) setType("epargne"); }
+                else setType(t.v);
+                setErrors({});
+              }}
+              style={{
+                padding:"10px 4px", borderRadius:12,
+                background: active ? `color-mix(in srgb,${col} 12%,transparent)` : "var(--surface2)",
+                border: `1.5px solid ${active ? col : "var(--border)"}`,
+                display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                cursor:"pointer", transition:"all .15s",
+              }}>
+              <span style={{ fontSize:"1.15rem" }}>{t.icon}</span>
+              <span style={{ fontSize:".52rem", fontWeight:800, color: active ? col : "var(--text3)", transition:"color .15s" }}>{t.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-      {!isCag && (
-        <Field label="Catégorie (optionnelle)">
-          <select value={catId} onChange={e => setCatId(e.target.value)}>
-            <option value="">Aucune catégorie</option>
-            {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-          </select>
-        </Field>
+      {/* ── Sous-toggle Dépôt / Retrait pour cagnotte ── */}
+      {isCag && (
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:14 }}>
+          {[["epargne","↑ Dépôt","Vers une cagnotte"],["decagnottage","↓ Retrait","Depuis une cagnotte"]].map(([k,l,sub]) => (
+            <button key={k} onClick={() => { setType(k); setErrors({}); }} style={{
+              padding:"7px 8px", borderRadius:9,
+              background: type===k ? "rgba(160,120,224,.12)" : "var(--surface2)",
+              border: `1px solid ${type===k ? "var(--purple)" : "var(--border)"}`,
+              display:"flex", flexDirection:"column", alignItems:"center", gap:1,
+              cursor:"pointer", transition:"all .15s",
+            }}>
+              <span style={{ fontSize:".65rem", fontWeight:800, color: type===k ? "var(--purple)" : "var(--text3)" }}>{l}</span>
+              <span style={{ fontSize:".48rem", color: type===k ? "rgba(160,120,224,.7)" : "var(--text3)" }}>{sub}</span>
+            </button>
+          ))}
+        </div>
       )}
 
+      {/* ── 2. Montant — affichage coloré + NumPad ── */}
+      <div style={{
+        background:`color-mix(in srgb,${typeColor} 10%,transparent)`,
+        border:`1px solid color-mix(in srgb,${typeColor} 30%,transparent)`,
+        borderRadius:14, padding:"12px 14px 10px", textAlign:"center",
+        marginBottom:10, transition:"all .2s",
+      }}>
+        <div style={{ fontSize:".46rem", fontWeight:700, color:`color-mix(in srgb,${typeColor} 70%,transparent)`, textTransform:"uppercase", letterSpacing:".1em", marginBottom:4 }}>
+          {typeVerb}
+        </div>
+        <div style={{ fontFamily:"var(--mono)", fontSize:"1.9rem", fontWeight:800, color:typeColor, lineHeight:1, transition:"color .2s" }}>
+          {amount || "0"} €
+        </div>
+        {errors.amount && <div style={{ fontSize:".55rem", color:"var(--danger)", marginTop:4 }}>{errors.amount}</div>}
+      </div>
+
+      <NumPad
+        value={amount}
+        onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({...v, amount:""})); }}
+        type={type}
+        onTypeChange={t => { setType(t); setErrors({}); }}
+      />
+
+      {/* ── 3. Catégorie — chips scrollables ── */}
+      {!isCag && (
+        <div style={{ marginBottom:12, marginTop:4 }}>
+          <div style={{ fontSize:".52rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:7 }}>Catégorie</div>
+          <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:4, scrollbarWidth:"none" }}>
+            <button onClick={() => setCatId("")} style={{
+              flexShrink:0, padding:"5px 12px", borderRadius:20,
+              background: catId==="" ? `color-mix(in srgb,${typeColor} 12%,transparent)` : "var(--surface2)",
+              border: `1px solid ${catId==="" ? typeColor : "var(--border)"}`,
+              color: catId==="" ? typeColor : "var(--text3)",
+              fontSize:".6rem", fontWeight:700, cursor:"pointer", transition:"all .12s",
+            }}>Aucune</button>
+            {cats.map(c => {
+              const sel = catId === c.id;
+              return (
+                <button key={c.id} onClick={() => setCatId(c.id)} style={{
+                  flexShrink:0, display:"flex", alignItems:"center", gap:5,
+                  padding:"5px 11px", borderRadius:20,
+                  background: sel ? `color-mix(in srgb,${typeColor} 12%,transparent)` : "var(--surface2)",
+                  border: `1px solid ${sel ? typeColor : "var(--border)"}`,
+                  color: sel ? typeColor : "var(--text3)",
+                  fontSize:".6rem", fontWeight: sel ? 700 : 400, cursor:"pointer",
+                  transition:"all .12s",
+                }}>
+                  <span style={{ fontSize:".85rem" }}>{c.icon}</span>
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Cagnotte cible */}
       {isCag && (
-        <Field label="Cagnotte cible" error={errors.cag}>
+        <Field label="Cagnotte" error={errors.cag}>
           <select value={cagId} className={errors.cag ? "error" : ""}
-            onChange={e => { setCagId(e.target.value); setErrors(v => ({...v, cag: ""})); }}>
+            onChange={e => { setCagId(e.target.value); setErrors(v => ({...v, cag:""})); }}>
             {cagnottes.length === 0
               ? <option value="">Aucune cagnotte disponible</option>
               : cagnottes.map(c => <option key={c.id} value={c.id}>{c.name} ({fmt(c.current)})</option>)
@@ -301,34 +412,53 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
         </Field>
       )}
 
-      <Field label="Date" error={errors.date}>
-        <input type="date" value={date} className={errors.date ? "error" : ""}
-          onChange={e => { setDate(e.target.value); setErrors(v => ({...v, date: ""})); }} />
-      </Field>
+      {/* ── 4. Date — raccourcis ── */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ fontSize:".52rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".08em", marginBottom:7 }}>Date</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:5 }}>
+          {[["today","Aujourd'hui"],["yesterday","Hier"],["2days","Avant-hier"],["other","Autre…"]].map(([k,l]) => {
+            const sel = dateMode === k;
+            return (
+              <button key={k} onClick={() => handleDateMode(k)} style={{
+                padding:"7px 2px", borderRadius:9, textAlign:"center",
+                background: sel ? `color-mix(in srgb,${typeColor} 12%,transparent)` : "var(--surface2)",
+                border: `1px solid ${sel ? typeColor : "var(--border)"}`,
+                color: sel ? typeColor : "var(--text3)",
+                fontSize:".5rem", fontWeight: sel ? 800 : 400,
+                cursor:"pointer", transition:"all .12s", lineHeight:1.35,
+              }}>{l}</button>
+            );
+          })}
+        </div>
+        {(dateMode === "other" || errors.date) && (
+          <input type="date" value={date}
+            className={errors.date ? "error" : ""}
+            onChange={e => { setDate(e.target.value); setErrors(v => ({...v, date:""})); }}
+            style={{ marginTop:7, width:"100%", background:"var(--surface2)", border:`1px solid ${errors.date ? "var(--danger)" : "var(--border)"}`, borderRadius:9, padding:"8px 10px", color:"var(--text)", fontSize:".7rem", boxSizing:"border-box" }}/>
+        )}
+        {errors.date && <div style={{ fontSize:".55rem", color:"var(--danger)", marginTop:3 }}>{errors.date}</div>}
+      </div>
 
+      {/* ── Note + tags + arrondi ── */}
       <Field label="Note">
         <input type="text" placeholder="Description…" value={note} onChange={e => setNote(e.target.value)} />
 
-        {/* ── Tags ── */}
         {tags.length > 0 && !isCag && (
-          <div style={{ marginTop: 4 }}>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
-              🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
+          <div style={{ marginTop:4 }}>
+            <div style={{ fontSize:".6rem", color:"var(--text3)", fontWeight:700, marginBottom:6 }}>
+              🏷️ Tags <span style={{ fontWeight:400 }}>(optionnel)</span>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
               {tags.map(tag => {
                 const selected = tagIds.includes(tag.id);
                 return (
                   <div key={tag.id} onClick={() => setTagIds(ids => selected ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 4,
-                      padding: "4px 10px",
+                    style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 10px",
                       background: selected ? `${tag.color}22` : "var(--surface2)",
-                      border: `1px solid ${selected ? tag.color : "var(--border)"}`,
-                      borderRadius: 20, cursor: "pointer",
-                    }}>
-                    <span style={{ fontSize: ".7rem" }}>{tag.icon}</span>
-                    <span style={{ fontSize: ".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
+                      border:`1px solid ${selected ? tag.color : "var(--border)"}`,
+                      borderRadius:20, cursor:"pointer" }}>
+                    <span style={{ fontSize:".7rem" }}>{tag.icon}</span>
+                    <span style={{ fontSize:".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
                   </div>
                 );
               })}
@@ -336,7 +466,6 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
           </div>
         )}
 
-        {/* ── Preview arrondi ── */}
         {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
           const parsedA = parseAmt(amount);
           if (isNaN(parsedA) || parsedA <= 0) return null;
@@ -347,15 +476,15 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
           if (roundAmt < 0.01) return null;
           const cag = cagnottes.find(c => c.id === roundingCagnotteId);
           return (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(104,212,152,.08)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 9, marginTop: 4 }}>
-              <span style={{ fontSize: ".95rem" }}>🐷</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--success)" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"rgba(104,212,152,.08)", border:"1px solid rgba(104,212,152,.2)", borderRadius:9, marginTop:4 }}>
+              <span style={{ fontSize:".95rem" }}>🐷</span>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:".65rem", fontWeight:700, color:"var(--success)" }}>
                   +{String(roundAmt.toFixed(2)).replace(".", ",")} € → {cag?.icon} {cag?.name}
                 </div>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>Arrondi automatique activé</div>
+                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>Arrondi automatique activé</div>
               </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", fontFamily:"var(--mono)" }}>
                 {String(parsedA.toFixed(2)).replace(".", ",")} → {String(rounded.toFixed(2)).replace(".", ",")}
               </div>
             </div>
@@ -363,62 +492,41 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
         })()}
       </Field>
 
-      {/* ── Récurrence (uniquement pour dépenses/revenus, pas cagnottes, pas édition) ── */}
+      {/* Récurrence */}
       {!isCag && !editingId && (
-        <div style={{ marginBottom: 12 }}>
-          <div
-            onClick={() => setIsRecurring(r => !r)}
-            style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-              background: isRecurring ? "var(--accent-glow)" : "var(--surface2)",
-              border: `1px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
-              borderRadius: "var(--radius-sm)", cursor: "pointer",
-            }}>
-            <div style={{
-              width: 20, height: 20, borderRadius: "50%",
-              background: isRecurring ? "var(--accent)" : "transparent",
-              border: `2px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: ".7rem", color: "var(--bg)", flexShrink: 0, transition: "all .15s",
-            }}>{isRecurring ? "✓" : ""}</div>
+        <div style={{ marginBottom:12 }}>
+          <div onClick={() => setIsRecurring(r => !r)} style={{
+            display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+            background: isRecurring ? "var(--accent-glow)" : "var(--surface2)",
+            border:`1px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
+            borderRadius:"var(--radius-sm)", cursor:"pointer",
+          }}>
+            <div style={{ width:20, height:20, borderRadius:"50%", background: isRecurring ? "var(--accent)" : "transparent", border:`2px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:".7rem", color:"var(--bg)", flexShrink:0, transition:"all .15s" }}>{isRecurring ? "✓" : ""}</div>
             <div>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>
-                🔄 Récurrente
-              </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-                Mémorise cette opération pour la retrouver chaque mois
-              </div>
+              <div style={{ fontSize:".72rem", fontWeight:700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>🔄 Récurrente</div>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Mémorise cette opération pour la retrouver chaque mois</div>
             </div>
           </div>
           {isRecurring && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-              <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:6 }}>
+              <div style={{ display:"flex", gap:6 }}>
                 {[["monthly","Mensuelle"],["yearly","Annuelle"]].map(([k,l]) => (
                   <button key={k} onClick={() => setFrequency(k)} style={{
-                    flex: 1, background: frequency===k ? "var(--accent-glow)" : "transparent",
-                    border: `1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
-                    borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
-                    color: frequency===k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
+                    flex:1, background: frequency===k ? "var(--accent-glow)" : "transparent",
+                    border:`1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
+                    borderRadius:8, padding:"6px 0", fontSize:".68rem", fontWeight:700,
+                    color: frequency===k ? "var(--accent)" : "var(--text2)", cursor:"pointer",
                   }}>{l}</button>
                 ))}
               </div>
-              {/* Nombre de fois — mensuel uniquement */}
               {frequency === "monthly" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text2)", marginBottom: 2 }}>Nombre de fois</div>
-                    <div style={{ fontSize: ".58rem", color: "var(--text3)" }}>Laisser vide = illimité</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"var(--surface2)", borderRadius:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:".65rem", fontWeight:700, color:"var(--text2)", marginBottom:2 }}>Nombre de fois</div>
+                    <div style={{ fontSize:".58rem", color:"var(--text3)" }}>Laisser vide = illimité</div>
                   </div>
-                  <input
-                    type="number" min="2" max="120" placeholder="∞"
-                    value={occurrences}
-                    onChange={e => setOccurrences(e.target.value)}
-                    style={{
-                      width: 64, background: "var(--bg)", border: `1px solid ${occurrences ? "var(--accent)" : "var(--border)"}`,
-                      borderRadius: 7, padding: "6px 8px", color: "var(--text)",
-                      fontSize: ".85rem", fontFamily: "var(--mono)", textAlign: "center",
-                    }}
-                  />
+                  <input type="number" min="2" max="120" placeholder="∞" value={occurrences} onChange={e => setOccurrences(e.target.value)}
+                    style={{ width:64, background:"var(--bg)", border:`1px solid ${occurrences ? "var(--accent)" : "var(--border)"}`, borderRadius:7, padding:"6px 8px", color:"var(--text)", fontSize:".85rem", fontFamily:"var(--mono)", textAlign:"center" }}/>
                 </div>
               )}
             </div>
@@ -426,37 +534,40 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
         </div>
       )}
 
-      {/* ── Alerte doublon ── */}
+      {/* Alerte doublon */}
       {dupWarning && (
-        <div style={{ background: "rgba(200,184,96,.1)", border: "1.5px solid rgba(200,184,96,.4)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: "1rem" }}>⚠️</span>
+        <div style={{ background:"rgba(200,184,96,.1)", border:"1.5px solid rgba(200,184,96,.4)", borderRadius:10, padding:"12px 14px", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+            <span style={{ fontSize:"1rem" }}>⚠️</span>
             <div>
-              <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--warning)" }}>Transaction similaire détectée</div>
-              <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
-                {dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}
-              </div>
+              <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--warning)" }}>Transaction similaire détectée</div>
+              <div style={{ fontSize:".6rem", color:"var(--text2)", marginTop:2 }}>{dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}</div>
             </div>
           </div>
-          <div style={{ fontSize: ".65rem", color: "var(--text2)", marginBottom: 10, lineHeight: 1.5 }}>
+          <div style={{ fontSize:".65rem", color:"var(--text2)", marginBottom:10, lineHeight:1.5 }}>
             Une transaction identique existe déjà dans les 7 derniers jours. S'agit-il d'un doublon ?
           </div>
-          <div className="grid-2" style={{ marginBottom: 0 }}>
-            <button className="btn btn-outline" style={{ width: "100%" }} onClick={() => setDupWarning(null)}>
-              ✕ Annuler
-            </button>
-            <button className="btn btn-primary" style={{ width: "100%", background: "var(--warning)", color: "#060810" }} onClick={() => handleSave(true)}>
-              ✓ Ajouter quand même
-            </button>
+          <div className="grid-2" style={{ marginBottom:0 }}>
+            <button className="btn btn-outline" style={{ width:"100%" }} onClick={() => setDupWarning(null)}>✕ Annuler</button>
+            <button className="btn btn-primary" style={{ width:"100%", background:"var(--warning)", color:"#060810" }} onClick={() => handleSave(true)}>✓ Ajouter quand même</button>
           </div>
         </div>
       )}
 
+      {/* ── 5. Bouton valider coloré ── */}
       {!dupWarning && (
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => handleSave()}>Valider</button>
-      </div>
+        <div className="grid-2" style={{ marginBottom:0 }}>
+          <button className="btn btn-outline" style={{ width:"100%" }} onClick={onClose}>Annuler</button>
+          <button onClick={() => handleSave()} style={{
+            width:"100%", border:"none", borderRadius:"var(--radius-sm)",
+            padding:"11px", fontWeight:800, fontSize:".72rem", cursor:"pointer",
+            background:typeColor, color:"var(--bg)",
+            boxShadow:`0 4px 16px color-mix(in srgb,${typeColor} 40%,transparent)`,
+            transition:"all .2s",
+          }}>
+            {typeIcon} Enregistrer la {typeVerb}
+          </button>
+        </div>
       )}
     </Modal>
   );
