@@ -1,4 +1,9 @@
-// modals.jsx — v1.29.0
+// modals.jsx — v1.29.1
+// Changelog v1.29.1 : Fix grille catégorie.
+//   • Grille rendue en position:fixed centrée (plus de scroll nécessaire)
+//   • Fond overlay semi-transparent, tap extérieur ferme la grille
+//   • Ghost tap corrigé : onClick désactivé sur mobile (touch), seul onTouchEnd agit
+//
 // Changelog v1.29.0 : Catégorie — chips scrollables → grille dépliable 4 colonnes.
 //   • Tap sur le champ → grille s'ouvre sous le trigger (border-radius adapté)
 //   • Grille 4 colonnes : icône + nom, sélection ferme automatiquement
@@ -365,21 +370,21 @@ export function TransModal({
         />
       </div>
 
-      {/* ── Catégorie — grille dépliable 4 colonnes ── */}
+      {/* ── Catégorie — grille overlay fixed (évite le scroll + ghost tap) ── */}
       {!isCag && (
         <div style={{ marginBottom: 10 }}>
           <SectionLabel>Catégorie</SectionLabel>
-          {/* Trigger */}
+
+          {/* Trigger — onTouchEnd only, pas de onClick pour éviter le double-fire */}
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(o => !o); }}
-            onClick={() => setCatOpen(o => !o)}
+            onClick={e => { /* désactivé sur mobile, géré par onTouchEnd */ if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
               background: "var(--surface2)",
               border: `1.5px solid ${catId ? accentColor : "var(--border)"}`,
-              borderRadius: catOpen ? "10px 10px 0 0" : 10,
-              borderBottom: catOpen ? "none" : undefined,
+              borderRadius: 10,
               color: catId ? "var(--text)" : "var(--text3)",
               fontSize: ".78rem", fontFamily: "inherit",
               display: "flex", alignItems: "center", gap: 8,
@@ -397,50 +402,86 @@ export function TransModal({
               transform: catOpen ? "rotate(180deg)" : "none",
             }}>▾</span>
           </button>
-          {/* Grille dépliée */}
+
+          {/* Overlay fixed — centré, ne scrolle pas avec le modal */}
           {catOpen && (
-            <div style={{
-              background: "var(--surface3, var(--surface2))",
-              border: `1.5px solid var(--border)`,
-              borderTop: "none",
-              borderRadius: "0 0 10px 10px",
-              padding: 8,
-              display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 5,
-            }}>
-              {/* Aucune — pleine largeur */}
-              <button
-                onTouchStart={e => e.stopPropagation()}
-                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); setCatOpen(false); }}
-                onClick={() => { setCatId(""); setCatOpen(false); }}
-                style={{
-                  gridColumn: "1 / -1", padding: "6px 10px", borderRadius: 8,
-                  border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
-                  background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                  color: !catId ? accentColor : "var(--text3)",
-                  fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
-                }}>Aucune</button>
-              {cats.map(c => (
-                <button key={c.id}
-                  onTouchStart={e => e.stopPropagation()}
-                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(c.id); setCatOpen(false); }}
-                  onClick={() => { setCatId(c.id); setCatOpen(false); }}
-                  style={{
-                    display: "flex", flexDirection: "column", alignItems: "center",
-                    padding: "7px 4px", gap: 3, borderRadius: 9,
-                    border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
-                    background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                    cursor: "pointer", touchAction: "manipulation",
-                  }}>
-                  <span style={{ fontSize: "1.1rem" }}>{c.icon}</span>
-                  <span style={{
-                    fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
-                    color: catId === c.id ? accentColor : "var(--text3)",
-                    fontWeight: catId === c.id ? 700 : 400,
-                    maxWidth: 52, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>{c.name}</span>
-                </button>
-              ))}
-            </div>
+            <>
+              {/* Fond semi-transparent pour fermer au tap extérieur */}
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
+                onTouchStart={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
+                onClick={() => setCatOpen(false)}
+              />
+              {/* Grille centrée */}
+              <div style={{
+                position: "fixed",
+                top: "50%", left: "50%",
+                transform: "translate(-50%, -50%)",
+                zIndex: 201,
+                width: "min(92vw, 380px)",
+                background: "var(--surface)",
+                border: "1.5px solid var(--border)",
+                borderRadius: 16,
+                padding: 12,
+                boxShadow: "0 24px 60px rgba(0,0,0,.7)",
+              }}>
+                {/* En-tête */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
+                    Catégorie
+                  </span>
+                  <button
+                    onTouchStart={e => e.stopPropagation()}
+                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
+                    onClick={e => { if (!('ontouchstart' in window)) setCatOpen(false); }}
+                    style={{
+                      width: 24, height: 24, borderRadius: 6,
+                      background: "var(--surface2)", border: "1px solid var(--border)",
+                      color: "var(--text2)", fontSize: 13, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      touchAction: "manipulation",
+                    }}>✕</button>
+                </div>
+
+                {/* Grille 4 colonnes */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {/* Aucune — pleine largeur */}
+                  <button
+                    onTouchStart={e => e.stopPropagation()}
+                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); setCatOpen(false); }}
+                    onClick={e => { if (!('ontouchstart' in window)) { setCatId(""); setCatOpen(false); } }}
+                    style={{
+                      gridColumn: "1 / -1", padding: "7px 10px", borderRadius: 9,
+                      border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
+                      background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                      color: !catId ? accentColor : "var(--text3)",
+                      fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                    }}>⊘ Aucune</button>
+
+                  {cats.map(c => (
+                    <button key={c.id}
+                      onTouchStart={e => e.stopPropagation()}
+                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(c.id); setCatOpen(false); }}
+                      onClick={e => { if (!('ontouchstart' in window)) { setCatId(c.id); setCatOpen(false); } }}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center",
+                        padding: "8px 4px", gap: 4, borderRadius: 10,
+                        border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
+                        background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                        cursor: "pointer", touchAction: "manipulation",
+                      }}>
+                      <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
+                      <span style={{
+                        fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
+                        color: catId === c.id ? accentColor : "var(--text3)",
+                        fontWeight: catId === c.id ? 700 : 400,
+                        maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}
