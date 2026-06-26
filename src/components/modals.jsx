@@ -1,11 +1,16 @@
-// modals.jsx — v1.28.0
-// Changelog : TransModal redessiné — layout compact tenant sur un écran sans scroll.
-//   • Sélecteur type : pills visuels (inchangé)
-//   • Montant : bandeau label + grand chiffre (inchangé)
+// modals.jsx — v1.29.0
+// Changelog v1.29.0 : Catégorie — chips scrollables → grille dépliable 4 colonnes.
+//   • Tap sur le champ → grille s'ouvre sous le trigger (border-radius adapté)
+//   • Grille 4 colonnes : icône + nom, sélection ferme automatiquement
+//   • Chip "Aucune" en pleine largeur en tête de grille
+//   • Fermeture sur tap extérieur (onBlur sur le wrapper)
+//   • Toutes les fonctionnalités v1.28.0 conservées
+//
+// Changelog v1.28.0 : TransModal redessiné — layout compact tenant sur un écran sans scroll.
+//   • Sélecteur type : pills visuels
 //   • NumPad : hauteur touches 50px → 43px (-28px total)
-//   • Catégorie : <select> remplacé par chips pills horizontaux scrollables
 //   • Date : <input type="date"> remplacé par 4 boutons pills en ligne
-//   • Labels de section : style UPPERCASE 10px (cohérent avec app)
+//   • Labels de section : style UPPERCASE 10px
 //   • Note : champ sans label séparé (placeholder suffit)
 //   • Récurrente : toggle identique, conservé
 //   • Alerte doublon : conservée
@@ -213,6 +218,7 @@ export function TransModal({
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
+  const [catOpen,     setCatOpen]     = useState(false);
 
   const isCag = type === "epargne" || type === "decagnottage";
   const isInc = type === "income";
@@ -359,42 +365,83 @@ export function TransModal({
         />
       </div>
 
-      {/* ── Catégorie — chips pills scrollables ── */}
+      {/* ── Catégorie — grille dépliable 4 colonnes ── */}
       {!isCag && (
         <div style={{ marginBottom: 10 }}>
           <SectionLabel>Catégorie</SectionLabel>
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
-            {/* Chip "Aucune" */}
-            <button
-              onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); }}
-              onClick={() => setCatId("")}
-              style={{
-                flexShrink: 0, padding: "5px 13px", borderRadius: 20,
-                border: `1.5px solid ${!catId ? accentColor : "var(--border)"}`,
-                background: !catId ? `color-mix(in srgb, ${accentColor} 16%, var(--surface2))` : "var(--surface2)",
-                color: !catId ? accentColor : "var(--text2)",
-                fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
-              }}>Aucune</button>
-            {cats.map(c => (
-              <button key={c.id}
+          {/* Trigger */}
+          <button
+            onTouchStart={e => e.stopPropagation()}
+            onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(o => !o); }}
+            onClick={() => setCatOpen(o => !o)}
+            style={{
+              width: "100%", padding: "9px 12px", boxSizing: "border-box",
+              background: "var(--surface2)",
+              border: `1.5px solid ${catId ? accentColor : "var(--border)"}`,
+              borderRadius: catOpen ? "10px 10px 0 0" : 10,
+              borderBottom: catOpen ? "none" : undefined,
+              color: catId ? "var(--text)" : "var(--text3)",
+              fontSize: ".78rem", fontFamily: "inherit",
+              display: "flex", alignItems: "center", gap: 8,
+              cursor: "pointer", touchAction: "manipulation",
+            }}>
+            {(() => {
+              const cat = cats.find(c => c.id === catId);
+              return cat
+                ? <><span style={{ fontSize: "1rem" }}>{cat.icon}</span><span style={{ flex: 1, textAlign: "left" }}>{cat.name}</span></>
+                : <span style={{ flex: 1, textAlign: "left", color: "var(--text3)" }}>Aucune catégorie</span>;
+            })()}
+            <span style={{
+              color: "var(--text2)", fontSize: ".7rem",
+              display: "inline-block", transition: "transform .2s",
+              transform: catOpen ? "rotate(180deg)" : "none",
+            }}>▾</span>
+          </button>
+          {/* Grille dépliée */}
+          {catOpen && (
+            <div style={{
+              background: "var(--surface3, var(--surface2))",
+              border: `1.5px solid var(--border)`,
+              borderTop: "none",
+              borderRadius: "0 0 10px 10px",
+              padding: 8,
+              display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 5,
+            }}>
+              {/* Aucune — pleine largeur */}
+              <button
                 onTouchStart={e => e.stopPropagation()}
-                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(catId === c.id ? "" : c.id); }}
-                onClick={() => setCatId(catId === c.id ? "" : c.id)}
+                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); setCatOpen(false); }}
+                onClick={() => { setCatId(""); setCatOpen(false); }}
                 style={{
-                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
-                  padding: "5px 13px", borderRadius: 20,
-                  border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
-                  background: catId === c.id ? `color-mix(in srgb, ${accentColor} 16%, var(--surface2))` : "var(--surface2)",
-                  color: catId === c.id ? accentColor : "var(--text2)",
-                  fontSize: ".68rem", fontWeight: catId === c.id ? 700 : 400,
-                  cursor: "pointer", touchAction: "manipulation",
-                }}>
-                <span style={{ fontSize: ".85rem" }}>{c.icon}</span>
-                <span>{c.name}</span>
-              </button>
-            ))}
-          </div>
+                  gridColumn: "1 / -1", padding: "6px 10px", borderRadius: 8,
+                  border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
+                  background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                  color: !catId ? accentColor : "var(--text3)",
+                  fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                }}>Aucune</button>
+              {cats.map(c => (
+                <button key={c.id}
+                  onTouchStart={e => e.stopPropagation()}
+                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(c.id); setCatOpen(false); }}
+                  onClick={() => { setCatId(c.id); setCatOpen(false); }}
+                  style={{
+                    display: "flex", flexDirection: "column", alignItems: "center",
+                    padding: "7px 4px", gap: 3, borderRadius: 9,
+                    border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
+                    background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                    cursor: "pointer", touchAction: "manipulation",
+                  }}>
+                  <span style={{ fontSize: "1.1rem" }}>{c.icon}</span>
+                  <span style={{
+                    fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
+                    color: catId === c.id ? accentColor : "var(--text3)",
+                    fontWeight: catId === c.id ? 700 : 400,
+                    maxWidth: 52, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>{c.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -477,7 +524,7 @@ export function TransModal({
             <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
               🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
             </div>
-            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
               {tags.map(tag => {
                 const selected = tagIds.includes(tag.id);
                 return (
@@ -486,10 +533,11 @@ export function TransModal({
                     style={{
                       display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
                       background: selected ? `${tag.color}22` : "var(--surface2)",
-                      border:`1px solid ${selected ? tag.color : "var(--border)"}`,
-                      borderRadius:20, cursor:"pointer" }}>
-                    <span style={{ fontSize:".7rem" }}>{tag.icon}</span>
-                    <span style={{ fontSize:".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
+                      border: `1px solid ${selected ? tag.color : "var(--border)"}`,
+                      borderRadius: 20, cursor: "pointer",
+                    }}>
+                    <span style={{ fontSize: ".7rem" }}>{tag.icon}</span>
+                    <span style={{ fontSize: ".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
                   </div>
                 );
               })}
@@ -514,9 +562,9 @@ export function TransModal({
                 <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--success)" }}>
                   +{String(roundAmt.toFixed(2)).replace(".", ",")} € → {cag?.icon} {cag?.name}
                 </div>
-                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>Arrondi automatique activé</div>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>Arrondi automatique activé</div>
               </div>
-              <div style={{ fontSize:".6rem", color:"var(--text3)", fontFamily:"var(--mono)" }}>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>
                 {String(parsedA.toFixed(2)).replace(".", ",")} → {String(rounded.toFixed(2)).replace(".", ",")}
               </div>
             </div>
@@ -543,8 +591,12 @@ export function TransModal({
               fontSize: ".7rem", color: "var(--bg)", flexShrink: 0, transition: "all .15s",
             }}>{isRecurring ? "✓" : ""}</div>
             <div>
-              <div style={{ fontSize:".72rem", fontWeight:700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>🔄 Récurrente</div>
-              <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Mémorise cette opération pour la retrouver chaque mois</div>
+              <div style={{ fontSize: ".72rem", fontWeight: 700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>
+                🔄 Récurrente
+              </div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
+                Mémorise cette opération pour la retrouver chaque mois
+              </div>
             </div>
           </div>
           {isRecurring && (
@@ -560,10 +612,10 @@ export function TransModal({
                 ))}
               </div>
               {frequency === "monthly" && (
-                <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"var(--surface2)", borderRadius:8 }}>
-                  <div style={{ flex:1 }}>
-                    <div style={{ fontSize:".65rem", fontWeight:700, color:"var(--text2)", marginBottom:2 }}>Nombre de fois</div>
-                    <div style={{ fontSize:".58rem", color:"var(--text3)" }}>Laisser vide = illimité</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text2)", marginBottom: 2 }}>Nombre de fois</div>
+                    <div style={{ fontSize: ".58rem", color: "var(--text3)" }}>Laisser vide = illimité</div>
                   </div>
                   <input
                     type="number" min="2" max="120" placeholder="∞"
@@ -581,17 +633,19 @@ export function TransModal({
         </div>
       )}
 
-      {/* Alerte doublon */}
+      {/* ── Alerte doublon ── */}
       {dupWarning && (
-        <div style={{ background:"rgba(200,184,96,.1)", border:"1.5px solid rgba(200,184,96,.4)", borderRadius:10, padding:"12px 14px", marginBottom:12 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
-            <span style={{ fontSize:"1rem" }}>⚠️</span>
+        <div style={{ background: "rgba(200,184,96,.1)", border: "1.5px solid rgba(200,184,96,.4)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: "1rem" }}>⚠️</span>
             <div>
-              <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--warning)" }}>Transaction similaire détectée</div>
-              <div style={{ fontSize:".6rem", color:"var(--text2)", marginTop:2 }}>{dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}</div>
+              <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--warning)" }}>Transaction similaire détectée</div>
+              <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
+                {dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}
+              </div>
             </div>
           </div>
-          <div style={{ fontSize:".65rem", color:"var(--text2)", marginBottom:10, lineHeight:1.5 }}>
+          <div style={{ fontSize: ".65rem", color: "var(--text2)", marginBottom: 10, lineHeight: 1.5 }}>
             Une transaction identique existe déjà dans les 7 derniers jours. S'agit-il d'un doublon ?
           </div>
           <div className="grid-2" style={{ marginBottom: 0 }}>
