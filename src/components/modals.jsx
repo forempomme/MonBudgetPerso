@@ -477,7 +477,7 @@ export function TransModal({
             <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
               🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5 }}>
               {tags.map(tag => {
                 const selected = tagIds.includes(tag.id);
                 return (
@@ -486,11 +486,10 @@ export function TransModal({
                     style={{
                       display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
                       background: selected ? `${tag.color}22` : "var(--surface2)",
-                      border: `1px solid ${selected ? tag.color : "var(--border)"}`,
-                      borderRadius: 20, cursor: "pointer",
-                    }}>
-                    <span style={{ fontSize: ".7rem" }}>{tag.icon}</span>
-                    <span style={{ fontSize: ".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
+                      border:`1px solid ${selected ? tag.color : "var(--border)"}`,
+                      borderRadius:20, cursor:"pointer" }}>
+                    <span style={{ fontSize:".7rem" }}>{tag.icon}</span>
+                    <span style={{ fontSize:".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
                   </div>
                 );
               })}
@@ -515,9 +514,9 @@ export function TransModal({
                 <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--success)" }}>
                   +{String(roundAmt.toFixed(2)).replace(".", ",")} € → {cag?.icon} {cag?.name}
                 </div>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>Arrondi automatique activé</div>
+                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>Arrondi automatique activé</div>
               </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", fontFamily: "var(--mono)" }}>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", fontFamily:"var(--mono)" }}>
                 {String(parsedA.toFixed(2)).replace(".", ",")} → {String(rounded.toFixed(2)).replace(".", ",")}
               </div>
             </div>
@@ -544,12 +543,8 @@ export function TransModal({
               fontSize: ".7rem", color: "var(--bg)", flexShrink: 0, transition: "all .15s",
             }}>{isRecurring ? "✓" : ""}</div>
             <div>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>
-                🔄 Récurrente
-              </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-                Mémorise cette opération pour la retrouver chaque mois
-              </div>
+              <div style={{ fontSize:".72rem", fontWeight:700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>🔄 Récurrente</div>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Mémorise cette opération pour la retrouver chaque mois</div>
             </div>
           </div>
           {isRecurring && (
@@ -565,10 +560,10 @@ export function TransModal({
                 ))}
               </div>
               {frequency === "monthly" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text2)", marginBottom: 2 }}>Nombre de fois</div>
-                    <div style={{ fontSize: ".58rem", color: "var(--text3)" }}>Laisser vide = illimité</div>
+                <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 10px", background:"var(--surface2)", borderRadius:8 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:".65rem", fontWeight:700, color:"var(--text2)", marginBottom:2 }}>Nombre de fois</div>
+                    <div style={{ fontSize:".58rem", color:"var(--text3)" }}>Laisser vide = illimité</div>
                   </div>
                   <input
                     type="number" min="2" max="120" placeholder="∞"
@@ -586,19 +581,17 @@ export function TransModal({
         </div>
       )}
 
-      {/* ── Alerte doublon ── */}
+      {/* Alerte doublon */}
       {dupWarning && (
-        <div style={{ background: "rgba(200,184,96,.1)", border: "1.5px solid rgba(200,184,96,.4)", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <span style={{ fontSize: "1rem" }}>⚠️</span>
+        <div style={{ background:"rgba(200,184,96,.1)", border:"1.5px solid rgba(200,184,96,.4)", borderRadius:10, padding:"12px 14px", marginBottom:12 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8 }}>
+            <span style={{ fontSize:"1rem" }}>⚠️</span>
             <div>
-              <div style={{ fontSize: ".72rem", fontWeight: 800, color: "var(--warning)" }}>Transaction similaire détectée</div>
-              <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
-                {dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}
-              </div>
+              <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--warning)" }}>Transaction similaire détectée</div>
+              <div style={{ fontSize:".6rem", color:"var(--text2)", marginTop:2 }}>{dupWarning.catName} · {fmt(dupWarning.tx.amount)} · {dupWarning.tx.date}</div>
             </div>
           </div>
-          <div style={{ fontSize: ".65rem", color: "var(--text2)", marginBottom: 10, lineHeight: 1.5 }}>
+          <div style={{ fontSize:".65rem", color:"var(--text2)", marginBottom:10, lineHeight:1.5 }}>
             Une transaction identique existe déjà dans les 7 derniers jours. S'agit-il d'un doublon ?
           </div>
           <div className="grid-2" style={{ marginBottom: 0 }}>
