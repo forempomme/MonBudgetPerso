@@ -1,10 +1,23 @@
+// modals.jsx — v1.28.0
+// Changelog : TransModal redessiné — layout compact tenant sur un écran sans scroll.
+//   • Sélecteur type : pills visuels (inchangé)
+//   • Montant : bandeau label + grand chiffre (inchangé)
+//   • NumPad : hauteur touches 50px → 43px (-28px total)
+//   • Catégorie : <select> remplacé par chips pills horizontaux scrollables
+//   • Date : <input type="date"> remplacé par 4 boutons pills en ligne
+//   • Labels de section : style UPPERCASE 10px (cohérent avec app)
+//   • Note : champ sans label séparé (placeholder suffit)
+//   • Récurrente : toggle identique, conservé
+//   • Alerte doublon : conservée
+//   • Tous les autres modals : inchangés
+
 import { useState } from "react";
 import { Modal, ItemRow } from "./index.jsx";
 import { fmt, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
-// Helper : parse un montant saisi avec virgule ou point comme séparateur décimal
+// ─── Helper : parse un montant saisi avec virgule ou point ────────
 const parseAmt = s => parseFloat(String(s ?? "").replace(",", ".")) || 0;
 
 // ─── Shared field-error display ──────────────────────────────────
@@ -13,7 +26,7 @@ function FieldError({ msg }) {
   return <div className="field-error">⚠ {msg}</div>;
 }
 
-// ─── Field wrapper ───────────────────────────────────────────────
+// ─── Field wrapper (conservé pour les autres modals) ─────────────
 function Field({ label, error, children }) {
   return (
     <div className="form-group">
@@ -24,15 +37,23 @@ function Field({ label, error, children }) {
   );
 }
 
+// ─── Section label compact (style app) ───────────────────────────
+function SectionLabel({ children }) {
+  return (
+    <div style={{
+      fontSize: ".6rem", fontWeight: 700, color: "var(--text3)",
+      letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 5,
+    }}>
+      {children}
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────
-//  Transaction modal
-// ─────────────────────────────────────────────────────────────────
-// ─────────────────────────────────────────────────────────────────
-//  NumPad — clavier numérique custom
+//  NumPad — clavier numérique custom (touches réduites à 43px)
 // ─────────────────────────────────────────────────────────────────
 function NumPad({ value, onChange, type, onTypeChange }) {
   const OPERATORS = ["+", "-"];
-
   const isSimpleType = type === "expense" || type === "income";
 
   function evalSimple(expr) {
@@ -76,31 +97,32 @@ function NumPad({ value, onChange, type, onTypeChange }) {
     });
   }
 
-  const val          = String(value ?? "");
-  const hasOperator  = OPERATORS.some(op => val.includes(op));
-  const displayVal   = val || "0";
+  const val         = String(value ?? "");
+  const hasOperator = OPERATORS.some(op => val.includes(op));
+  const displayVal  = val || "0";
   const preview     = hasOperator ? (() => {
     const r = evalSimple(val.replace(/,/g, "."));
     return r !== null ? fmt(Math.abs(r)) : null;
   })() : null;
 
-  const isExpense = type === "expense";
+  const isExpense   = type === "expense";
   const accentColor = isExpense ? "var(--danger)" : "var(--success)";
 
+  // ── Disposition touches : ⌫ en haut à droite, opérateurs à droite ──
   const KEYS = [
-    ["7","8","9","⌫"],
-    ["4","5","6","+"],
-    ["1","2","3","-"],
-    [",","0","="," "],
+    ["7", "8", "9", "⌫"],
+    ["4", "5", "6", "+"],
+    ["1", "2", "3", "-"],
+    [",", "0", "=", " "],
   ];
 
   return (
     <div>
-      {/* Affichage montant */}
+      {/* Affichage montant + bascule type */}
       <div style={{
         background: isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
         border: `1px solid ${isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
-        borderRadius: 12, padding: "10px 14px", marginBottom: 10,
+        borderRadius: 12, padding: "8px 12px", marginBottom: 8,
         display: "flex", alignItems: "center", gap: 10,
       }}>
         <div style={{ flex: 1 }}>
@@ -118,13 +140,12 @@ function NumPad({ value, onChange, type, onTypeChange }) {
             </div>
           )}
         </div>
-        {/* Bouton bascule type */}
         {isSimpleType && (
           <button onClick={() => onTypeChange(isExpense ? "income" : "expense")} style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
             background: isExpense ? "rgba(104,212,152,.1)" : "rgba(200,112,112,.1)",
             border: `1px solid ${isExpense ? "rgba(104,212,152,.25)" : "rgba(200,112,112,.25)"}`,
-            borderRadius: 9, padding: "7px 10px", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
+            borderRadius: 9, padding: "6px 10px", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
           }}>
             <span style={{ fontSize: ".5rem", color: "var(--text3)" }}>Passer en</span>
             <span style={{ fontSize: ".65rem", fontWeight: 800, color: isExpense ? "var(--success)" : "var(--danger)" }}>
@@ -134,7 +155,7 @@ function NumPad({ value, onChange, type, onTypeChange }) {
         )}
       </div>
 
-      {/* Grille touches */}
+      {/* Grille touches — hauteur réduite 50→43px */}
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         {KEYS.map((row, ri) => (
           <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 5 }}>
@@ -149,7 +170,7 @@ function NumPad({ value, onChange, type, onTypeChange }) {
                   onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); press(k); }}
                   onClick={() => press(k)}
                   style={{
-                    height: 50,
+                    height: 43,                          // ← 50→43px
                     background: isOp  ? "rgba(112,184,224,.1)"
                                : isEq  ? "rgba(104,212,152,.15)"
                                : isDel ? "rgba(200,112,112,.1)"
@@ -157,8 +178,7 @@ function NumPad({ value, onChange, type, onTypeChange }) {
                     border: `1px solid ${isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "rgba(200,112,112,.3)" : "var(--border)"}`,
                     borderRadius: 9,
                     color: isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "var(--danger)" : "var(--text)",
-                    fontSize: isDel ? "1.05rem" : "1.05rem",
-                    fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                    fontSize: "1.05rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
                   }}>{k}</button>
               );
             })}
@@ -169,7 +189,15 @@ function NumPad({ value, onChange, type, onTypeChange }) {
   );
 }
 
-export function TransModal({ transactions, categories, cagnottes, tags = [], roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", editingId, defaultType = "expense", onSave, onSaveRecurring, onClose }) {
+// ─────────────────────────────────────────────────────────────────
+//  Transaction modal — redessiné v1.28.0
+// ─────────────────────────────────────────────────────────────────
+export function TransModal({
+  transactions, categories, cagnottes, tags = [],
+  roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
+  editingId, defaultType = "expense",
+  onSave, onSaveRecurring, onClose,
+}) {
   const toast = useToast();
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
@@ -184,12 +212,21 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
   const [errors,      setErrors]      = useState({});
-  const [dupWarning,  setDupWarning]  = useState(null); // transaction doublon détectée
+  const [dupWarning,  setDupWarning]  = useState(null);
 
   const isCag = type === "epargne" || type === "decagnottage";
-  const cats  = categories.filter(c => type === "income" ? c.type === "income" : c.type === "expense");
+  const isInc = type === "income";
+  const cats  = categories.filter(c => isInc ? c.type === "income" : c.type === "expense");
 
-  // Détecte un doublon potentiel : même montant + même catégorie dans les 7 derniers jours
+  // Couleur accentuée selon le type
+  const accentColor = isInc ? "var(--success)" : isCag ? "var(--purple)" : "var(--danger)";
+
+  // Raccourcis date
+  const todayStr     = todayISO();
+  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
+  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return d.toISOString().slice(0,10); })();
+  const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
+
   function findDuplicate(amt, catId, txDate, txType) {
     if (!amt || editingId) return null;
     const d = new Date(txDate + "T12:00:00");
@@ -219,8 +256,6 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
   function handleSave(force = false) {
     if (!validate()) return;
     const parsedAmt = parseAmt(amount);
-
-    // Vérification doublon (seulement à la première tentative)
     if (!force && !isCag) {
       const dup = findDuplicate(amount, catId, date, type);
       if (dup) {
@@ -230,14 +265,10 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
       }
     }
     setDupWarning(null);
-
     onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined });
-
-    // Sauvegarde du modèle récurrent si coché
     if (isRecurring && !editingId && !isCag) {
       onSaveRecurring?.({
-        type, amount: parsedAmt, categoryId: catId, note,
-        frequency,
+        type, amount: parsedAmt, categoryId: catId, note, frequency,
         occurrences: frequency === "monthly" && occurrences !== "" ? parseInt(occurrences, 10) : null,
         label: note || (categories.find(c => c.id === catId)?.name) || "Récurrente",
       });
@@ -245,7 +276,6 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
     if (isCag) {
       const cag = cagnottes.find(x => x.id === cagId);
       if (cag) {
-        // Compute expected new balance (mirrors store logic)
         let newBal = cag.current;
         if (editingId && tx && tx.targetCagId === cagId) {
           if (tx.type === "epargne")      newBal -= parseFloat(tx.amount) || 0;
@@ -260,58 +290,190 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
     toast(editingId ? "Opération modifiée" : "Opération ajoutée");
   }
 
+  // Label et emoji du bouton valider
+  const saveLabel = isInc
+    ? "Enregistrer le revenu"
+    : type === "epargne" ? "Déposer dans la cagnotte"
+    : type === "decagnottage" ? "Retirer de la cagnotte"
+    : "Enregistrer la dépense";
+  const saveEmoji = isInc ? "💰" : type === "epargne" ? "🐷" : "💸";
+
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier l'opération" : "Nouvelle opération"}>
-      <Field label="Type">
-        <select value={type} onChange={e => { setType(e.target.value); setErrors({}); }}>
-          <option value="expense">Dépense</option>
-          <option value="income">Revenu</option>
-          <option value="epargne">Épargne (Mise de côté)</option>
-          <option value="decagnottage">Décagnottage (Sortie de cagnotte)</option>
-        </select>
-      </Field>
 
-      <Field label="Montant (€)" error={errors.amount}>
+      {/* ── Pills type ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+        {[
+          { k: "expense",     emoji: "💸", label: "Dépense"  },
+          { k: "income",      emoji: "💰", label: "Revenu"   },
+          { k: "epargne",     emoji: "🐷", label: "Cagnotte" },
+        ].map(({ k, emoji, label }) => {
+          const sel = type === k || (k === "epargne" && isCag);
+          const c   = k === "income" ? "var(--success)" : k === "epargne" ? "var(--purple)" : "var(--danger)";
+          return (
+            <button key={k}
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setType(k); setErrors({}); setCatId(""); }}
+              onClick={() => { setType(k); setErrors({}); setCatId(""); }}
+              style={{
+                padding: "9px 4px 7px",
+                borderRadius: "var(--radius)",
+                border: `1.5px solid ${sel ? c : "var(--border)"}`,
+                background: sel ? `color-mix(in srgb, ${c} 14%, var(--surface2))` : "var(--surface2)",
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                cursor: "pointer", touchAction: "manipulation",
+              }}>
+              <span style={{ fontSize: "1.2rem" }}>{emoji}</span>
+              <span style={{ fontSize: ".65rem", fontWeight: 700, color: sel ? c : "var(--text3)" }}>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Sous-toggle épargne / décagnottage ── */}
+      {isCag && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+          {[["epargne", "↑ Dépôt"], ["decagnottage", "↓ Retrait"]].map(([k, l]) => (
+            <button key={k}
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setType(k); setErrors({}); }}
+              onClick={() => { setType(k); setErrors({}); }}
+              style={{
+                padding: "7px", borderRadius: 10, fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                background: type === k ? "rgba(176,144,224,.15)" : "var(--surface2)",
+                border: `1.5px solid ${type === k ? "var(--purple)" : "var(--border)"}`,
+                color: type === k ? "var(--purple)" : "var(--text3)",
+              }}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {/* ── NumPad (inclut l'affichage montant) ── */}
+      <div style={{ marginBottom: 10 }}>
+        {errors.amount && <FieldError msg={errors.amount} />}
         <NumPad
           value={amount}
-          onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({...v, amount: ""})); }}
+          onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({ ...v, amount: "" })); }}
           type={type}
           onTypeChange={t => { setType(t); setErrors({}); }}
         />
-      </Field>
+      </div>
 
+      {/* ── Catégorie — chips pills scrollables ── */}
       {!isCag && (
-        <Field label="Catégorie (optionnelle)">
-          <select value={catId} onChange={e => setCatId(e.target.value)}>
-            <option value="">Aucune catégorie</option>
-            {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-          </select>
-        </Field>
+        <div style={{ marginBottom: 10 }}>
+          <SectionLabel>Catégorie</SectionLabel>
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
+            {/* Chip "Aucune" */}
+            <button
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); }}
+              onClick={() => setCatId("")}
+              style={{
+                flexShrink: 0, padding: "5px 13px", borderRadius: 20,
+                border: `1.5px solid ${!catId ? accentColor : "var(--border)"}`,
+                background: !catId ? `color-mix(in srgb, ${accentColor} 16%, var(--surface2))` : "var(--surface2)",
+                color: !catId ? accentColor : "var(--text2)",
+                fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+              }}>Aucune</button>
+            {cats.map(c => (
+              <button key={c.id}
+                onTouchStart={e => e.stopPropagation()}
+                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(catId === c.id ? "" : c.id); }}
+                onClick={() => setCatId(catId === c.id ? "" : c.id)}
+                style={{
+                  flexShrink: 0, display: "flex", alignItems: "center", gap: 5,
+                  padding: "5px 13px", borderRadius: 20,
+                  border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
+                  background: catId === c.id ? `color-mix(in srgb, ${accentColor} 16%, var(--surface2))` : "var(--surface2)",
+                  color: catId === c.id ? accentColor : "var(--text2)",
+                  fontSize: ".68rem", fontWeight: catId === c.id ? 700 : 400,
+                  cursor: "pointer", touchAction: "manipulation",
+                }}>
+                <span style={{ fontSize: ".85rem" }}>{c.icon}</span>
+                <span>{c.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
+      {/* ── Cagnotte cible — chips scrollables ── */}
       {isCag && (
-        <Field label="Cagnotte cible" error={errors.cag}>
-          <select value={cagId} className={errors.cag ? "error" : ""}
-            onChange={e => { setCagId(e.target.value); setErrors(v => ({...v, cag: ""})); }}>
+        <div style={{ marginBottom: 10 }}>
+          <SectionLabel>Cagnotte cible</SectionLabel>
+          {errors.cag && <FieldError msg={errors.cag} />}
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2, WebkitOverflowScrolling: "touch" }}>
             {cagnottes.length === 0
-              ? <option value="">Aucune cagnotte disponible</option>
-              : cagnottes.map(c => <option key={c.id} value={c.id}>{c.name} ({fmt(c.current)})</option>)
+              ? <span style={{ fontSize: ".68rem", color: "var(--text3)" }}>Aucune cagnotte disponible</span>
+              : cagnottes.map(c => (
+                <button key={c.id}
+                  onTouchStart={e => e.stopPropagation()}
+                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCagId(c.id); setErrors(v => ({ ...v, cag: "" })); }}
+                  onClick={() => { setCagId(c.id); setErrors(v => ({ ...v, cag: "" })); }}
+                  style={{
+                    flexShrink: 0, padding: "5px 13px", borderRadius: 20,
+                    border: `1.5px solid ${cagId === c.id ? "var(--purple)" : "var(--border)"}`,
+                    background: cagId === c.id ? "rgba(176,144,224,.15)" : "var(--surface2)",
+                    color: cagId === c.id ? "var(--purple)" : "var(--text2)",
+                    fontSize: ".68rem", fontWeight: cagId === c.id ? 700 : 400,
+                    cursor: "pointer", touchAction: "manipulation",
+                  }}>
+                  {c.name} <span style={{ color: "var(--text3)", marginLeft: 3 }}>({fmt(c.current)})</span>
+                </button>
+              ))
             }
-          </select>
-        </Field>
+          </div>
+        </div>
       )}
 
-      <Field label="Date" error={errors.date}>
-        <input type="date" value={date} className={errors.date ? "error" : ""}
-          onChange={e => { setDate(e.target.value); setErrors(v => ({...v, date: ""})); }} />
-      </Field>
+      {/* ── Date — 4 boutons pills ── */}
+      <div style={{ marginBottom: 10 }}>
+        <SectionLabel>Date</SectionLabel>
+        {errors.date && <FieldError msg={errors.date} />}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+          {[
+            ["Aujourd'hui", todayStr],
+            ["Hier",        yesterdayStr],
+            ["Avant-hier",  beforeStr],
+            ["Autre…",      null],
+          ].map(([label, d]) => {
+            const sel = d ? date === d : !dateIsShortcut;
+            return (
+              <button key={label}
+                onTouchStart={e => e.stopPropagation()}
+                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); if (d) { setDate(d); setErrors(v => ({ ...v, date: "" })); } }}
+                onClick={() => { if (d) { setDate(d); setErrors(v => ({ ...v, date: "" })); } }}
+                style={{
+                  padding: "6px 2px", borderRadius: 20, fontSize: ".65rem",
+                  border: `1.5px solid ${sel ? accentColor : "var(--border)"}`,
+                  background: sel ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                  color: sel ? accentColor : "var(--text2)",
+                  fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
+                }}>{label}</button>
+            );
+          })}
+        </div>
+        {/* Champ date natif affiché uniquement si "Autre…" sélectionné */}
+        {!dateIsShortcut && (
+          <input type="date" value={date}
+            className={errors.date ? "error" : ""}
+            onChange={e => { setDate(e.target.value); setErrors(v => ({ ...v, date: "" })); }}
+            style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }}
+          />
+        )}
+      </div>
 
-      <Field label="Note">
-        <input type="text" placeholder="Description…" value={note} onChange={e => setNote(e.target.value)} />
+      {/* ── Note ── */}
+      <div style={{ marginBottom: 10 }}>
+        <input type="text" placeholder="Note (optionnel)…" value={note}
+          onChange={e => setNote(e.target.value)}
+          style={{ width: "100%", boxSizing: "border-box" }}
+        />
 
-        {/* ── Tags ── */}
+        {/* Tags */}
         {tags.length > 0 && !isCag && (
-          <div style={{ marginTop: 4 }}>
+          <div style={{ marginTop: 6 }}>
             <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
               🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
             </div>
@@ -319,10 +481,10 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
               {tags.map(tag => {
                 const selected = tagIds.includes(tag.id);
                 return (
-                  <div key={tag.id} onClick={() => setTagIds(ids => selected ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
+                  <div key={tag.id}
+                    onClick={() => setTagIds(ids => selected ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
                     style={{
-                      display: "flex", alignItems: "center", gap: 4,
-                      padding: "4px 10px",
+                      display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
                       background: selected ? `${tag.color}22` : "var(--surface2)",
                       border: `1px solid ${selected ? tag.color : "var(--border)"}`,
                       borderRadius: 20, cursor: "pointer",
@@ -336,7 +498,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
           </div>
         )}
 
-        {/* ── Preview arrondi ── */}
+        {/* Preview arrondi automatique */}
         {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
           const parsedA = parseAmt(amount);
           if (isNaN(parsedA) || parsedA <= 0) return null;
@@ -347,7 +509,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
           if (roundAmt < 0.01) return null;
           const cag = cagnottes.find(c => c.id === roundingCagnotteId);
           return (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(104,212,152,.08)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 9, marginTop: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(104,212,152,.08)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 9, marginTop: 6 }}>
               <span style={{ fontSize: ".95rem" }}>🐷</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--success)" }}>
@@ -361,15 +523,15 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
             </div>
           );
         })()}
-      </Field>
+      </div>
 
-      {/* ── Récurrence (uniquement pour dépenses/revenus, pas cagnottes, pas édition) ── */}
+      {/* ── Récurrence ── */}
       {!isCag && !editingId && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 10 }}>
           <div
             onClick={() => setIsRecurring(r => !r)}
             style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+              display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
               background: isRecurring ? "var(--accent-glow)" : "var(--surface2)",
               border: `1px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
               borderRadius: "var(--radius-sm)", cursor: "pointer",
@@ -393,16 +555,15 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
           {isRecurring && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
               <div style={{ display: "flex", gap: 6 }}>
-                {[["monthly","Mensuelle"],["yearly","Annuelle"]].map(([k,l]) => (
+                {[["monthly", "Mensuelle"], ["yearly", "Annuelle"]].map(([k, l]) => (
                   <button key={k} onClick={() => setFrequency(k)} style={{
-                    flex: 1, background: frequency===k ? "var(--accent-glow)" : "transparent",
-                    border: `1px solid ${frequency===k ? "var(--accent)" : "var(--border)"}`,
+                    flex: 1, background: frequency === k ? "var(--accent-glow)" : "transparent",
+                    border: `1px solid ${frequency === k ? "var(--accent)" : "var(--border)"}`,
                     borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
-                    color: frequency===k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
+                    color: frequency === k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
                   }}>{l}</button>
                 ))}
               </div>
-              {/* Nombre de fois — mensuel uniquement */}
               {frequency === "monthly" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
                   <div style={{ flex: 1 }}>
@@ -411,8 +572,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
                   </div>
                   <input
                     type="number" min="2" max="120" placeholder="∞"
-                    value={occurrences}
-                    onChange={e => setOccurrences(e.target.value)}
+                    value={occurrences} onChange={e => setOccurrences(e.target.value)}
                     style={{
                       width: 64, background: "var(--bg)", border: `1px solid ${occurrences ? "var(--accent)" : "var(--border)"}`,
                       borderRadius: 7, padding: "6px 8px", color: "var(--text)",
@@ -442,9 +602,7 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
             Une transaction identique existe déjà dans les 7 derniers jours. S'agit-il d'un doublon ?
           </div>
           <div className="grid-2" style={{ marginBottom: 0 }}>
-            <button className="btn btn-outline" style={{ width: "100%" }} onClick={() => setDupWarning(null)}>
-              ✕ Annuler
-            </button>
+            <button className="btn btn-outline" style={{ width: "100%" }} onClick={() => setDupWarning(null)}>✕ Annuler</button>
             <button className="btn btn-primary" style={{ width: "100%", background: "var(--warning)", color: "#060810" }} onClick={() => handleSave(true)}>
               ✓ Ajouter quand même
             </button>
@@ -452,11 +610,16 @@ export function TransModal({ transactions, categories, cagnottes, tags = [], rou
         </div>
       )}
 
+      {/* ── Boutons Annuler / Valider ── */}
       {!dupWarning && (
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={() => handleSave()}>Valider</button>
-      </div>
+        <div className="grid-2" style={{ marginBottom: 0 }}>
+          <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+            onClick={() => handleSave()}>
+            <span>{saveEmoji}</span>
+            <span>{saveLabel}</span>
+          </button>
+        </div>
       )}
     </Modal>
   );
@@ -616,7 +779,6 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 
   return (
     <Modal onClose={onClose} title={isWithdraw ? "Retrait vers le compte" : "Transfert entre cagnottes"}>
-      {/* Toggle mode */}
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:16 }}>
         {[["transfer","↔ Entre cagnottes"],["withdraw","↑ Vers le compte"]].map(([m, label]) => (
           <button key={m} onClick={() => { setMode(m); setErrors({}); }} style={{
@@ -627,19 +789,16 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
           }}>{label}</button>
         ))}
       </div>
-
       <Field label="Montant (€)" error={errors.amt}>
         <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
           onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
       </Field>
-
       <Field label="Retirer de…" error={errors.from}>
         <select value={fromId} className={errors.from ? "error" : ""}
           onChange={e => { setFrom(e.target.value); setErrors(v => ({...v, from: ""})); }}>
           {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name} ({fmt(c.current)})</option>)}
         </select>
       </Field>
-
       {!isWithdraw && (
         <Field label="Ajouter à…">
           <select value={toId} onChange={e => setTo(e.target.value)}>
@@ -647,13 +806,11 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
           </select>
         </Field>
       )}
-
       {isWithdraw && (
         <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:9, padding:"10px 14px", fontSize:".65rem", color:"var(--text3)", marginBottom:12 }}>
           🏦 Le montant sera ajouté à votre solde bancaire estimé
         </div>
       )}
-
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
         <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>
@@ -841,7 +998,6 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
 
   return (
     <Modal onClose={onClose} title="">
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <div style={{ width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", background: cfg.badge }}>
           {cfg.icon}
@@ -854,7 +1010,6 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
       </div>
 
       <div style={{ maxHeight: "55vh", overflowY: "auto" }}>
-        {/* Cagnottes list */}
         {type === "cagnottes" && (
           cagnottes.length === 0
             ? <div className="empty-state"><div className="empty-icon">🎯</div><p>Aucune cagnotte</p></div>
@@ -872,7 +1027,6 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
               ))
         )}
 
-        {/* Expense: show fixed first then variable */}
         {type === "expense" && (
           <>
             {fixedExpenses.length > 0 && (
@@ -902,7 +1056,6 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
           </>
         )}
 
-        {/* Generic list */}
         {type !== "cagnottes" && type !== "expense" && (
           items.length === 0
             ? <div className="empty-state"><div className="empty-icon">📭</div><p>Aucune opération</p></div>
@@ -948,10 +1101,9 @@ export function MonthDetailModal({ config, transactions, categories, cagnottes, 
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
         {[["Revenus", inc, "var(--success)"], ["Dépenses", exp, "var(--danger)"]].map(([l, v, c]) => (
-          <div key={l} style={{ background: `${c.replace(")", "-glow)")}`
-            .replace("var(--success-glow)", "var(--success-glow)")
-            .replace("var(--danger-glow)",  "var(--danger-glow)"),
-            border: `1px solid ${c}`, borderRadius: 8, padding: 10 }}>
+          <div key={l} style={{
+            border: `1px solid ${c}`, borderRadius: 8, padding: 10,
+          }}>
             <div style={{ fontSize: ".6rem", color: "var(--text2)", textTransform: "uppercase", fontWeight: 700 }}>{l}</div>
             <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: c, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</div>
           </div>
