@@ -1,8 +1,11 @@
-// modals.jsx — v1.29.1
-// Changelog v1.29.1 : Fix grille catégorie.
-//   • Grille rendue en position:fixed centrée (plus de scroll nécessaire)
-//   • Fond overlay semi-transparent, tap extérieur ferme la grille
-//   • Ghost tap corrigé : onClick désactivé sur mobile (touch), seul onTouchEnd agit
+// modals.jsx — v1.29.2
+// Changelog v1.29.2 : Fix grille catégorie — scroll + sélection fantôme.
+//   • Overlay onTouchMove + e.preventDefault() → bloque le scroll du fond (page + modal)
+//   • Drag détecté sur chaque cellule via catTouchRef (startY/startX/moved)
+//     Si le pouce a bougé de >6px, onTouchEnd n'applique pas la sélection
+//   • La grille elle-même stoppe la propagation de tous les touch events
+//     pour éviter que l'overlay les reçoive et se ferme intempestivement
+//   • touchAction: "pan-y" sur les cellules (scroll interne si grille longue)
 //
 // Changelog v1.29.0 : Catégorie — chips scrollables → grille dépliable 4 colonnes.
 //   • Tap sur le champ → grille s'ouvre sous le trigger (border-radius adapté)
@@ -21,7 +24,7 @@
 //   • Alerte doublon : conservée
 //   • Tous les autres modals : inchangés
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
 import { fmt, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
 import { useToast } from "../context.js";
@@ -224,6 +227,8 @@ export function TransModal({
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
   const [catOpen,     setCatOpen]     = useState(false);
+  // Ref pour détecter un drag (scroll) vs un tap sur la grille catégorie
+  const catTouchRef = useRef({ startY: 0, startX: 0, moved: false });
 
   const isCag = type === "epargne" || type === "decagnottage";
   const isInc = type === "income";
@@ -370,16 +375,16 @@ export function TransModal({
         />
       </div>
 
-      {/* ── Catégorie — grille overlay fixed (évite le scroll + ghost tap) ── */}
+      {/* ── Catégorie — overlay fixed, scroll bloqué, drag détecté ── */}
       {!isCag && (
         <div style={{ marginBottom: 10 }}>
           <SectionLabel>Catégorie</SectionLabel>
 
-          {/* Trigger — onTouchEnd only, pas de onClick pour éviter le double-fire */}
+          {/* Trigger */}
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(o => !o); }}
-            onClick={e => { /* désactivé sur mobile, géré par onTouchEnd */ if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
+            onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
               background: "var(--surface2)",
@@ -403,28 +408,37 @@ export function TransModal({
             }}>▾</span>
           </button>
 
-          {/* Overlay fixed — centré, ne scrolle pas avec le modal */}
           {catOpen && (
             <>
-              {/* Fond semi-transparent pour fermer au tap extérieur */}
+              {/* Overlay — bloque le scroll du fond via onTouchMove passive:false */}
               <div
-                style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
-                onTouchStart={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
+                style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
+                onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
+                onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
+                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
                 onClick={() => setCatOpen(false)}
               />
+
               {/* Grille centrée */}
-              <div style={{
-                position: "fixed",
-                top: "50%", left: "50%",
-                transform: "translate(-50%, -50%)",
-                zIndex: 201,
-                width: "min(92vw, 380px)",
-                background: "var(--surface)",
-                border: "1.5px solid var(--border)",
-                borderRadius: 16,
-                padding: 12,
-                boxShadow: "0 24px 60px rgba(0,0,0,.7)",
-              }}>
+              <div
+                style={{
+                  position: "fixed",
+                  top: "50%", left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 201,
+                  width: "min(92vw, 380px)",
+                  background: "var(--surface)",
+                  border: "1.5px solid var(--border)",
+                  borderRadius: 16,
+                  padding: 12,
+                  boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+                }}
+                // Empêche les events de buller vers l'overlay
+                onTouchStart={e => e.stopPropagation()}
+                onTouchMove={e => e.stopPropagation()}
+                onTouchEnd={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
                 {/* En-tête */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
@@ -433,7 +447,7 @@ export function TransModal({
                   <button
                     onTouchStart={e => e.stopPropagation()}
                     onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
-                    onClick={e => { if (!('ontouchstart' in window)) setCatOpen(false); }}
+                    onClick={() => { if (!('ontouchstart' in window)) setCatOpen(false); }}
                     style={{
                       width: 24, height: 24, borderRadius: 6,
                       background: "var(--surface2)", border: "1px solid var(--border)",
@@ -443,32 +457,55 @@ export function TransModal({
                     }}>✕</button>
                 </div>
 
-                {/* Grille 4 colonnes */}
+                {/* Grille 4 colonnes — drag détecté pour éviter sélection au scroll */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-                  {/* Aucune — pleine largeur */}
+
+                  {/* Aucune */}
                   <button
-                    onTouchStart={e => e.stopPropagation()}
-                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(""); setCatOpen(false); }}
-                    onClick={e => { if (!('ontouchstart' in window)) { setCatId(""); setCatOpen(false); } }}
+                    onTouchStart={e => {
+                      e.stopPropagation();
+                      catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
+                    }}
+                    onTouchMove={e => {
+                      const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
+                      const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
+                      if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
+                    }}
+                    onTouchEnd={e => {
+                      e.stopPropagation(); e.preventDefault();
+                      if (!catTouchRef.current.moved) { setCatId(""); setCatOpen(false); }
+                    }}
+                    onClick={() => { if (!('ontouchstart' in window)) { setCatId(""); setCatOpen(false); } }}
                     style={{
                       gridColumn: "1 / -1", padding: "7px 10px", borderRadius: 9,
                       border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
                       background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
                       color: !catId ? accentColor : "var(--text3)",
-                      fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                      fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
                     }}>⊘ Aucune</button>
 
                   {cats.map(c => (
                     <button key={c.id}
-                      onTouchStart={e => e.stopPropagation()}
-                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatId(c.id); setCatOpen(false); }}
-                      onClick={e => { if (!('ontouchstart' in window)) { setCatId(c.id); setCatOpen(false); } }}
+                      onTouchStart={e => {
+                        e.stopPropagation();
+                        catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
+                      }}
+                      onTouchMove={e => {
+                        const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
+                        const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
+                        if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
+                      }}
+                      onTouchEnd={e => {
+                        e.stopPropagation(); e.preventDefault();
+                        if (!catTouchRef.current.moved) { setCatId(c.id); setCatOpen(false); }
+                      }}
+                      onClick={() => { if (!('ontouchstart' in window)) { setCatId(c.id); setCatOpen(false); } }}
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
                         padding: "8px 4px", gap: 4, borderRadius: 10,
                         border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
                         background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                        cursor: "pointer", touchAction: "manipulation",
+                        cursor: "pointer", touchAction: "pan-y",
                       }}>
                       <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
                       <span style={{
