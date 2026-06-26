@@ -707,7 +707,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       <div className="grid-2">
         {/* Cagnotte — même style que les cartes Cagnotte mois/année en cours */}
         <div className="stat-mini" onClick={() => onShowDetail("cagnottes", "all")}
-          style={{ background:"linear-gradient(135deg,rgba(160,120,224,.13),rgba(160,120,224,.03))", border:"1px solid rgba(160,120,224,.28)", borderLeft:"3px solid var(--purple)", position:"relative", overflow:"hidden" }}>
+          style={{ background:"linear-gradient(135deg,rgba(160,120,224,.13),rgba(160,120,224,.03))", border:"1px solid rgba(160,120,224,.28)", borderLeft:"3px solid var(--purple)", position:"relative", overflow:"hidden", minHeight:80 }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(176,144,224,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(176,144,224,.75)" }}>🐷 Cagnottes</div>
           <div className="stat-val" style={{ color: "var(--purple)" }}>{fmt(cagTotal)}</div>
@@ -715,7 +715,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
         {/* Fixes — orange chaud #e8944a, non utilisé ailleurs */}
         <div className="stat-mini"
-          style={{ background:"linear-gradient(135deg,rgba(232,148,74,.12),rgba(232,148,74,.03))", border:"1px solid rgba(232,148,74,.28)", borderLeft:"3px solid #e8944a", position:"relative", overflow:"hidden" }}>
+          style={{ background:"linear-gradient(135deg,rgba(232,148,74,.12),rgba(232,148,74,.03))", border:"1px solid rgba(232,148,74,.28)", borderLeft:"3px solid #e8944a", position:"relative", overflow:"hidden", minHeight:80 }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(232,148,74,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(232,148,74,.75)" }}>📌 Fixes / mois</div>
           <div className="stat-val" style={{ color: "#e8944a" }}>{fmt(tf)}</div>
@@ -878,9 +878,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
       <Sec id="mois">
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
-      <div className="grid-2" style={{ alignItems:"stretch" }}>
+      <div className="grid-2">
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden", minHeight:80 }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(104,200,122,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(104,200,122,.75)" }}>💰 Revenus</div>
           <div className="stat-val type-income">{fmt(curMonth.inc)}</div>
@@ -888,7 +888,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden", minHeight:80 }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(224,104,112,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(224,104,112,.75)" }}>💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(curMonth.exp)}</div>
@@ -913,7 +913,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
 
         <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(112,184,224,.6),transparent)" }}/>
           <div className="stat-label">📊 Dép. variables</div>
           <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(curMonth.expVar)}</div>
