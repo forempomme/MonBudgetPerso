@@ -158,21 +158,19 @@ body {
 .stat-mini:hover  { border-color: var(--border); }
 .stat-mini::before { content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity .3s; }
 
-.dash-cagnotte::before  { background: var(--khaki-glow);          opacity: 1; border-left: 3px solid var(--khaki);   }
-.dash-fixe::before      { background: var(--accent2-glow);        opacity: 1; border-left: 3px solid var(--accent2); }
-.dash-revenu::before    { background: var(--success-glow);        opacity: 1; border-left: 3px solid var(--success); }
-.dash-depense::before   { background: var(--danger-glow);         opacity: 1; border-left: 3px solid var(--danger);  }
-.dash-dep-var::before   { background: var(--warning-glow);        opacity: 1; border-left: 3px solid var(--warning); }
-.dash-decag::before     { background: var(--sapin-glow);          opacity: 1; border-left: 3px solid var(--sapin);   }
-/* v1.32.0 — nouvelles couleurs cartes cagnottes et fixes */
-.dash-cagnotte2::before { background: rgba(160,120,224,.12);      opacity: 1; border-left: 3px solid var(--purple); }
-.dash-fixe2::before     { background: rgba(232,148,74,.11);       opacity: 1; border-left: 3px solid #e8944a;       }
+.dash-cagnotte::before  { background: var(--khaki-glow);      opacity: 1; border-left: 3px solid var(--khaki);   }
+.dash-fixe::before      { background: var(--accent2-glow);    opacity: 1; border-left: 3px solid var(--accent2); }
+.dash-revenu::before    { background: var(--success-glow);    opacity: 1; border-left: 3px solid var(--success); }
+.dash-depense::before   { background: var(--danger-glow);     opacity: 1; border-left: 3px solid var(--danger);  }
+.dash-dep-var::before   { background: var(--warning-glow);    opacity: 1; border-left: 3px solid var(--warning); }
+.dash-decag::before     { background: var(--sapin-glow);      opacity: 1; border-left: 3px solid var(--sapin);   }
+/* v1.32.0 */
+.dash-cagnotte2::before { background: rgba(160,120,224,.12);  opacity: 1; border-left: 3px solid var(--purple); }
+.dash-fixe2::before     { background: rgba(232,148,74,.11);   opacity: 1; border-left: 3px solid #e8944a;       }
 .dash-cagnotte2 .stat-label { color: rgba(176,144,224,.8); }
 .dash-fixe2     .stat-label { color: rgba(232,148,74,.8);  }
 .dash-cagnotte2 .stat-val   { color: var(--purple); }
 .dash-fixe2     .stat-val   { color: #e8944a; }
-/* Espaceur invisible — égalise la hauteur avec les cartes qui ont un Delta */
-.stat-spacer { height: 1.15rem; }
 
 .stat-label { font-size: .58rem; color: var(--text2); text-transform: uppercase; letter-spacing: .1em; font-weight: 600; position: relative; line-height: 1.3; }
 .stat-val   { font-family: var(--mono); font-size: .95rem; font-weight: 700; margin-top: 6px; position: relative; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
