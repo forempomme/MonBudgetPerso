@@ -758,7 +758,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               {/* Header */}
               <div onClick={() => setOpenUpcoming(o => !o)} style={{ cursor:"pointer", userSelect:"none", position:"relative", zIndex:2 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px", borderBottom: openUpcoming ? `1px solid ${Cbord}` : "none" }}>
-                  <span style={{ fontSize:".85rem" }}>🔮</span>
+                  <span style={{ fontSize:".85rem" }}>⏳</span>
                   <span style={{ fontSize:".65rem", fontWeight:800, color: C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
                   {!openUpcoming && (
                     <div style={{ display:"flex", alignItems:"center", gap:5 }}>
@@ -878,9 +878,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
       <Sec id="mois">
       <SectionTitle>🗓️ Mois en cours</SectionTitle>
-      <div className="grid-2">
+      <div className="grid-2" style={{ alignItems:"stretch" }}>
         <div className="stat-mini dash-revenu" onClick={() => onShowDetail("income", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden" }}>
+          style={{ background:"linear-gradient(135deg,rgba(104,200,122,.1),rgba(104,200,122,.03))", border:"1px solid rgba(104,200,122,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(104,200,122,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(104,200,122,.75)" }}>💰 Revenus</div>
           <div className="stat-val type-income">{fmt(curMonth.inc)}</div>
@@ -888,7 +888,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-depense" onClick={() => onShowDetail("expense", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden" }}>
+          style={{ background:"linear-gradient(135deg,rgba(224,104,112,.1),rgba(224,104,112,.03))", border:"1px solid rgba(224,104,112,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(224,104,112,.7),transparent)" }}/>
           <div className="stat-label" style={{ color:"rgba(224,104,112,.75)" }}>💸 Dépenses</div>
           <div className="stat-val type-expense">{fmt(curMonth.exp)}</div>
@@ -913,7 +913,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
 
         <div className="stat-mini dash-dep-var" onClick={() => onShowDetail("expense_var", "month")}
-          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden" }}>
+          style={{ background:"linear-gradient(135deg,rgba(112,184,224,.08),rgba(112,184,224,.02))", border:"1px solid rgba(112,184,224,.2)", position:"relative", overflow:"hidden", display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
           <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(112,184,224,.6),transparent)" }}/>
           <div className="stat-label">📊 Dép. variables</div>
           <div className="stat-val" style={{ color: "var(--accent)" }}>{fmt(curMonth.expVar)}</div>
