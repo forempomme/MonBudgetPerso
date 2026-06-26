@@ -705,18 +705,14 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       {/* ── 🐷 Cagnottes + 📌 Fixes ── */}
       <Sec id="cagnottes_fixes">
       <div className="grid-2">
-        <div className="stat-mini" onClick={() => onShowDetail("cagnottes", "all")}
-          style={{ background:"linear-gradient(135deg,rgba(160,120,224,.13),rgba(160,120,224,.03))", border:"1px solid rgba(160,120,224,.28)", borderLeft:"3px solid var(--purple)", position:"relative", overflow:"hidden", minHeight:82 }}>
-          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(176,144,224,.7),transparent)" }}/>
-          <div className="stat-label" style={{ color:"rgba(176,144,224,.75)" }}>🐷 Cagnottes</div>
-          <div className="stat-val" style={{ color: "var(--purple)" }}>{fmt(cagTotal)}</div>
+        <div className="stat-mini dash-cagnotte2" onClick={() => onShowDetail("cagnottes", "all")}>
+          <div className="stat-label">🐷 Cagnottes</div>
+          <div className="stat-val">{fmt(cagTotal)}</div>
           <span className="stat-arrow">›</span>
         </div>
-        <div className="stat-mini"
-          style={{ background:"linear-gradient(135deg,rgba(232,148,74,.12),rgba(232,148,74,.03))", border:"1px solid rgba(232,148,74,.28)", borderLeft:"3px solid #e8944a", position:"relative", overflow:"hidden", minHeight:82 }}>
-          <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(232,148,74,.7),transparent)" }}/>
-          <div className="stat-label" style={{ color:"rgba(232,148,74,.75)" }}>📌 Fixes / mois</div>
-          <div className="stat-val" style={{ color: "#e8944a" }}>{fmt(tf)}</div>
+        <div className="stat-mini dash-fixe2">
+          <div className="stat-label">📌 Fixes / mois</div>
+          <div className="stat-val">{fmt(tf)}</div>
         </div>
       </div>
       </Sec>
