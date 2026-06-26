@@ -323,7 +323,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   );
 }
 
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode, onDeleteScheduled }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode, onDeleteScheduled, onConfirmRecurring }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -495,6 +495,20 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       .filter(s => !s.confirmed && s.date > (nextM + "-99"))
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [data.scheduledTransactions]);
+
+  // Récurrentes non confirmées ce mois
+  const upcomingRecurring = useMemo(() => {
+    const recurringTemplates = data.recurringTemplates || [];
+    if (!recurringTemplates.length) return [];
+    return recurringTemplates.filter(tpl => {
+      const confirmed = (data.transactions || []).filter(t => t.templateId === tpl.id);
+      if (tpl.occurrences != null && confirmed.length >= tpl.occurrences) return false;
+      if (tpl.frequency === "yearly") {
+        return !(data.transactions || []).some(t => t.templateId === tpl.id && t.date.startsWith(curY));
+      }
+      return !(data.transactions || []).some(t => t.templateId === tpl.id && t.date.startsWith(curM));
+    });
+  }, [data.recurringTemplates, data.transactions, curM, curY]);
 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [tabUpcoming,   setTabUpcoming]   = useState("both");
@@ -703,45 +717,56 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       </div>
       </Sec>
 
-      {/* ── À venir : fixes non pointés + programmés ── */}
-      {(unpointedFixes.length > 0 || upcomingScheduled.length > 0) && (() => {
-        const fixItems      = unpointedFixes.map(f => ({ ...f, _type:"fix" }));
-        const schedItems    = upcomingScheduled.map(s => ({ ...s, _type:"scheduled" }));
-        const allItems      = [...fixItems, ...schedItems];
-        const visibleItems  = tabUpcoming === "fixes"     ? fixItems
-                            : tabUpcoming === "scheduled" ? schedItems
-                            : allItems;
+      {/* ── À venir : récurrentes + fixes non pointés + programmés ── */}
+      {(unpointedFixes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
+        const C     = "#a0c878";
+        const Cbg   = "rgba(160,200,120,.10)";
+        const Cbord = "rgba(160,200,120,.22)";
+
+        const fixItems   = unpointedFixes.map(f  => ({ ...f,  _type: "fix"       }));
+        const schedItems = upcomingScheduled.map(s=> ({ ...s,  _type: "scheduled" }));
+        const recurItems = upcomingRecurring.map(r => ({ ...r,  _type: "recurring" }));
+        const allItems   = [...recurItems, ...fixItems, ...schedItems];
+
+        const visibleItems = tabUpcoming === "fixes"     ? fixItems
+                           : tabUpcoming === "scheduled" ? schedItems
+                           : tabUpcoming === "recurring" ? recurItems
+                           : allItems;
+
         const total = allItems.reduce((s, i) => s + (parseFloat(i.amount)||0), 0);
 
         return (
-          <div className="card" style={{ padding:0, overflow:"hidden" }}>
-            {/* Header cliquable avec chips résumé */}
+          <div className="card" style={{ padding:0, overflow:"hidden", border:`1px solid ${Cbord}`, background:`linear-gradient(135deg,${Cbg},rgba(160,200,120,.03))` }}>
+            {/* Header */}
             <div onClick={() => setOpenUpcoming(o => !o)} style={{ cursor:"pointer", userSelect:"none" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 14px", borderBottom: openUpcoming ? "1px solid var(--border-soft)" : "none" }}>
-                <span style={{ fontSize:".65rem" }}>🔮</span>
-                <span style={{ fontSize:".58rem", fontWeight:800, color:"var(--text2)", textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
+              <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px", borderBottom: openUpcoming ? `1px solid ${Cbord}` : "none" }}>
+                <span style={{ fontSize:".85rem" }}>🔮</span>
+                <span style={{ fontSize:".65rem", fontWeight:800, color: C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
                 {!openUpcoming && (
                   <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                    {recurItems.length > 0 && (
+                      <span style={{ fontSize:".55rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(160,200,120,.15)", color: C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>
+                    )}
                     {fixItems.length > 0 && (
-                      <span style={{ fontSize:".5rem", fontWeight:700, padding:"2px 7px", borderRadius:20, background:"rgba(112,184,224,.12)", color:"var(--accent)", border:"1px solid rgba(112,184,224,.25)" }}>↻ {fixItems.length}</span>
+                      <span style={{ fontSize:".55rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(112,184,224,.12)", color:"var(--accent)", border:"1px solid rgba(112,184,224,.25)" }}>↻ {fixItems.length}</span>
                     )}
                     {schedItems.length > 0 && (
-                      <span style={{ fontSize:".5rem", fontWeight:700, padding:"2px 7px", borderRadius:20, background:"rgba(200,184,96,.12)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.25)" }}>📅 {schedItems.length}</span>
+                      <span style={{ fontSize:".55rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(200,184,96,.12)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.25)" }}>📅 {schedItems.length}</span>
                     )}
-                    <span style={{ fontFamily:"var(--mono)", fontSize:".58rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+                    <span style={{ fontFamily:"var(--mono)", fontSize:".62rem", fontWeight:800, color: C }}>−{fmt(total)}</span>
                   </div>
                 )}
-                {openUpcoming && <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>}
-                <span style={{ color:"var(--text3)", fontSize:".7rem", transform:openUpcoming?"rotate(90deg)":"none", transition:"transform .2s", marginLeft:2 }}>›</span>
+                {openUpcoming && <span style={{ fontFamily:"var(--mono)", fontSize:".65rem", fontWeight:800, color: C }}>−{fmt(total)}</span>}
+                <span style={{ color: C, fontSize:".8rem", transform:openUpcoming?"rotate(90deg)":"none", transition:"transform .2s", marginLeft:2 }}>›</span>
               </div>
               {openUpcoming && (
-                <div style={{ display:"flex", padding:"0 10px", borderBottom:"1px solid var(--border-soft)" }}>
-                  {[["both","Tout"],["fixes","Récurrents"],["scheduled","Programmés"]].map(([k,l]) => (
+                <div style={{ display:"flex", padding:"0 10px", borderBottom:`1px solid ${Cbord}` }}>
+                  {[["both","Tout"],["recurring","Récurrents"],["fixes","Fixes"],["scheduled","Programmés"]].map(([k,l]) => (
                     <button key={k} onClick={e => { e.stopPropagation(); setTabUpcoming(k); }} style={{
-                      padding:"4px 10px 5px", fontSize:".52rem", fontWeight:700,
+                      padding:"5px 10px 6px", fontSize:".55rem", fontWeight:700,
                       background:"none", border:"none", borderRadius:0, cursor:"pointer",
-                      color: tabUpcoming===k ? "var(--accent)" : "var(--text3)",
-                      borderBottom: tabUpcoming===k ? "2px solid var(--accent)" : "2px solid transparent",
+                      color: tabUpcoming===k ? C : "var(--text3)",
+                      borderBottom: tabUpcoming===k ? `2px solid ${C}` : "2px solid transparent",
                       transition:"all .15s",
                     }}>{l}</button>
                   ))}
@@ -749,43 +774,68 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               )}
             </div>
 
-            {/* Lignes — uniquement si ouvert */}
+            {/* Lignes */}
             {openUpcoming && visibleItems.map((item, i) => {
               const isFix  = item._type === "fix";
+              const isRec  = item._type === "recurring";
+              const isSch  = item._type === "scheduled";
               const cat    = data.categories?.find(c => c.id === item.categoryId);
-              const icon   = isFix ? (cat?.icon ?? "📌") : (data.categories?.find(c => c.id === item.categoryId)?.icon ?? "📅");
-              const label  = isFix ? item.name : (item.note || cat?.name || "Dépense programmée");
-              const sub    = isFix ? "Ce mois · non pointé" : new Date(item.date).toLocaleDateString("fr-FR", { day:"numeric", month:"long" });
-              const badge  = isFix ? null : daysUntil(item.date);
-              const isConf = !isFix && deleteConfirm === item.id;
+              const icon   = isFix ? (cat?.icon ?? "📌")
+                           : isRec ? (cat?.icon ?? "🔄")
+                           : (cat?.icon ?? "📅");
+              const label  = isFix ? item.name
+                           : isRec ? (item.label || cat?.name || "Récurrente")
+                           : (item.note || cat?.name || "Dépense programmée");
+              const sub    = isFix ? "Ce mois · non pointé"
+                           : isRec ? `Ce mois · ${item.frequency === "yearly" ? "annuelle" : "mensuelle"}`
+                           : new Date(item.date).toLocaleDateString("fr-FR", { day:"numeric", month:"long" });
+              const badge  = isSch ? daysUntil(item.date) : null;
+              const isConf = isSch && deleteConfirm === item.id;
+
+              const iconBg   = isRec ? "rgba(160,200,120,.12)" : isFix ? "rgba(112,184,224,.10)" : "rgba(200,184,96,.10)";
+              const iconBord = isRec ? Cbord : isFix ? "rgba(112,184,224,.25)" : "rgba(200,184,96,.25)";
+              const dotColor = isRec ? C : isFix ? "var(--accent)" : "var(--warning)";
+              const dotLabel = isRec ? "🔄" : isFix ? "↻" : "·";
 
               return (
-                <div key={item.id} style={{ borderBottom: i < visibleItems.length-1 ? "1px solid var(--border-soft)" : "none" }}>
+                <div key={(item.id || item._type) + i} style={{ borderBottom: i < visibleItems.length-1 ? `1px solid ${Cbord}` : "none" }}>
                   {isConf ? (
-                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px", background:"rgba(224,104,112,.06)" }}>
-                      <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Supprimer "{item.note || "cette programmée"}" ?</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"11px 14px", background:"rgba(224,104,112,.06)" }}>
+                      <span style={{ fontSize:".65rem", color:"var(--text2)", flex:1 }}>Supprimer "{item.note || "cette programmée"}" ?</span>
                       <button onClick={() => { onDeleteScheduled?.(item.id); setDeleteConfirm(null); }} style={{ background:"var(--danger)", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:".62rem", fontWeight:800, cursor:"pointer" }}>Oui</button>
                       <button onClick={() => setDeleteConfirm(null)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--text3)", fontSize:".62rem", cursor:"pointer" }}>Non</button>
                     </div>
                   ) : (
-                    <div style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 14px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 14px" }}>
                       <div style={{ position:"relative", flexShrink:0 }}>
-                        <div style={{ width:30, height:30, borderRadius:8, background: isFix ? "rgba(112,184,224,.1)" : "rgba(200,184,96,.1)", border:`1px solid ${isFix ? "var(--accent)" : "var(--warning)"}33`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:".8rem" }}>{icon}</div>
-                        <div style={{ position:"absolute", bottom:-2, right:-3, width:10, height:10, borderRadius:"50%", background: isFix ? "var(--accent)" : "var(--warning)", border:"1.5px solid var(--bg)", fontSize:".35rem", color:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>
-                          {isFix ? "↻" : "·"}
+                        <div style={{ width:36, height:36, borderRadius:10, background:iconBg, border:`1px solid ${iconBord}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1rem" }}>{icon}</div>
+                        <div style={{ position:"absolute", bottom:-2, right:-3, width:13, height:13, borderRadius:"50%", background:dotColor, border:"1.5px solid var(--bg)", fontSize:".38rem", color:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>
+                          {dotLabel}
                         </div>
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontSize:".66rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</div>
-                        <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:1 }}>
-                          <span style={{ fontSize:".5rem", color:"var(--text3)" }}>{sub}</span>
-                          {badge && <span style={{ fontSize:".44rem", fontWeight:700, padding:"0 4px", borderRadius:3, background:"rgba(200,184,96,.12)", color:"var(--warning)" }}>{badge}</span>}
+                        <div style={{ fontSize:".72rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</div>
+                        <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:2 }}>
+                          <span style={{ fontSize:".58rem", color:"var(--text3)" }}>{sub}</span>
+                          {badge && <span style={{ fontSize:".5rem", fontWeight:700, padding:"1px 5px", borderRadius:3, background:"rgba(200,184,96,.12)", color:"var(--warning)" }}>{badge}</span>}
                         </div>
                       </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
-                        <span style={{ fontFamily:"var(--mono)", fontSize:".65rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(item.amount)}</span>
-                        {!isFix && (
-                          <button onClick={() => setDeleteConfirm(item.id)} style={{ width:18, height:18, borderRadius:"50%", background:"transparent", border:"1px solid var(--border)", color:"var(--text3)", fontSize:".5rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>
+                      <div style={{ display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
+                        <span style={{ fontFamily:"var(--mono)", fontSize:".72rem", fontWeight:800, color: C }}>−{fmt(item.amount)}</span>
+                        {isRec && (
+                          <button
+                            onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); onConfirmRecurring?.(item, curM); }}
+                            onClick={() => onConfirmRecurring?.(item, curM)}
+                            style={{ width:22, height:22, borderRadius:"50%", background:"rgba(160,200,120,.15)", border:`1px solid ${Cbord}`, color: C, fontSize:".55rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}
+                            title="Confirmer ce mois"
+                          >✓</button>
+                        )}
+                        {isSch && (
+                          <button
+                            onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); setDeleteConfirm(item.id); }}
+                            onClick={() => setDeleteConfirm(item.id)}
+                            style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid var(--border)", color:"var(--text3)", fontSize:".55rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}
+                          >✕</button>
                         )}
                       </div>
                     </div>
@@ -794,11 +844,10 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               );
             })}
 
-            {/* Total si 2+ items et ouvert */}
             {openUpcoming && allItems.length > 1 && (
-              <div style={{ padding:"7px 14px", borderTop:"1px solid var(--border)", display:"flex", justifyContent:"space-between", alignItems:"center", background:"var(--surface2)" }}>
-                <span style={{ fontSize:".54rem", color:"var(--text3)" }}>Total à venir</span>
-                <span style={{ fontFamily:"var(--mono)", fontSize:".6rem", fontWeight:800, color:"var(--danger)" }}>−{fmt(total)}</span>
+              <div style={{ padding:"8px 14px", borderTop:`1px solid ${Cbord}`, display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(160,200,120,.06)" }}>
+                <span style={{ fontSize:".58rem", color:"var(--text3)" }}>Total à venir</span>
+                <span style={{ fontFamily:"var(--mono)", fontSize:".65rem", fontWeight:800, color: C }}>−{fmt(total)}</span>
               </div>
             )}
           </div>

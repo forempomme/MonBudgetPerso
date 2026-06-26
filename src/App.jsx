@@ -425,6 +425,16 @@ export default function App() {
         editMode={accueilEdit}
         onExitEditMode={() => setAccueilEdit(false)}
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
+        onConfirmRecurring={(tpl, month) => {
+          const [y, m] = month.split("-").map(Number);
+          const lastDay = new Date(y, m, 0).getDate();
+          const day = Math.min(new Date().getDate(), lastDay);
+          dispatch({ type: A.SAVE_TRANSACTION, tx: {
+            type: tpl.type, amount: tpl.amount,
+            date: `${month}-${String(day).padStart(2,"0")}`,
+            categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
+          }});
+        }}
       />
     ),
     cagnottes: (
