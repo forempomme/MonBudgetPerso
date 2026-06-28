@@ -716,9 +716,117 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       </div>
       </Sec>
 
-      {/* ── À venir ── v1.33.2 couleurs lisibilité */}
+      {/* ── À venir ── v1.33.3 tailles réduites */}
       {(unpointedFixes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
-        const C = "#e8f2ff", Cbord = "rgba(210,225,245,.22)";  // blanc pur légèrement bleuté — max lisibilité
+        const C = "#e8f2ff", Cbord = "rgba(210,225,245,.22)";
+        const fixItems   = unpointedFixes.map(f  => ({ ...f, _type:"fix"       }));
+        const schedItems = upcomingScheduled.map(s=> ({ ...s, _type:"scheduled" }));
+        const recurItems = upcomingRecurring.map(r => ({ ...r, _type:"recurring" }));
+        const allItems   = [...recurItems, ...fixItems, ...schedItems];
+        const visibleItems = tabUpcoming==="fixes" ? fixItems : tabUpcoming==="scheduled" ? schedItems : tabUpcoming==="recurring" ? recurItems : allItems;
+        const total = allItems.reduce((s,i) => s+(parseFloat(i.amount)||0), 0);
+        return (
+          <>
+            <style>{`@keyframes av-sh{0%{left:-60%;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:110%;opacity:0}}`}</style>
+            <div style={{ overflow:"hidden", borderRadius:14, border:`1px solid ${Cbord}`, background:"linear-gradient(135deg,rgba(220,228,240,.09),rgba(200,215,235,.03))", position:"relative", marginBottom:12 }}>
+              <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(255,255,255,.18),rgba(200,220,255,.08),transparent)", zIndex:1 }}/>
+              <div style={{ position:"absolute", top:0, left:"-60%", width:"55%", height:"100%", background:"linear-gradient(105deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%)", animation:"av-sh 4s ease-in-out infinite", pointerEvents:"none", zIndex:1 }}/>
+              <div style={{ position:"absolute", top:-20, right:-20, width:70, height:70, borderRadius:"50%", background:"radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%)", pointerEvents:"none" }}/>
+
+              {/* Header */}
+              <div onClick={()=>setOpenUpcoming(o=>!o)} style={{ cursor:"pointer", userSelect:"none", position:"relative", zIndex:2 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px", borderBottom:openUpcoming?`1px solid ${Cbord}`:"none" }}>
+                  <span style={{ fontSize:".9rem" }}>⏳</span>
+                  <span style={{ fontSize:".68rem", fontWeight:800, color:C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
+                  {!openUpcoming && (
+                    <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      {recurItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(220,228,240,.10)", color:C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>}
+                      {fixItems.length>0   && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(90,184,224,.10)", color:"var(--accent)", border:"1px solid rgba(90,184,224,.2)" }}>↻ {fixItems.length}</span>}
+                      {schedItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(200,184,96,.10)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.2)" }}>📅 {schedItems.length}</span>}
+                      <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:C }}>−{fmt(total)}</span>
+                    </div>
+                  )}
+                  {openUpcoming && <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:C }}>−{fmt(total)}</span>}
+                  <span style={{ color:C, fontSize:".8rem", transform:openUpcoming?"rotate(90deg)":"none", transition:"transform .2s", marginLeft:2, opacity:.7 }}>›</span>
+                </div>
+
+                {/* Onglets */}
+                {openUpcoming && (
+                  <div style={{ display:"flex", padding:"0 10px", borderBottom:`1px solid ${Cbord}` }}>
+                    {[["both","Tout"],["recurring","Récurrents"],["fixes","Fixes"],["scheduled","Programmés"]].map(([k,l])=>(
+                      <button key={k} onClick={e=>{e.stopPropagation();setTabUpcoming(k);}} style={{
+                        padding:"6px 10px 7px", fontSize:".62rem", fontWeight:700,
+                        background:"none", border:"none", borderRadius:0, cursor:"pointer",
+                        color:tabUpcoming===k ? C : "rgba(200,220,245,.5)",
+                        borderBottom:tabUpcoming===k ? `2px solid ${C}` : "2px solid transparent",
+                        transition:"all .15s",
+                      }}>{l}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Lignes */}
+              <div style={{ position:"relative", zIndex:2 }}>
+                {openUpcoming && visibleItems.map((item,i)=>{
+                  const isFix=item._type==="fix", isRec=item._type==="recurring", isSch=item._type==="scheduled";
+                  const cat=data.categories?.find(c=>c.id===item.categoryId);
+                  const icon=isFix?(cat?.icon??"📌"):isRec?(cat?.icon??"🔄"):(cat?.icon??"📅");
+                  const label=isFix?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
+                  const sub=isFix?"Ce mois · non pointé":isRec?`Ce mois · ${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
+                  const badge=isSch?daysUntil(item.date):null;
+                  const isConf=isSch&&deleteConfirm===item.id;
+                  const ibg=isRec?"rgba(220,228,240,.08)":isFix?"rgba(90,184,224,.08)":"rgba(200,184,96,.08)";
+                  const ibord=isRec?"rgba(210,225,245,.18)":isFix?"rgba(90,184,224,.2)":"rgba(200,184,96,.2)";
+                  const dot=isRec?C:isFix?"var(--accent)":"var(--warning)";
+                  const dotL=isRec?"🔄":isFix?"↻":"·";
+                  return (
+                    <div key={(item.id||item._type)+i} style={{ borderBottom:i<visibleItems.length-1?`1px solid rgba(210,225,245,.08)`:"none" }}>
+                      {isConf?(
+                        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"11px 14px", background:"rgba(224,104,112,.06)" }}>
+                          <span style={{ fontSize:".65rem", color:"var(--text2)", flex:1 }}>Supprimer "{item.note||"cette programmée"}" ?</span>
+                          <button onClick={()=>{onDeleteScheduled?.(item.id);setDeleteConfirm(null);}} style={{ background:"var(--danger)", border:"none", borderRadius:7, padding:"5px 12px", color:"#fff", fontSize:".62rem", fontWeight:800, cursor:"pointer" }}>Oui</button>
+                          <button onClick={()=>setDeleteConfirm(null)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--text3)", fontSize:".62rem", cursor:"pointer" }}>Non</button>
+                        </div>
+                      ):(
+                        <div style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 14px" }}>
+                          {/* Icône */}
+                          <div style={{ position:"relative", flexShrink:0 }}>
+                            <div style={{ width:34, height:34, borderRadius:9, background:ibg, border:`1px solid ${ibord}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:".95rem" }}>{icon}</div>
+                            <div style={{ position:"absolute", bottom:-2, right:-3, width:12, height:12, borderRadius:"50%", background:dot, border:"1.5px solid var(--bg)", fontSize:".35rem", color:"var(--bg)", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:900 }}>{dotL}</div>
+                          </div>
+                          {/* Texte */}
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ fontSize:".75rem", fontWeight:700, color:"var(--text)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginBottom:2 }}>{label}</div>
+                            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                              <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>{sub}</span>
+                              {badge && <span style={{ fontSize:".58rem", fontWeight:700, padding:"1px 6px", borderRadius:4, background:"rgba(200,184,96,.15)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.25)" }}>{badge}</span>}
+                            </div>
+                          </div>
+                          {/* Montant + actions */}
+                          <div style={{ display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
+                            <span style={{ fontFamily:"var(--mono)", fontSize:".75rem", fontWeight:800, color:C }}>−{fmt(item.amount)}</span>
+                            {isRec && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onConfirmRecurring?.(item,curM);}} onClick={()=>onConfirmRecurring?.(item,curM)} style={{ width:22, height:22, borderRadius:"50%", background:"rgba(220,228,240,.12)", border:`1px solid ${Cbord}`, color:C, fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}>✓</button>}
+                            {isSch && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();setDeleteConfirm(item.id);}} onClick={()=>setDeleteConfirm(item.id)} style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid rgba(255,255,255,.25)", color:"rgba(200,220,245,.7)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Total */}
+              {openUpcoming && allItems.length > 1 && (
+                <div style={{ padding:"8px 14px", borderTop:`1px solid ${Cbord}`, display:"flex", justifyContent:"space-between", alignItems:"center", background:"rgba(220,228,240,.04)", position:"relative", zIndex:2 }}>
+                  <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.6)" }}>Total à venir</span>
+                  <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:C }}>−{fmt(total)}</span>
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
         const fixItems   = unpointedFixes.map(f  => ({ ...f, _type:"fix"       }));
         const schedItems = upcomingScheduled.map(s=> ({ ...s, _type:"scheduled" }));
         const recurItems = upcomingRecurring.map(r => ({ ...r, _type:"recurring" }));
