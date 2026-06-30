@@ -3,7 +3,7 @@ import { Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
-  useBalance, useMonthStats, useYearMonths, useYearTotals,
+  useBalance, useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes,
 } from "./hooks.js";
 
@@ -365,7 +365,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   const prevM     = getPrevMonth(curM);
   const curY      = new Date().getFullYear().toString();
 
-  const balance   = useBalance(transactions, fixedExpenses);
+  const balance   = useBalanceWithRecurring(transactions, fixedExpenses, data.recurringTemplates || []);
 
   // ── Arrondi stats ─────────────────────────────────────────────
   const roundStats = useMemo(() => {

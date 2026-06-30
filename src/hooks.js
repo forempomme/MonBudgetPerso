@@ -135,6 +135,55 @@ export function useBalance(transactions, fixedExpenses) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+//  Balance with pending recurring transactions for current month
+//
+//  Pour chaque modèle récurrent non encore confirmé ce mois-ci,
+//  déduit son montant du solde. Tient compte de occurrences restantes.
+//
+//  Règle demandée :
+//   - Si la récurrente s'applique ce mois (mensuelle non confirmée
+//     ce mois, ou annuelle non confirmée cette année) → on la déduit
+//   - On respecte le plafond d'occurrences si défini
+// ─────────────────────────────────────────────────────────────────
+export function useBalanceWithRecurring(transactions, fixedExpenses, recurringTemplates) {
+  const balance = useBalance(transactions, fixedExpenses);
+
+  return useMemo(() => {
+    if (!recurringTemplates || recurringTemplates.length === 0) return balance;
+
+    const now   = new Date();
+    const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const curY  = now.getFullYear().toString();
+
+    let pending = 0;
+
+    recurringTemplates.forEach(tpl => {
+      const amount = parseFloat(tpl.amount) || 0;
+      if (amount <= 0) return;
+
+      // Occurrences déjà confirmées (toutes transactions liées à ce template)
+      const confirmed = transactions.filter(t => t.templateId === tpl.id);
+      const confirmedCount = confirmed.length;
+
+      // Si occurrences définies et déjà atteintes → skip
+      if (tpl.occurrences != null && confirmedCount >= tpl.occurrences) return;
+
+      if (tpl.frequency === "yearly") {
+        // Annuelle : confirmée cette année ?
+        const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
+        if (!doneThisYear) pending += amount;
+      } else {
+        // Mensuelle : confirmée ce mois ?
+        const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
+        if (!doneThisMonth) pending += amount;
+      }
+    });
+
+    return balance - pending;
+  }, [balance, transactions, recurringTemplates]);
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Sparkline: last 6 months net values
 // ─────────────────────────────────────────────────────────────────
 export function useSpark(transactions, fixedExpenses) {
