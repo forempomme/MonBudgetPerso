@@ -3,7 +3,7 @@ import { Delta, Sparkline } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
-  useBalance, useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
+  useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes,
 } from "./hooks.js";
 
@@ -775,6 +775,12 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                   const label=isFix?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
                   const sub=isFix?"Ce mois · non pointé":isRec?`Ce mois · ${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
                   const badge=isSch?daysUntil(item.date):null;
+                  // Occurrences restantes pour les récurrentes
+                  const recurBadge = isRec && item.occurrences != null ? (() => {
+                    const done = (data.transactions||[]).filter(t => t.templateId === item.id).length;
+                    const remaining = item.occurrences - done;
+                    return remaining > 0 ? `${remaining} fois restante${remaining > 1 ? "s" : ""}` : null;
+                  })() : null;
                   const isConf=isSch&&deleteConfirm===item.id;
                   const ibg=isRec?"rgba(220,228,240,.08)":isFix?"rgba(90,184,224,.08)":"rgba(200,184,96,.08)";
                   const ibord=isRec?"rgba(210,225,245,.18)":isFix?"rgba(90,184,224,.2)":"rgba(200,184,96,.2)";
@@ -801,6 +807,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                             <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                               <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>{sub}</span>
                               {badge && <span style={{ fontSize:".58rem", fontWeight:700, padding:"1px 6px", borderRadius:4, background:"rgba(200,184,96,.15)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.25)" }}>{badge}</span>}
+                              {recurBadge && <span style={{ fontSize:".58rem", fontWeight:700, padding:"1px 6px", borderRadius:4, background:"rgba(200,220,245,.08)", color:"rgba(200,220,245,.7)", border:"1px solid rgba(200,220,245,.2)" }}>🔢 {recurBadge}</span>}
                             </div>
                           </div>
                           {/* Montant + actions */}

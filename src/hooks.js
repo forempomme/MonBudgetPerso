@@ -161,25 +161,22 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, recurringTe
       const amount = parseFloat(tpl.amount) || 0;
       if (amount <= 0) return;
 
-      // Occurrences déjà confirmées (toutes transactions liées à ce template)
       const confirmed = transactions.filter(t => t.templateId === tpl.id);
       const confirmedCount = confirmed.length;
 
-      // Si occurrences définies et déjà atteintes → skip
       if (tpl.occurrences != null && confirmedCount >= tpl.occurrences) return;
 
       if (tpl.frequency === "yearly") {
-        // Annuelle : confirmée cette année ?
         const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
         if (!doneThisYear) pending += amount;
       } else {
-        // Mensuelle : confirmée ce mois ?
         const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
         if (!doneThisMonth) pending += amount;
       }
     });
 
     return balance - pending;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balance, transactions, recurringTemplates]);
 }
 

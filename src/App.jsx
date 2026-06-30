@@ -431,7 +431,7 @@ export default function App() {
           const day = Math.min(new Date().getDate(), lastDay);
           dispatch({ type: A.SAVE_TRANSACTION, tx: {
             type: tpl.type, amount: tpl.amount,
-            date: `${month}-${String(day).padStart(2,"0")}`,
+            date: `${month}-${String(day).padStart(2, "0")}`,
             categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
           }});
         }}
