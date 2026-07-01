@@ -556,15 +556,18 @@ export default function App() {
     );
   }
 
-  // ── Notifications locales — planification au démarrage ──────────
+  // ── Notifications locales — planification après unlock uniquement ──
   useEffect(() => {
     const ns = data.notifSettings;
+    // Ne rien faire si l'app est verrouillée ou si les notifs sont désactivées
+    if (locked) return;
     if (!ns?.enabled) return;
-    async function scheduleNotifs() {
+
+    // Délai de 3s après le démarrage pour ne pas bloquer le rendu initial
+    const timer = setTimeout(async () => {
       try {
-        // Accès via window.Capacitor.Plugins — disponible sur Android sans import npm
         const LocalNotifications = window?.Capacitor?.Plugins?.LocalNotifications;
-        if (!LocalNotifications) return; // web ou plugin absent → silencieux
+        if (!LocalNotifications) return;
         const perm = await LocalNotifications.requestPermissions();
         if (perm.display !== "granted") return;
         await LocalNotifications.cancel({ notifications: [
@@ -602,9 +605,10 @@ export default function App() {
         }
         if (pending.length > 0) await LocalNotifications.schedule({ notifications:pending });
       } catch(e) { console.warn("LocalNotifications unavailable:", e); }
-    }
-    scheduleNotifs();
-  }, [data.notifSettings, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate]);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [locked, data.notifSettings, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate]);
 
   return (
     <ToastCtx.Provider value={addToast}>
