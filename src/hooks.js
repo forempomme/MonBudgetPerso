@@ -210,3 +210,42 @@ export function usePriorYearStats(transactions, fixedExpenses) {
     return { inc, exp, expVar, decag };
   }, [transactions, fixedExpenses, prevYear, elapsed]);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Balance with pending recurring transactions for current month
+//  Déduit du solde les récurrentes non encore confirmées ce mois.
+// ─────────────────────────────────────────────────────────────────
+export function useBalanceWithRecurring(transactions, fixedExpenses, recurringTemplates) {
+  const balance = useBalance(transactions, fixedExpenses);
+
+  return useMemo(() => {
+    if (!recurringTemplates || recurringTemplates.length === 0) return balance;
+
+    const now   = new Date();
+    const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const curY  = now.getFullYear().toString();
+
+    let pending = 0;
+
+    recurringTemplates.forEach(tpl => {
+      const amount = parseFloat(tpl.amount) || 0;
+      if (amount <= 0) return;
+
+      const confirmed      = transactions.filter(t => t.templateId === tpl.id);
+      const confirmedCount = confirmed.length;
+
+      if (tpl.occurrences != null && confirmedCount >= tpl.occurrences) return;
+
+      if (tpl.frequency === "yearly") {
+        const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
+        if (!doneThisYear) pending += amount;
+      } else {
+        const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
+        if (!doneThisMonth) pending += amount;
+      }
+    });
+
+    return balance - pending;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balance, transactions, recurringTemplates]);
+}
