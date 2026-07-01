@@ -562,7 +562,9 @@ export default function App() {
     if (!ns?.enabled) return;
     async function scheduleNotifs() {
       try {
-        const { LocalNotifications } = await import("@capacitor/local-notifications");
+        // Accès via window.Capacitor.Plugins — disponible sur Android sans import npm
+        const LocalNotifications = window?.Capacitor?.Plugins?.LocalNotifications;
+        if (!LocalNotifications) return; // web ou plugin absent → silencieux
         const perm = await LocalNotifications.requestPermissions();
         if (perm.display !== "granted") return;
         await LocalNotifications.cancel({ notifications: [
