@@ -33,6 +33,7 @@ import { uid, todayISO } from "./utils.js";
  * @property {string}  name
  * @property {number}  amount
  * @property {string}  [categoryId]
+ * @property {string}  [startYM]     – "YYYY-MM" : premier mois où ce frais s'applique (optionnel)
  *
  * @property {Object.<string,string>} monthNotes   – clé "YYYY-MM", valeur texte libre
  *
@@ -295,7 +296,7 @@ export function reducer(state, action) {
           prevAmountYM: amountChanged ? curYM        : old.prevAmountYM,
         };
       } else {
-        newFixed.push({ ...fixed, id: uid("f") });
+        newFixed.push({ ...fixed, id: uid("f"), startYM: fixed.startYM || null });
       }
       return { ...state, fixedExpenses: newFixed };
     }

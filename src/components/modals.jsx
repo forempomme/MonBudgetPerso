@@ -758,9 +758,10 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
   const f      = editingIdx != null ? fixedExpenses[editingIdx] : null;
   const expCats = categories.filter(c => c.type === "expense");
 
-  const [name,   setName]   = useState(f?.name       || "");
-  const [amt,    setAmt]    = useState(f?.amount      || "");
-  const [catId,  setCatId]  = useState(f?.categoryId  || expCats[0]?.id || "");
+  const [name,     setName]     = useState(f?.name       || "");
+  const [amt,      setAmt]      = useState(f?.amount      || "");
+  const [catId,    setCatId]    = useState(f?.categoryId  || expCats[0]?.id || "");
+  const [startYM,  setStartYM]  = useState(f?.startYM    || "");
   const [errors, setErrors] = useState({});
 
   function validate() {
@@ -774,7 +775,12 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
 
   function handleSave() {
     if (!validate()) return;
-    onSave({ idx: editingIdx, fixed: { name: name.trim(), amount: parseAmt(amt), categoryId: catId } });
+    onSave({ idx: editingIdx, fixed: {
+      name: name.trim(),
+      amount: parseAmt(amt),
+      categoryId: catId,
+      startYM: startYM || null,
+    }});
     toast(editingIdx != null ? "Frais fixe modifié" : "Frais fixe ajouté");
   }
 
@@ -793,6 +799,40 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
           {expCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
         </select>
       </Field>
+      {/* ★ Champ startYM — date de début optionnelle */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>
+            📅 Début (optionnel)
+          </label>
+          <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>
+            — mois à partir duquel ce frais est déduit
+          </span>
+        </div>
+        {startYM
+          ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="month" value={startYM} onChange={e => setStartYM(e.target.value)}
+                style={{ flex: 1 }} />
+              <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
+                onClick={() => setStartYM("")}>
+                ✕ Retirer
+              </button>
+            </div>
+          )
+          : (
+            <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
+              onClick={() => setStartYM(new Date().toISOString().slice(0, 7))}>
+              ＋ Définir une date de début
+            </button>
+          )
+        }
+        {startYM && (
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+            Ce frais ne sera pas déduit avant {startYM}. Utile si tu l'as souscrit en cours d'année.
+          </div>
+        )}
+      </div>
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline"  style={{ width: "100%" }} onClick={onClose}>Annuler</button>
         <button className="btn btn-primary"  style={{ width: "100%" }} onClick={handleSave}>Valider</button>

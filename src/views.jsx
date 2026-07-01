@@ -2569,6 +2569,17 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
                       {Math.abs(f.amount - f.prevAmount).toFixed(2)} €
                     </div>
                   )}
+                  {/* Badge startYM */}
+                  {f.startYM && (
+                    <div style={{
+                      fontSize: ".48rem", fontWeight: 700,
+                      color: "var(--accent)", marginTop: 2,
+                      background: "rgba(90,184,224,.1)", borderRadius: 3,
+                      padding: "1px 4px", border: "1px solid rgba(90,184,224,.2)",
+                    }}>
+                      📅 {f.startYM}
+                    </div>
+                  )}
                   {/* Boutons visibles au tap uniquement */}
                   {selected === selKey && (
                     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>

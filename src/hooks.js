@@ -8,6 +8,8 @@ import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 // ─────────────────────────────────────────────────────────────────
 function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
+    // Si startYM défini et que le mois demandé est avant le début → ne pas déduire
+    if (f.startYM && ym < f.startYM) return s;
     const ov = f.monthlyOverrides?.[ym];
     return s + ((ov?.amount ?? f.amount) || 0);
   }, 0);
@@ -132,52 +134,6 @@ export function useBalance(transactions, fixedExpenses) {
 
     return bal;
   }, [transactions, fixedExpenses]);
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Balance with pending recurring transactions for current month
-//
-//  Pour chaque modèle récurrent non encore confirmé ce mois-ci,
-//  déduit son montant du solde. Tient compte de occurrences restantes.
-//
-//  Règle demandée :
-//   - Si la récurrente s'applique ce mois (mensuelle non confirmée
-//     ce mois, ou annuelle non confirmée cette année) → on la déduit
-//   - On respecte le plafond d'occurrences si défini
-// ─────────────────────────────────────────────────────────────────
-export function useBalanceWithRecurring(transactions, fixedExpenses, recurringTemplates) {
-  const balance = useBalance(transactions, fixedExpenses);
-
-  return useMemo(() => {
-    if (!recurringTemplates || recurringTemplates.length === 0) return balance;
-
-    const now   = new Date();
-    const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const curY  = now.getFullYear().toString();
-
-    let pending = 0;
-
-    recurringTemplates.forEach(tpl => {
-      const amount = parseFloat(tpl.amount) || 0;
-      if (amount <= 0) return;
-
-      const confirmed = transactions.filter(t => t.templateId === tpl.id);
-      const confirmedCount = confirmed.length;
-
-      if (tpl.occurrences != null && confirmedCount >= tpl.occurrences) return;
-
-      if (tpl.frequency === "yearly") {
-        const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
-        if (!doneThisYear) pending += amount;
-      } else {
-        const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
-        if (!doneThisMonth) pending += amount;
-      }
-    });
-
-    return balance - pending;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balance, transactions, recurringTemplates]);
 }
 
 // ─────────────────────────────────────────────────────────────────
