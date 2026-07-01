@@ -4325,6 +4325,13 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
     onSaveNotifSettings?.(next);
   }
   function toggleNotifMain(val) {
+    if (val) {
+      // Demande la permission uniquement quand l'utilisateur active manuellement
+      try {
+        const LN = window?.Capacitor?.Plugins?.LocalNotifications;
+        if (LN) LN.requestPermissions().catch(() => {});
+      } catch(e) {}
+    }
     setNotifOn(val);
     onSaveNotifSettings?.({ enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup });
   }

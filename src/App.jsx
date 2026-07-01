@@ -559,17 +559,16 @@ export default function App() {
   // ── Notifications locales — planification après unlock uniquement ──
   useEffect(() => {
     const ns = data.notifSettings;
-    // Ne rien faire si l'app est verrouillée ou si les notifs sont désactivées
     if (locked) return;
     if (!ns?.enabled) return;
 
-    // Délai de 3s après le démarrage pour ne pas bloquer le rendu initial
+    // Délai de 5s — laisse le rendu et l'animation de déverrouillage se terminer
     const timer = setTimeout(async () => {
       try {
         const LocalNotifications = window?.Capacitor?.Plugins?.LocalNotifications;
         if (!LocalNotifications) return;
-        const perm = await LocalNotifications.requestPermissions();
-        if (perm.display !== "granted") return;
+        // Ne jamais appeler requestPermissions() ici — ça bloque le rendu Android
+        // La permission est demandée une seule fois lors de l'activation dans Options
         await LocalNotifications.cancel({ notifications: [
           ...Array.from({length:30},(_,i)=>({id:i+1}))
         ]});
@@ -601,11 +600,11 @@ export default function App() {
         }
         if (ns.backup && data.lastBackupDate) {
           const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
-          if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+5000)}, channelId:"budget" });
+          if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
         }
         if (pending.length > 0) await LocalNotifications.schedule({ notifications:pending });
-      } catch(e) { console.warn("LocalNotifications unavailable:", e); }
-    }, 3000);
+      } catch(e) { console.warn("LocalNotifications:", e); }
+    }, 5000);
 
     return () => clearTimeout(timer);
   }, [locked, data.notifSettings, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate]);
