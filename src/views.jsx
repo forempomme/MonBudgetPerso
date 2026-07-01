@@ -605,9 +605,163 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}>
             Solde Bancaire Estimé
           </div>
-          <div className="hero-value" style={{ color: balanceColor }}>
-            <CountUp target={balance} color={balanceColor} duration={1000} />
-          </div>
+
+          {/* ── Solde + badge delta vs même jour mois précédent ── */}
+          {(() => {
+            const now      = new Date();
+            const todayDay = now.getDate();
+            const curYM    = currentYM();
+            const prevYM   = getPrevMonth(curYM);
+
+            // Solde cumulé au jour J du mois précédent
+            // = somme de toutes les transactions jusqu'au prevYM-todayDay inclus
+            const prevDayStr = `${prevYM}-${String(todayDay).padStart(2, "0")}`;
+            let balPrev = 0;
+            transactions.forEach(t => {
+              if (t.date > prevDayStr) return;
+              const a = parseFloat(t.amount) || 0;
+              if (isIncome(t.type))          balPrev += a;
+              else if (t.type === "expense") balPrev -= a;
+              else if (t.type === "epargne") balPrev -= a;
+            });
+            // Soustraire les fixes pour chaque mois jusqu'au mois précédent inclus
+            if (transactions.length > 0) {
+              const earliest = transactions.reduce((m, t) => t.date < m ? t.date : m, transactions[0].date);
+              const startYM  = earliest.slice(0, 7);
+              let [y, m] = startYM.split("-").map(Number);
+              const [ey, em] = prevYM.split("-").map(Number);
+              while (y < ey || (y === ey && m <= em)) {
+                const ym = `${y}-${String(m).padStart(2, "0")}`;
+                balPrev -= fixedExpenses.reduce((s, f) => {
+                  const ov = f.monthlyOverrides?.[ym];
+                  return s + ((ov?.amount ?? f.amount) || 0);
+                }, 0);
+                if (++m > 12) { m = 1; y++; }
+              }
+            }
+
+            const deltaAbs = balance - balPrev;
+            const deltaPct = balPrev !== 0 ? Math.round((deltaAbs / Math.abs(balPrev)) * 100) : null;
+            const isPos    = deltaAbs >= 0;
+            const dColor   = isPos ? "var(--success)" : "var(--danger)";
+
+            // Sparkline : solde au même jour sur les 6 derniers mois
+            const sparkData = Array.from({ length: 6 }, (_, i) => {
+              const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+              const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+              const dayStr = `${ym}-${String(todayDay).padStart(2, "0")}`;
+              let bal = 0;
+              transactions.forEach(t => {
+                if (t.date > dayStr) return;
+                const a = parseFloat(t.amount) || 0;
+                if (isIncome(t.type))          bal += a;
+                else if (t.type === "expense") bal -= a;
+                else if (t.type === "epargne") bal -= a;
+              });
+              if (transactions.length > 0) {
+                const earliest = transactions.reduce((mn, t) => t.date < mn ? t.date : mn, transactions[0].date);
+                const startYM  = earliest.slice(0, 7);
+                let [y, m] = startYM.split("-").map(Number);
+                const [ey, em] = ym.split("-").map(Number);
+                while (y < ey || (y === ey && m <= em)) {
+                  const loopYM = `${y}-${String(m).padStart(2, "0")}`;
+                  bal -= fixedExpenses.reduce((s, f) => {
+                    const ov = f.monthlyOverrides?.[loopYM];
+                    return s + ((ov?.amount ?? f.amount) || 0);
+                  }, 0);
+                  if (++m > 12) { m = 1; y++; }
+                }
+              }
+              const mLabel = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][d.getMonth()];
+              return { val: bal, mois: mLabel, isLast: i === 5 };
+            });
+
+            const sparkMax = Math.max(...sparkData.map(b => Math.abs(b.val)), 1);
+
+            return (
+              <>
+                {/* Solde + badge delta inline */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:10 }}>
+                  <div className="hero-value" style={{ color: balanceColor, marginBottom: 0 }}>
+                    <CountUp target={balance} color={balanceColor} duration={1000} />
+                  </div>
+                  {deltaPct !== null && (
+                    <div style={{
+                      display:"flex", flexDirection:"column", gap:1,
+                      padding:"4px 9px", borderRadius:8,
+                      background:`${isPos ? "rgba(104,212,152" : "rgba(200,112,112"},.12)`,
+                      border:`1px solid ${isPos ? "rgba(104,212,152" : "rgba(200,112,112"},.3)`,
+                    }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                        <span style={{ fontSize:".72rem" }}>{isPos ? "🔼" : "🔽"}</span>
+                        <span style={{ fontSize:".72rem", fontWeight:800, color:dColor, fontFamily:"var(--mono)" }}>
+                          {Math.abs(deltaPct)}%
+                        </span>
+                      </div>
+                      <div style={{ fontSize:".48rem", color:"rgba(255,255,255,.35)", lineHeight:1.2 }}>
+                        {fmt(balPrev)} le {todayDay} {["jan","fév","mar","avr","mai","jun","jul","aoû","sep","oct","nov","déc"][new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth()]}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Sparkline variante B — barres + labels rotatés */}
+                {sparkData.some(b => b.val !== 0) && (
+                  <div style={{ marginBottom:12 }}>
+                    <div style={{ fontSize:".5rem", color:"rgba(255,255,255,.28)", marginBottom:4, letterSpacing:".06em" }}>
+                      Solde au {todayDay} de chaque mois
+                    </div>
+                    {/* Barres */}
+                    <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:38, marginBottom:5 }}>
+                      {sparkData.map((b, i) => {
+                        const h = Math.max(3, Math.abs(b.val) / sparkMax * 34);
+                        return (
+                          <div key={i} style={{ flex:1, display:"flex", alignItems:"flex-end", height:38 }}>
+                            <div style={{
+                              width:"100%", height:h, borderRadius:3,
+                              background: b.isLast ? "var(--accent)"
+                                        : b.val >= 0 ? "rgba(104,212,152,.5)"
+                                        : "rgba(200,112,112,.4)",
+                              boxShadow: b.isLast ? "0 0 8px rgba(90,184,224,.5)" : "none",
+                            }}/>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Labels mois */}
+                    <div style={{ display:"flex", gap:4, marginBottom:3 }}>
+                      {sparkData.map((b, i) => (
+                        <div key={i} style={{ flex:1, textAlign:"center", fontSize:".48rem", color: b.isLast ? "var(--accent)" : "rgba(255,255,255,.22)", fontWeight: b.isLast ? 700 : 400 }}>
+                          {b.mois}
+                        </div>
+                      ))}
+                    </div>
+                    {/* Montants rotatés */}
+                    <div style={{ display:"flex", gap:4 }}>
+                      {sparkData.map((b, i) => {
+                        const isPrev = i === sparkData.length - 2;
+                        const color  = b.isLast ? "rgba(90,184,224,.9)" : isPrev ? "rgba(255,255,255,.45)" : "rgba(255,255,255,.18)";
+                        return (
+                          <div key={i} style={{ flex:1, textAlign:"center", overflow:"hidden" }}>
+                            <div style={{
+                              fontSize:".42rem", color, fontFamily:"var(--mono)",
+                              fontWeight: b.isLast || isPrev ? 700 : 400,
+                              transform:"rotate(-35deg)", transformOrigin:"center top",
+                              marginTop:2, whiteSpace:"nowrap",
+                              display:"inline-block",
+                            }}>
+                              {b.val < 0 ? "−" : ""}{new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0,maximumFractionDigits:0}).format(Math.abs(b.val))}€
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+
           {provTotal > 0 && (
             <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
