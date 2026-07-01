@@ -844,6 +844,13 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
 // ─────────────────────────────────────────────────────────────────
 //  Cagnotte modal
 // ─────────────────────────────────────────────────────────────────
+
+const CAG_TYPES = [
+  { id:"projet",         icon:"🎯", label:"Projet",          color:"var(--accent)"   },
+  { id:"urgence",        icon:"🛡️", label:"Urgence",         color:"var(--danger)"   },
+  { id:"plaisir",        icon:"✈️", label:"Plaisir",         color:"var(--purple)"   },
+  { id:"investissement", icon:"📈", label:"Investissement",  color:"var(--success)"  },
+];
 export function CagModal({ cagnottes, editingId, onSave, onClose }) {
   const toast = useToast();
   const c     = editingId ? cagnottes.find(x => x.id === editingId) : null;
@@ -852,6 +859,7 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
   const [target,     setTarget]     = useState(c?.target      || "");
   const [targetDate, setTargetDate] = useState(c?.targetDate  || "");
   const [current,    setCurrent]    = useState(c?.current     ?? 0);
+  const [cagType,    setCagType]    = useState(c?.cagType     || null);
   const [errors,     setErrors]     = useState({});
 
   const calcInfo = (() => {
@@ -882,6 +890,7 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
       target: parseAmt(target) || null,
       targetDate: targetDate || null,
       current: parseAmt(current) || 0,
+      cagType: cagType || null,
     });
     toast(editingId ? "Cagnotte modifiée" : "Cagnotte créée");
   }
@@ -902,6 +911,28 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
         <input type="number" step="0.01" min="0" value={current} onChange={e => setCurrent(e.target.value)} />
       </Field>
       {calcInfo && <div className="cag-target-info" style={{ marginBottom: 14 }}>{calcInfo}</div>}
+      {/* ★ Type de cagnotte */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600, display: "block", marginBottom: 8 }}>
+          Type (optionnel)
+        </label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {CAG_TYPES.map(t => (
+            <button key={t.id}
+              onClick={() => setCagType(cagType === t.id ? null : t.id)}
+              style={{
+                padding: "7px 10px", borderRadius: 9, cursor: "pointer",
+                border: `1.5px solid ${cagType === t.id ? t.color : "var(--border)"}`,
+                background: cagType === t.id ? `color-mix(in srgb, ${t.color} 14%, var(--surface2))` : "var(--surface2)",
+                display: "flex", alignItems: "center", gap: 7,
+                touchAction: "manipulation",
+              }}>
+              <span style={{ fontSize: ".9rem" }}>{t.icon}</span>
+              <span style={{ fontSize: ".65rem", fontWeight: cagType === t.id ? 700 : 400, color: cagType === t.id ? t.color : "var(--text2)" }}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
         <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>Enregistrer</button>

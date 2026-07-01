@@ -93,6 +93,7 @@ export default function App() {
     dispatch({ type: A.SAVE_CATEGORY_THRESHOLD, catId, threshold }), []);
   const saveRoundingSettings      = useCallback((enabled, cagnotteId, rule) =>
     dispatch({ type: A.SAVE_ROUNDING_SETTINGS, enabled, cagnotteId, rule }), []);
+  const saveNotifSettings = useCallback(settings => dispatch({ type: A.SAVE_NOTIF_SETTINGS, settings }), []);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: new Date().toISOString().slice(0, 10) }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
@@ -536,6 +537,8 @@ export default function App() {
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
         onSaveSecuritySettings={saveSecuritySettings}
+        notifSettings={data.notifSettings || {}}
+        onSaveNotifSettings={saveNotifSettings}
         onPushBack={pushBack}
         onPopBack={popBack}
       />
@@ -552,6 +555,54 @@ export default function App() {
       />
     );
   }
+
+  // ── Notifications locales — planification au démarrage ──────────
+  useEffect(() => {
+    const ns = data.notifSettings;
+    if (!ns?.enabled) return;
+    async function scheduleNotifs() {
+      try {
+        const { LocalNotifications } = await import("@capacitor/local-notifications");
+        const perm = await LocalNotifications.requestPermissions();
+        if (perm.display !== "granted") return;
+        await LocalNotifications.cancel({ notifications: [
+          ...Array.from({length:30},(_,i)=>({id:i+1}))
+        ]});
+        const pending = [];
+        const now = new Date();
+        const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
+
+        if (ns.recurring && (data.recurringTemplates||[]).length > 0) {
+          const d = new Date(now.getFullYear(), now.getMonth()+1, 1, 9, 0, 0);
+          pending.push({ id:1, title:"🔄 Récurrentes à confirmer", body:`${(data.recurringTemplates||[]).length} modèle(s) à confirmer ce mois`, schedule:{at:d}, channelId:"budget" });
+        }
+        if (ns.autoSaving) {
+          (data.autoSavings||[]).filter(p=>p.enabled).forEach((p,i) => {
+            const d = new Date(now.getFullYear(), now.getMonth(), p.dayOfMonth, 9, 0, 0);
+            if (d > now) {
+              const cag = data.cagnottes.find(c=>c.id===p.cagnotteId);
+              pending.push({ id:10+i, title:"🐷 Versement automatique", body:`${fmtAmt(p.amount)} → ${cag?.name||"cagnotte"}`, schedule:{at:d}, channelId:"budget" });
+            }
+          });
+        }
+        if (ns.scheduled) {
+          (data.scheduledTransactions||[]).filter(s=>!s.confirmed).forEach((s,i) => {
+            const date = new Date(s.date+"T09:00:00");
+            const veille = new Date(date.getTime()-86400000);
+            if (veille > now) {
+              pending.push({ id:20+i, title:"📅 Dépense prévue demain", body:`${fmtAmt(s.amount)}${s.note?" — "+s.note:""}`, schedule:{at:veille}, channelId:"budget" });
+            }
+          });
+        }
+        if (ns.backup && data.lastBackupDate) {
+          const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
+          if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+5000)}, channelId:"budget" });
+        }
+        if (pending.length > 0) await LocalNotifications.schedule({ notifications:pending });
+      } catch(e) { console.warn("LocalNotifications unavailable:", e); }
+    }
+    scheduleNotifs();
+  }, [data.notifSettings, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate]);
 
   return (
     <ToastCtx.Provider value={addToast}>

@@ -861,6 +861,24 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         <div className="stat-mini dash-cagnotte2" onClick={() => onShowDetail("cagnottes", "all")} style={{ height:80 }}>
           <div className="stat-label">🐷 Cagnottes</div>
           <div className="stat-val" style={{ color:"var(--purple)" }}>{fmt(cagTotal)}</div>
+          {/* ★ Taux d'épargne */}
+          {curMonth.inc > 0 && (() => {
+            const rate     = Math.round((savMonth / curMonth.inc) * 100);
+            const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
+            const delta    = prevRate !== null ? rate - prevRate : null;
+            return (
+              <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:3 }}>
+                <span style={{ fontFamily:"var(--mono)", fontSize:".62rem", fontWeight:800, color:"var(--purple)" }}>
+                  🐷 {rate}%
+                </span>
+                {delta !== null && (
+                  <span style={{ fontSize:".55rem", fontWeight:700, color: delta >= 0 ? "var(--success)" : "var(--danger)" }}>
+                    {delta >= 0 ? "▲" : "▼"}{Math.abs(delta)}%
+                  </span>
+                )}
+              </div>
+            );
+          })()}
           <span className="stat-arrow">›</span>
         </div>
         <div className="stat-mini dash-fixe2" style={{ height:80 }}>
@@ -1154,10 +1172,18 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   );
 }
 // ─────────────────────────────────────────────────────────────────
+const CAG_TYPES_MAP = {
+  projet:         { icon:"🎯", label:"Projet",         color:"var(--accent)"  },
+  urgence:        { icon:"🛡️", label:"Urgence",        color:"var(--danger)"  },
+  plaisir:        { icon:"✈️", label:"Plaisir",        color:"var(--purple)"  },
+  investissement: { icon:"📈", label:"Investissement", color:"var(--success)" },
+};
+
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory }) {
   const { cagnottes, transactions } = data;
   const curM = currentYM();
   const curY = new Date().getFullYear().toString();
+  const [typeFilter, setTypeFilter] = useState("all");
 
   // ── Stats épargne + décagnottage ─────────────────────────────
   const { savMonth, savYear, decagMonth, decagYear } = useMemo(() => {
@@ -1218,11 +1244,30 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
         </button>
       </div>
 
+      {/* ★ Filtre par type */}
+      {cagnottes.some(c => c.cagType) && (
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
+          <button onClick={()=>setTypeFilter("all")} style={{
+            padding:"4px 10px", borderRadius:20, fontSize:".62rem", fontWeight:700, cursor:"pointer",
+            border:`1.5px solid ${typeFilter==="all"?"var(--accent)":"var(--border)"}`,
+            background:typeFilter==="all"?"rgba(90,184,224,.12)":"var(--surface2)",
+            color:typeFilter==="all"?"var(--accent)":"var(--text2)",
+          }}>Toutes ({cagnottes.length})</button>
+          {Object.entries(CAG_TYPES_MAP).filter(([k])=>cagnottes.some(c=>c.cagType===k)).map(([k,t])=>(
+            <button key={k} onClick={()=>setTypeFilter(k)} style={{
+              padding:"4px 10px", borderRadius:20, fontSize:".62rem", fontWeight:700, cursor:"pointer",
+              border:`1.5px solid ${typeFilter===k?t.color:"var(--border)"}`,
+              background:typeFilter===k?`color-mix(in srgb,${t.color} 14%,var(--surface2))`:"var(--surface2)",
+              color:typeFilter===k?t.color:"var(--text2)",
+            }}>{t.icon} {t.label}</button>
+          ))}
+        </div>
+      )}
       {cagnottes.length === 0
         ? <EmptyIllustration type="cagnottes" title="Aucune cagnotte" sub="Crée ta première cagnotte pour commencer à épargner" cta="＋ Créer une cagnotte" onCta={onNewCag} ctaColor="var(--success)" />
         : (
           <div className="grid-2">
-            {cagnottes.map(c => {
+            {cagnottes.filter(c => typeFilter==="all" || c.cagType===typeFilter).map(c => {
               const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
               const neededPerMonth = (() => {
                 if (!c.target || !c.targetDate) return null;
@@ -1238,6 +1283,18 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
                 <div key={c.id} className="cag-card" onClick={() => onShowCagHistory(c.id)}>
                   <span className="cag-del-btn" onClick={e => { e.stopPropagation(); onDeleteCag(c.id); }}>✕</span>
                   <button className="cag-edit-btn" onClick={e => { e.stopPropagation(); onEditCag(c.id); }}>✏️</button>
+                  {/* ★ Badge type */}
+                  {c.cagType && CAG_TYPES_MAP[c.cagType] && (
+                    <div style={{
+                      fontSize:".5rem", fontWeight:700, padding:"1px 6px", borderRadius:3,
+                      background:`color-mix(in srgb,${CAG_TYPES_MAP[c.cagType].color} 14%,transparent)`,
+                      color:CAG_TYPES_MAP[c.cagType].color,
+                      border:`1px solid color-mix(in srgb,${CAG_TYPES_MAP[c.cagType].color} 30%,transparent)`,
+                      display:"inline-flex", alignItems:"center", gap:3, marginBottom:3,
+                    }}>
+                      {CAG_TYPES_MAP[c.cagType].icon} {CAG_TYPES_MAP[c.cagType].label}
+                    </div>
+                  )}
                   <div className="cag-name">🎯 {c.name}</div>
                   <div className="cag-amt">{fmt(c.current)}{c.target ? ` / ${fmt(c.target)}` : ""}</div>
                   {c.target && (
@@ -4248,13 +4305,30 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, onPushBack, onPopBack }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onPushBack, onPopBack }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
   const [roundOn,       setRoundOn]       = useState(roundingEnabled);
   const [roundCagId,    setRoundCagId]    = useState(roundingCagnotteId || "");
   const [roundRule,     setRoundRule]     = useState(roundingRule);
+  // Notifications
+  const [notifOn,       setNotifOn]       = useState(notifSettings.enabled      ?? false);
+  const [notifRecurring,setNotifRecurring]= useState(notifSettings.recurring    ?? true);
+  const [notifAuto,     setNotifAuto]     = useState(notifSettings.autoSaving   ?? true);
+  const [notifAlert,    setNotifAlert]    = useState(notifSettings.alertSolde   ?? true);
+  const [notifSched,    setNotifSched]    = useState(notifSettings.scheduled    ?? true);
+  const [notifBackup,   setNotifBackup]   = useState(notifSettings.backup       ?? true);
+
+  function saveNotif(field, val) {
+    const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, [field]:val };
+    onSaveNotifSettings?.(next);
+  }
+  function toggleNotifMain(val) {
+    setNotifOn(val);
+    onSaveNotifSettings?.({ enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup });
+  }
+
   // Versement auto
   const [addingPlan,    setAddingPlan]    = useState(false);
   const [planDraft,     setPlanDraft]     = useState({ cagnotteId:"", amount:"", dayOfMonth:"1" });
@@ -4375,6 +4449,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
           configured: recurCount > 0,
           hint: "Aucune transaction récurrente définie" },
+      ]
+    },
+    {
+      title:"🔔 Notifications", color:"var(--warning)",
+      items:[
+        { id:"notif", icon:"🔔", label:"Notifications locales",
+          badge: notifOn ? "Actif" : "Désactivé",
+          configured: notifOn,
+          hint: "Notifications locales désactivées" },
       ]
     },
     {
@@ -4758,6 +4841,60 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       </Sheet>
 
       {/* 💾 Sauvegarde */}
+      <Sheet open={openSheet==="notif"} onClose={close} title="🔔 Notifications locales">
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14, padding:"10px 14px", background:"var(--surface2)", borderRadius:10 }}>
+          <div>
+            <div style={{ fontSize:".78rem", fontWeight:700, color:"var(--text)" }}>Activer les notifications</div>
+            <div style={{ fontSize:".62rem", color:"var(--text3)", marginTop:2 }}>Rappels locaux Android — 100% hors-ligne</div>
+          </div>
+          <div onClick={()=>toggleNotifMain(!notifOn)} style={{
+            width:42, height:24, borderRadius:12, cursor:"pointer",
+            background:notifOn?"rgba(200,184,96,.25)":"var(--surface3,var(--surface2))",
+            border:`1px solid ${notifOn?"var(--warning)":"var(--border)"}`,
+            position:"relative", transition:"all .2s", flexShrink:0,
+          }}>
+            <div style={{ position:"absolute", top:3, left:notifOn?18:3, width:16, height:16, borderRadius:"50%", background:notifOn?"var(--warning)":"var(--text3)", transition:"all .2s" }}/>
+          </div>
+        </div>
+        {notifOn && (
+          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+            {[
+              ["recurring",  notifRecurring, setNotifRecurring, "🔄", "Récurrentes à confirmer",  "Le 1er du mois si non confirmées"],
+              ["autoSaving", notifAuto,      setNotifAuto,      "🐷", "Versements auto cagnotte",  "Le jour J si non appliqué"],
+              ["alertSolde", notifAlert,     setNotifAlert,     "🔔", "Alerte solde bas",          "Quand le solde passe sous le seuil"],
+              ["scheduled",  notifSched,     setNotifSched,     "📅", "Dépenses programmées",      "La veille de chaque dépense prévue"],
+              ["backup",     notifBackup,    setNotifBackup,    "💾", "Rappel sauvegarde",         "Si aucune sauvegarde depuis 7 jours"],
+            ].map(([key, val, setter, ico, lbl, desc]) => (
+              <div key={key} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+                <div style={{ width:32, height:32, borderRadius:8, background:"rgba(200,184,96,.1)", border:"1px solid rgba(200,184,96,.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem", flexShrink:0 }}>{ico}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:".72rem", fontWeight:700, color:"var(--text)" }}>{lbl}</div>
+                  <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{desc}</div>
+                </div>
+                <div onClick={()=>{ setter(!val); saveNotif(key,!val); }} style={{
+                  width:36, height:20, borderRadius:10, cursor:"pointer", flexShrink:0,
+                  background:val?"rgba(200,184,96,.2)":"var(--surface3,var(--surface2))",
+                  border:`1px solid ${val?"var(--warning)":"var(--border)"}`,
+                  position:"relative", transition:"all .2s",
+                }}>
+                  <div style={{ position:"absolute", top:2, left:val?16:2, width:14, height:14, borderRadius:"50%", background:val?"var(--warning)":"var(--text3)", transition:"all .2s" }}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!notifOn && (
+          <div style={{ textAlign:"center", color:"var(--text3)", fontSize:".72rem", padding:"20px 0" }}>
+            Activez les notifications pour configurer les rappels.
+          </div>
+        )}
+        <div style={{ marginTop:12, padding:"10px 12px", background:"rgba(90,184,224,.06)", border:"1px solid rgba(90,184,224,.12)", borderRadius:9 }}>
+          <div style={{ fontSize:".62rem", color:"var(--accent)", lineHeight:1.5 }}>
+            ℹ️ Les notifications utilisent <strong>@capacitor/local-notifications</strong>. Elles fonctionnent entièrement hors-ligne et ne transmettent aucune donnée.
+          </div>
+        </div>
+      </Sheet>
+
       <Sheet open={openSheet==="backup"} onClose={close} title="💾 Sauvegarde">
         {/* Dernière sauvegarde */}
         <div style={{ background:"var(--surface)", border:`1.5px solid ${backupOk?"rgba(104,212,152,.3)":last?"rgba(200,184,96,.3)":"rgba(200,112,112,.3)"}`, borderLeft:`3px solid ${backupOk?"var(--success)":last?"var(--warning)":"var(--danger)"}`, borderRadius:12, padding:14, marginBottom:10 }}>

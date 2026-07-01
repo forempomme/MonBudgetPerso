@@ -21,6 +21,7 @@ import { uid, todayISO } from "./utils.js";
  * @property {number}  current
  * @property {number|null}  target
  * @property {string|null}  targetDate  – ISO "YYYY-MM-DD"
+ * @property {string|null}  cagType     – "projet"|"urgence"|"plaisir"|"investissement"|null
  *
  * @typedef {Object} Category
  * @property {string}  id
@@ -78,6 +79,7 @@ export const A = /** @type {const} */ ({
   SAVE_SECURITY_SETTINGS:   "SAVE_SECURITY_SETTINGS",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
   MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
+  SAVE_NOTIF_SETTINGS:      "SAVE_NOTIF_SETTINGS",
   SAVE_TAG:                 "SAVE_TAG",
   DELETE_TAG:               "DELETE_TAG",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
@@ -116,6 +118,14 @@ export const DEFAULT_DATA = {
   roundingCagnotteId:        null,
   roundingRule:              "ceil",
   roundingLastTransferDate:  null,
+  notifSettings: {
+    enabled:    false,
+    recurring:  true,
+    autoSaving: true,
+    alertSolde: true,
+    scheduled:  true,
+    backup:     true,
+  },
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -458,6 +468,10 @@ export function reducer(state, action) {
 
     case A.MARK_ROUNDING_TRANSFERRED:
       return { ...state, roundingLastTransferDate: action.date };
+
+    case A.SAVE_NOTIF_SETTINGS: {
+      return { ...state, notifSettings: { ...state.notifSettings, ...action.settings } };
+    }
 
     case A.SAVE_TAG: {
       const { tag } = action;
