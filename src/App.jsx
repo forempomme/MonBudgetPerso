@@ -94,6 +94,43 @@ export default function App() {
   const saveRoundingSettings      = useCallback((enabled, cagnotteId, rule) =>
     dispatch({ type: A.SAVE_ROUNDING_SETTINGS, enabled, cagnotteId, rule }), []);
   const saveNotifSettings = useCallback(settings => dispatch({ type: A.SAVE_NOTIF_SETTINGS, settings }), []);
+
+  // Planification des notifs — appelée UNIQUEMENT depuis Options (action utilisateur explicite)
+  // Jamais au démarrage pour éviter l'écran noir post-biométrie
+  const scheduleNotifications = useCallback(async (ns) => {
+    try {
+      const LN = window?.Capacitor?.Plugins?.LocalNotifications;
+      if (!LN) return;
+      const perm = await LN.requestPermissions();
+      if (perm.display !== "granted") return;
+      await LN.cancel({ notifications: Array.from({length:30},(_,i)=>({id:i+1})) });
+      const pending = [];
+      const now = new Date();
+      const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
+      if (ns.recurring && (data.recurringTemplates||[]).length > 0) {
+        const d = new Date(now.getFullYear(), now.getMonth()+1, 1, 9, 0, 0);
+        pending.push({ id:1, title:"🔄 Récurrentes à confirmer", body:`${(data.recurringTemplates||[]).length} modèle(s) à confirmer ce mois`, schedule:{at:d}, channelId:"budget" });
+      }
+      (data.autoSavings||[]).filter(p=>p.enabled && ns.autoSaving).forEach((p,i) => {
+        const d = new Date(now.getFullYear(), now.getMonth(), p.dayOfMonth, 9, 0, 0);
+        if (d > now) {
+          const cag = data.cagnottes.find(c=>c.id===p.cagnotteId);
+          pending.push({ id:10+i, title:"🐷 Versement automatique", body:`${fmtAmt(p.amount)} → ${cag?.name||"cagnotte"}`, schedule:{at:d}, channelId:"budget" });
+        }
+      });
+      if (ns.scheduled) {
+        (data.scheduledTransactions||[]).filter(s=>!s.confirmed).forEach((s,i) => {
+          const veille = new Date(new Date(s.date+"T09:00:00").getTime()-86400000);
+          if (veille > now) pending.push({ id:20+i, title:"📅 Dépense prévue demain", body:`${fmtAmt(s.amount)}${s.note?" — "+s.note:""}`, schedule:{at:veille}, channelId:"budget" });
+        });
+      }
+      if (ns.backup && data.lastBackupDate) {
+        const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
+        if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
+      }
+      if (pending.length > 0) await LN.schedule({ notifications:pending });
+    } catch(e) { console.warn("LocalNotifications:", e); }
+  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes]);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: new Date().toISOString().slice(0, 10) }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
@@ -539,6 +576,7 @@ export default function App() {
         onSaveSecuritySettings={saveSecuritySettings}
         notifSettings={data.notifSettings || {}}
         onSaveNotifSettings={saveNotifSettings}
+        onScheduleNotifications={scheduleNotifications}
         onPushBack={pushBack}
         onPopBack={popBack}
       />
@@ -555,59 +593,6 @@ export default function App() {
       />
     );
   }
-
-  // ── Notifications locales — planification après unlock uniquement ──
-  useEffect(() => {
-    const ns = data.notifSettings;
-    if (locked) return;
-    if (!ns?.enabled) return;
-
-    // Délai de 5s — laisse le rendu et l'animation de déverrouillage se terminer
-    const timer = setTimeout(async () => {
-      try {
-        const LocalNotifications = window?.Capacitor?.Plugins?.LocalNotifications;
-        if (!LocalNotifications) return;
-        // Ne jamais appeler requestPermissions() ici — ça bloque le rendu Android
-        // La permission est demandée une seule fois lors de l'activation dans Options
-        await LocalNotifications.cancel({ notifications: [
-          ...Array.from({length:30},(_,i)=>({id:i+1}))
-        ]});
-        const pending = [];
-        const now = new Date();
-        const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
-
-        if (ns.recurring && (data.recurringTemplates||[]).length > 0) {
-          const d = new Date(now.getFullYear(), now.getMonth()+1, 1, 9, 0, 0);
-          pending.push({ id:1, title:"🔄 Récurrentes à confirmer", body:`${(data.recurringTemplates||[]).length} modèle(s) à confirmer ce mois`, schedule:{at:d}, channelId:"budget" });
-        }
-        if (ns.autoSaving) {
-          (data.autoSavings||[]).filter(p=>p.enabled).forEach((p,i) => {
-            const d = new Date(now.getFullYear(), now.getMonth(), p.dayOfMonth, 9, 0, 0);
-            if (d > now) {
-              const cag = data.cagnottes.find(c=>c.id===p.cagnotteId);
-              pending.push({ id:10+i, title:"🐷 Versement automatique", body:`${fmtAmt(p.amount)} → ${cag?.name||"cagnotte"}`, schedule:{at:d}, channelId:"budget" });
-            }
-          });
-        }
-        if (ns.scheduled) {
-          (data.scheduledTransactions||[]).filter(s=>!s.confirmed).forEach((s,i) => {
-            const date = new Date(s.date+"T09:00:00");
-            const veille = new Date(date.getTime()-86400000);
-            if (veille > now) {
-              pending.push({ id:20+i, title:"📅 Dépense prévue demain", body:`${fmtAmt(s.amount)}${s.note?" — "+s.note:""}`, schedule:{at:veille}, channelId:"budget" });
-            }
-          });
-        }
-        if (ns.backup && data.lastBackupDate) {
-          const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
-          if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
-        }
-        if (pending.length > 0) await LocalNotifications.schedule({ notifications:pending });
-      } catch(e) { console.warn("LocalNotifications:", e); }
-    }, 5000);
-
-    return () => clearTimeout(timer);
-  }, [locked, data.notifSettings, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate]);
 
   return (
     <ToastCtx.Provider value={addToast}>

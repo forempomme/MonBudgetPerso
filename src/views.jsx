@@ -4305,7 +4305,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onPushBack, onPopBack }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
@@ -4325,15 +4325,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
     onSaveNotifSettings?.(next);
   }
   function toggleNotifMain(val) {
-    if (val) {
-      // Demande la permission uniquement quand l'utilisateur active manuellement
-      try {
-        const LN = window?.Capacitor?.Plugins?.LocalNotifications;
-        if (LN) LN.requestPermissions().catch(() => {});
-      } catch(e) {}
-    }
+    const next = { enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup };
     setNotifOn(val);
-    onSaveNotifSettings?.({ enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup });
+    onSaveNotifSettings?.(next);
+    // Planification déclenchée ici — action explicite de l'utilisateur, pas au démarrage
+    if (val) onScheduleNotifications?.(next);
   }
 
   // Versement auto
@@ -4896,9 +4892,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           </div>
         )}
         <div style={{ marginTop:12, padding:"10px 12px", background:"rgba(90,184,224,.06)", border:"1px solid rgba(90,184,224,.12)", borderRadius:9 }}>
-          <div style={{ fontSize:".62rem", color:"var(--accent)", lineHeight:1.5 }}>
+          <div style={{ fontSize:".62rem", color:"var(--accent)", lineHeight:1.5, marginBottom:8 }}>
             ℹ️ Les notifications utilisent <strong>@capacitor/local-notifications</strong>. Elles fonctionnent entièrement hors-ligne et ne transmettent aucune donnée.
           </div>
+          <button
+            className="btn btn-outline"
+            style={{ width:"100%", fontSize:".68rem", color:"var(--accent)", borderColor:"var(--accent)" }}
+            onClick={() => onScheduleNotifications?.({ enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup })}>
+            🔔 Planifier les notifications maintenant
+          </button>
         </div>
       </Sheet>
 
