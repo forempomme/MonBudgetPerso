@@ -5,7 +5,7 @@ import { LS_KEY, uid, APP_NAME, APP_VERSION } from "./utils.js";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
-  TransModal, FixedModal, CagModal, TransferModal, CatModal,
+  TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
 } from "./components/modals.jsx";
@@ -36,7 +36,15 @@ const PAGE_TITLES = Object.fromEntries(
 function loadState() {
   try {
     const s = localStorage.getItem(LS_KEY);
-    return s ? { ...DEFAULT_DATA, ...JSON.parse(s) } : DEFAULT_DATA;
+    if (!s) return DEFAULT_DATA;
+    const saved = JSON.parse(s);
+    // Merge profond pour les objets imbriqués — évite qu'une MAJ écrase un sous-objet entier
+    return {
+      ...DEFAULT_DATA,
+      ...saved,
+      notifSettings: { ...DEFAULT_DATA.notifSettings, ...(saved.notifSettings || {}) },
+      fixedIncomes: saved.fixedIncomes || DEFAULT_DATA.fixedIncomes,
+    };
   } catch {
     return DEFAULT_DATA;
   }
@@ -132,7 +140,7 @@ export default function App() {
     } catch(e) { console.warn("LocalNotifications:", e); }
   }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes]);
   const markRoundingTransferred   = useCallback(() =>
-    dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: new Date().toISOString().slice(0, 10) }), []);
+    dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
   const deleteTag              = useCallback(id   => dispatch({ type: A.DELETE_TAG,  id   }), []);
 
@@ -168,21 +176,30 @@ export default function App() {
   // Déclenchement au démarrage uniquement (cold start)
   useEffect(() => {
     const now   = new Date();
+    // ⚠️ Heure LOCALE (pas toISOString UTC) — cohérent avec currentYM() partout dans l'app
     const ym    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
     const today = now.getDate();
-    const date  = now.toISOString().slice(0, 10);
+    const date  = `${ym}-${String(today).padStart(2,"0")}`;
+
     (data.autoSavings || []).forEach(plan => {
       if (!plan.enabled)             return;
       if (plan.lastAppliedYm === ym) return;
       if (today < plan.dayOfMonth)   return;
+      // Double-garde : vérifier qu'aucune transaction autoSaving pour ce plan ce mois n'existe déjà
+      // Protège contre un double déclenchement si lastAppliedYm était mal enregistré (bug UTC)
+      const alreadyApplied = (data.transactions || []).some(
+        t => t.isAutoSaving && t.autoSavingId === plan.id && t.date.startsWith(ym)
+      );
+      if (alreadyApplied) return;
       dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
     });
+
     // Confirmation automatique des transactions programmées du mois courant
     (data.scheduledTransactions || []).forEach(s => {
       if (s.confirmed) return;
       if (!s.date.startsWith(ym)) return;
       const scheduledDay = parseInt(s.date.slice(8), 10);
-      if (today < scheduledDay) return; // pas encore le bon jour
+      if (today < scheduledDay) return;
       dispatch({ type: A.CONFIRM_SCHEDULED, id: s.id });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -228,7 +245,8 @@ export default function App() {
     if (catModal)      { setCatModal(null);       return; }
     if (transferModal) { setTransferModal(false); return; }
     if (cagModal)      { setCagModal(null);       return; }
-    if (fixedModal)    { setFixedModal(null);     return; }
+    if (fixedModal)    { setFixedModal(null);       return; }
+    if (fixedIncomeModal) { setFixedIncomeModal(null); return; }
     if (transModal)    { setTransModal(null);     return; }
     // Priorité 2 : fermer la couche interne à la vue (sheet, panel…)
     if (backStackRef.current.length > 0) {
@@ -269,7 +287,8 @@ export default function App() {
   const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
   const [accueilEdit,   setAccueilEdit]   = useState(false);
-  const [fixedModal,    setFixedModal]    = useState(null); // null | { editingIdx: number|null }
+  const [fixedModal,       setFixedModal]       = useState(null);
+  const [fixedIncomeModal, setFixedIncomeModal] = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
   const [transferModal, setTransferModal] = useState(false);
   const [catModal,      setCatModal]      = useState(null); // null | Category object (or {})
@@ -339,6 +358,21 @@ export default function App() {
     });
   }, [addToast]);
 
+  const saveFixedIncome = useCallback((payload) => {
+    dispatch({ type: A.SAVE_FIXED_INCOME, ...payload });
+  }, []);
+
+  const deleteFixedIncome = useCallback((idx) => {
+    setConfirmModal({
+      title: "Supprimer ce revenu fixe ?",
+      msg:   "Ce revenu ne sera plus comptabilisé dans le solde.",
+      onConfirm: () => {
+        dispatch({ type: A.DELETE_FIXED_INCOME, idx });
+        addToast("Revenu fixe supprimé", "error");
+      },
+    });
+  }, [addToast]);
+
   const saveProvisional = useCallback((provisional) => {
     dispatch({ type: A.SAVE_PROVISIONAL, provisional });
   }, []);
@@ -349,7 +383,7 @@ export default function App() {
   }, [addToast]);
 
   function executeTransfer(payload) {
-    dispatch({ type: A.EXECUTE_TRANSFER, ...payload, date: new Date().toISOString().slice(0, 10) });
+    dispatch({ type: A.EXECUTE_TRANSFER, ...payload, reason: payload.reason || null, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() });
     setTransferModal(false);
   }
 
@@ -464,6 +498,11 @@ export default function App() {
         onExitEditMode={() => setAccueilEdit(false)}
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
         onConfirmRecurring={(tpl, month) => {
+          // Garde anti-double-clic : vérifier qu'aucune transaction avec ce templateId n'existe déjà ce mois
+          const alreadyConfirmed = (data.transactions || []).some(
+            t => t.templateId === tpl.id && t.date.startsWith(month)
+          );
+          if (alreadyConfirmed) return;
           const [y, m] = month.split("-").map(Number);
           const lastDay = new Date(y, m, 0).getDate();
           const day = Math.min(new Date().getDate(), lastDay);
@@ -494,6 +533,10 @@ export default function App() {
         onOverrideFixMonth={overrideFixMonth}
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={(tpl, month) => {
+          const alreadyConfirmed = (data.transactions || []).some(
+            t => t.templateId === tpl.id && t.date.startsWith(month)
+          );
+          if (alreadyConfirmed) return;
           const [y, m] = month.split("-").map(Number);
           const lastDay = new Date(y, m, 0).getDate();
           const day = Math.min(new Date().getDate(), lastDay);
@@ -506,7 +549,7 @@ export default function App() {
         onApplyAutoSaving={planId => {
           const now  = new Date();
           const ym   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-          const date = now.toISOString().slice(0, 10);
+          const date = `${ym}-${String(now.getDate()).padStart(2,"0")}`;
           dispatch({ type: A.APPLY_AUTO_SAVING, planId, ym, date });
         }}
         onSkipAutoSaving={planId => {
@@ -525,6 +568,9 @@ export default function App() {
         onNewFixed={()    => setFixedModal({ editingIdx: null })}
         onEditFixed={idx  => setFixedModal({ editingIdx: idx  })}
         onDeleteFixed={deleteFixed}
+        onNewFixedIncome={()    => setFixedIncomeModal({ editingIdx: null })}
+        onEditFixedIncome={idx  => setFixedIncomeModal({ editingIdx: idx  })}
+        onDeleteFixedIncome={deleteFixedIncome}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
       />
@@ -739,6 +785,15 @@ export default function App() {
           editingIdx={fixedModal.editingIdx}
           onSave={payload => { saveFixed(payload); setFixedModal(null); }}
           onClose={() => setFixedModal(null)}
+        />
+      )}
+      {fixedIncomeModal && (
+        <FixedIncomeModal
+          categories={data.categories}
+          fixedIncomes={data.fixedIncomes || []}
+          editingIdx={fixedIncomeModal.editingIdx}
+          onSave={payload => { saveFixedIncome(payload); setFixedIncomeModal(null); }}
+          onClose={() => setFixedIncomeModal(null)}
         />
       )}
       {cagModal && (
