@@ -365,7 +365,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   const prevM     = getPrevMonth(curM);
   const curY      = new Date().getFullYear().toString();
 
-  const balance   = useBalanceWithRecurring(transactions, fixedExpenses, data.recurringTemplates || []);
+  const balance   = useBalanceWithRecurring(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || []);
 
   // ── Arrondi stats ─────────────────────────────────────────────
   const roundStats = useMemo(() => {
@@ -379,8 +379,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     const cag = cagnottes.find(c => c.id === roundingCagnotteId);
     return { month, year, pending: parseFloat(pending.toFixed(2)), cagName: cag?.name || "", cagIcon: cag?.icon || "🐷" };
   }, [transactions, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, curM, curY, cagnottes]);
-  const curMonth  = useMonthStats(transactions, fixedExpenses, curM);
-  const prevMonth = useMonthStats(transactions, fixedExpenses, prevM);
+  const curMonth  = useMonthStats(transactions, fixedExpenses, curM, data.fixedIncomes || []);
+  const prevMonth = useMonthStats(transactions, fixedExpenses, prevM, data.fixedIncomes || []);
   const tf        = useTotalFixes(fixedExpenses);
 
   // ── Rapprochement bancaire ────────────────────────────────────
@@ -2334,7 +2334,9 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
-    return { label: l, cls: txTypeClass(t.type), sign: txSign(t.type) };
+    // Pour dissolution_cagnotte : utiliser directement t.note qui contient le bon libellé
+    const finalLabel = t.type === "dissolution_cagnotte" && t.note ? t.note : l;
+    return { label: finalLabel, cls: txTypeClass(t.type), sign: txSign(t.type) };
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
 
@@ -2516,16 +2518,20 @@ function CatBreakdown({ txs, allTxs, categories, onSelectCat }) {
 // ─────────────────────────────────────────────────────────────────
 //  FIXES
 // ─────────────────────────────────────────────────────────────────
-export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSaveProvisional, onDeleteProvisional }) {
+export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onSaveProvisional, onDeleteProvisional }) {
   const { fixedExpenses, categories } = data;
-  const provisionalExpenses = data.provisionalExpenses || [];
-  const [selected,    setSelected]    = useState(null); // id carte sélectionnée (tap)
+  const fixedIncomes         = data.fixedIncomes || [];
+  const provisionalExpenses  = data.provisionalExpenses || [];
+  const [selected,     setSelected]    = useState(null);
+  const [activeSection,setActiveSection]= useState("depenses");
   const [showProvForm, setShowProvForm] = useState(false);
-  const [provName,    setProvName]    = useState("");
-  const [provAmt,     setProvAmt]     = useState("");
-  const [provErr,     setProvErr]     = useState({});
-  const total     = fixedExpenses.reduce((s, f) => s + (f.amount || 0), 0);
-  const provTotal = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
+  const [provName,     setProvName]    = useState("");
+  const [provAmt,      setProvAmt]     = useState("");
+  const [provErr,      setProvErr]     = useState({});
+  const totalFixes   = fixedExpenses.reduce((s, f) => s + (f.amount || 0), 0);
+  const totalIncomes = fixedIncomes.reduce((s, f) => s + (f.amount || 0), 0);
+  const provTotal    = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
+  const total = totalFixes; // alias pour compatibilité
 
   function handleAddProv() {
     const e = {};
@@ -2540,7 +2546,11 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
   // Style partagé pour une carte 4-col
   const card4 = (selKey, accentColor) => ({
-    background: "var(--card-bg, #1e1e2e)",
+    background: accentColor === "var(--danger)"
+      ? "linear-gradient(135deg,rgba(200,112,112,.07),rgba(200,112,112,.02))"
+      : accentColor === "var(--success)"
+      ? "linear-gradient(135deg,rgba(104,212,152,.07),rgba(104,212,152,.02))"
+      : "var(--card-bg, #1e1e2e)",
     borderRadius: 10,
     borderTop: `3px solid ${accentColor}`,
     padding: "8px 5px 6px",
@@ -2556,7 +2566,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
 
   return (
     <div>
-      {/* ── Carte récap totaux ── */}
+      {/* ── Hero récap charges / revenus / net ── */}
       <div style={{
         background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
         borderRadius: 14, padding: "13px 16px", marginBottom: 12,
@@ -2564,46 +2574,61 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
         boxShadow: "0 4px 18px rgba(112,184,224,.15)",
       }}>
         <div>
-          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
-            📌 Fixes / mois
-          </div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 800, color: "#fff", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
-            {fmt(total)}
-          </div>
-          <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.4)", marginTop: 2 }}>
-            {fixedExpenses.length} frais récurrents
-          </div>
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>📌 Charges</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>−{fmt(totalFixes)}</div>
+          <div style={{ fontSize: ".55rem", color: "rgba(255,255,255,.35)", marginTop: 1 }}>{fixedExpenses.length} récurrentes</div>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>💰 Revenus fixes</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>+{fmt(totalIncomes)}</div>
+          <div style={{ fontSize: ".55rem", color: "rgba(255,255,255,.35)", marginTop: 1 }}>{fixedIncomes.length} récurrents</div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em" }}>
-            🔮 Prévisions
+          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>= Net fixe</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: totalIncomes - totalFixes >= 0 ? "var(--success)" : "var(--danger)" }}>
+            {totalIncomes - totalFixes >= 0 ? "+" : "−"}{fmt(Math.abs(totalIncomes - totalFixes))}
           </div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1rem", fontWeight: 700, color: "var(--warning)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
-            −{fmt(provTotal)}
-          </div>
-          <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.4)", marginTop: 2 }}>
-            {provisionalExpenses.length} prévision{provisionalExpenses.length !== 1 ? "s" : ""}
-          </div>
+          {provTotal > 0 && <div style={{ fontSize: ".55rem", color: "var(--warning)", marginTop: 1 }}>−{fmt(provTotal)} prév.</div>}
         </div>
       </div>
 
-      {/* ── Bouton ajouter frais fixe ── */}
-      <button className="btn btn-outline" style={{ width: "100%", marginBottom: 10 }} onClick={onNewFixed}>
-        + Ajouter un frais fixe
-      </button>
+      {/* ── Onglets Charges / Revenus ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        <button onClick={() => { setActiveSection("depenses"); setSelected(null); }} style={{
+          padding: "11px 8px", borderRadius: 12, cursor: "pointer",
+          border: `2px solid ${activeSection === "depenses" ? "var(--danger)" : "rgba(200,112,112,.25)"}`,
+          background: activeSection === "depenses" ? "rgba(200,112,112,.12)" : "var(--surface2)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+        }}>
+          <span style={{ fontSize: "1.1rem" }}>📌</span>
+          <span style={{ fontSize: ".68rem", fontWeight: 800, color: activeSection === "depenses" ? "var(--danger)" : "rgba(200,112,112,.55)" }}>Charges fixes</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: ".6rem", fontWeight: 700, color: "var(--danger)" }}>−{fmt(totalFixes)}</span>
+        </button>
+        <button onClick={() => { setActiveSection("revenus"); setSelected(null); }} style={{
+          padding: "11px 8px", borderRadius: 12, cursor: "pointer",
+          border: `2px solid ${activeSection === "revenus" ? "var(--success)" : "rgba(104,212,152,.25)"}`,
+          background: activeSection === "revenus" ? "rgba(104,212,152,.12)" : "var(--surface2)",
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+        }}>
+          <span style={{ fontSize: "1.1rem" }}>💰</span>
+          <span style={{ fontSize: ".68rem", fontWeight: 800, color: activeSection === "revenus" ? "var(--success)" : "rgba(104,212,152,.55)" }}>Revenus fixes</span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: ".6rem", fontWeight: 700, color: "var(--success)" }}>+{fmt(totalIncomes)}</span>
+        </button>
+      </div>
 
-      {/* ── Grille 4 colonnes — frais fixes ── */}
-      {fixedExpenses.length === 0
-        ? <EmptyIllustration type="fixes" title="Aucun frais fixe" sub="Ajoute tes charges récurrentes pour les déduire automatiquement" cta="+ Ajouter" onCta={onNewFixed} ctaColor="var(--accent2)" />
-        : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 16 }}>
-            {fixedExpenses.map((f, idx) => {
-              const cat    = categories.find(c => c.id === f.categoryId);
-              const selKey = f.id ?? idx;
-              return (
-                <div key={selKey} style={card4(selKey, "var(--accent)")}
-                  onClick={() => setSelected(selected === selKey ? null : selKey)}>
-                  <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "📌"}</span>
+      {/* ── Section Charges ── */}
+      {activeSection === "depenses" && (
+        fixedExpenses.length === 0
+          ? <EmptyIllustration type="fixes" title="Aucune charge fixe" sub="Ajoute tes charges récurrentes pour les déduire automatiquement" cta="+ Ajouter" onCta={onNewFixed} ctaColor="var(--danger)" />
+          : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
+              {fixedExpenses.map((f, idx) => {
+                const cat    = categories.find(c => c.id === f.categoryId);
+                const selKey = f.id ?? idx;
+                return (
+                  <div key={selKey} style={card4(selKey, "var(--danger)")}
+                    onClick={() => setSelected(selected === selKey ? null : selKey)}>
+                    <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "📌"}</span>
                   {/* Nom sur 2 lignes max, jamais tronqué */}
                   <div style={{
                     fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
@@ -2650,8 +2675,76 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onSave
               );
             })}
           </div>
-        )
-      }
+          )
+      )}
+
+      {/* ── Bouton ajouter charge fixe ── */}
+      {activeSection === "depenses" && (
+        <button style={{
+          width:"100%", padding:"11px", borderRadius:12, marginBottom:16,
+          border:"2px dashed rgba(200,112,112,.35)",
+          background:"rgba(200,112,112,.06)",
+          color:"var(--danger)", fontSize:".75rem", fontWeight:700, cursor:"pointer",
+          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+        }} onClick={onNewFixed}>
+          <span style={{ fontSize:"1.1rem" }}>＋</span> Ajouter une charge fixe
+        </button>
+      )}
+
+      {/* ── Section Revenus fixes ── */}
+      {activeSection === "revenus" && (
+        fixedIncomes.length === 0
+          ? <EmptyIllustration type="fixes" title="Aucun revenu fixe" sub="Ajoute tes revenus récurrents (salaire, loyer perçu…)" cta="+ Ajouter" onCta={onNewFixedIncome} ctaColor="var(--success)" />
+          : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
+              {fixedIncomes.map((f, idx) => {
+                const cat    = categories.find(c => c.id === f.categoryId);
+                const selKey = `inc_${f.id ?? idx}`;
+                return (
+                  <div key={selKey} style={card4(selKey, "var(--success)")}
+                    onClick={() => setSelected(selected === selKey ? null : selKey)}>
+                    <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "💰"}</span>
+                    <div style={{
+                      fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
+                      textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
+                      width: "100%", padding: "0 2px",
+                      minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
+                    }}>{f.name}</div>
+                    <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>
+                      +{fmt(f.amount)}
+                    </div>
+                    {f.startYM && (
+                      <div style={{ fontSize:".48rem", fontWeight:700, color:"var(--accent)", marginTop:2, background:"rgba(90,184,224,.1)", borderRadius:3, padding:"1px 4px", border:"1px solid rgba(90,184,224,.2)" }}>
+                        📅 {f.startYM}
+                      </div>
+                    )}
+                    {selected === selKey && (
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                          onClick={e => { e.stopPropagation(); onEditFixedIncome(idx); }}>✏️</button>
+                        <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                          onClick={e => { e.stopPropagation(); onDeleteFixedIncome(idx); }}>✕</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )
+      )}
+
+      {/* ── Bouton ajouter revenu fixe ── */}
+      {activeSection === "revenus" && (
+        <button style={{
+          width:"100%", padding:"11px", borderRadius:12, marginBottom:16,
+          border:"2px dashed rgba(104,212,152,.35)",
+          background:"rgba(104,212,152,.06)",
+          color:"var(--success)", fontSize:".75rem", fontWeight:700, cursor:"pointer",
+          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+        }} onClick={onNewFixedIncome}>
+          <span style={{ fontSize:"1.1rem" }}>＋</span> Ajouter un revenu fixe
+        </button>
+      )}
 
       {/* ── Section prévisionnels ── */}
       <SectionTitle style={{ marginTop: 4 }}>🔮 Frais prévisionnels</SectionTitle>
