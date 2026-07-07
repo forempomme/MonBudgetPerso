@@ -2382,12 +2382,19 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         style={{
           transform: `translateX(${offset}px)`,
           transition: (offset === 0 || offset === -PANEL) ? "transform .2s" : "none",
-          background: "var(--bg)",
-          display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
+          background: t.type === "dissolution_cagnotte" ? "rgba(104,212,152,.04)"
+                    : t.type === "decagnottage"         ? "rgba(224,136,112,.04)"
+                    : t.type === "epargne"              ? "rgba(176,144,224,.04)"
+                    : "var(--bg)",
+          borderLeft: t.type === "dissolution_cagnotte" ? "3px solid rgba(104,212,152,.3)"
+                    : t.type === "decagnottage"         ? "3px solid rgba(224,136,112,.3)"
+                    : t.type === "epargne"              ? "3px solid rgba(176,144,224,.3)"
+                    : "3px solid transparent",
+          display: "flex", alignItems: "center", gap: 8, padding: "11px 11px 11px 11px",
           cursor: "pointer",
         }}>
-        {/* Bouton pointage — masqué pour decagnottage et transfer */}
-        {onTogglePoint && isPointable(t.type) && (
+        {/* Bouton pointage — masqué pour decagnottage et transfer, spacer pour alignement */}
+        {onTogglePoint && isPointable(t.type) ? (
           <button
             onTouchStart={e => e.stopPropagation()}
             onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
@@ -2403,23 +2410,68 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
               touchAction: "manipulation",
               WebkitTapHighlightColor: "transparent",
             }}>{t.pointed ? "✓" : ""}</button>
+        ) : (
+          /* Spacer — même largeur que le bouton, invisible, pour garder l'alignement */
+          <div style={{ width: 32, height: 32, flexShrink: 0 }}/>
         )}
-        <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--surface2)", border: `1.5px solid var(--border)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>
-          {icon}
-        </div>
+        {/* Icône — fond coloré pour les types spéciaux */}
+        {(() => {
+          const TYPE_COLOR = {
+            dissolution_cagnotte: "var(--success)",
+            decagnottage:         "var(--coral)",
+            epargne:              "var(--purple)",
+          };
+          const specialColor = TYPE_COLOR[t.type];
+          return (
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+              background: specialColor ? `color-mix(in srgb,${specialColor} 14%,var(--surface2))` : "var(--surface2)",
+              border: specialColor ? `1.5px solid color-mix(in srgb,${specialColor} 35%,transparent)` : `1.5px solid var(--border)`,
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem",
+            }}>
+              {icon}
+            </div>
+          );
+        })()}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 1, flexWrap: "nowrap", overflow: "hidden" }}>
-            <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
-            {(t.tagIds || []).map(tid => {
-              const tag = allTags.find(tg => tg.id === tid);
-              if (!tag) return null;
+            {/* Sous-texte : pour les types spéciaux, badge type + raison */}
+            {(() => {
+              const TYPE_BADGE = {
+                dissolution_cagnotte: { label:"↑ Retrait cagnotte", bg:"rgba(104,212,152,.1)",  color:"var(--success)" },
+                decagnottage:         { label:"↩ Retrait cagnotte", bg:"rgba(224,136,112,.1)",  color:"var(--coral)"   },
+                epargne:              { label:"↓ Épargne",           bg:"rgba(176,144,224,.1)",  color:"var(--purple)"  },
+              };
+              const badge = TYPE_BADGE[t.type];
+              if (badge) {
+                return (
+                  <>
+                    <span style={{ fontSize:".5rem", fontWeight:700, padding:"1px 5px", borderRadius:3, background:badge.bg, color:badge.color, flexShrink:0 }}>{badge.label}</span>
+                    {t.note && t.type === "dissolution_cagnotte" && (
+                      <span style={{ fontSize:".55rem", color:"var(--text2)", fontStyle:"italic", flexShrink:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {t.note.includes(" — ") ? t.note.split(" — ").slice(1).join(" — ") : ""}
+                      </span>
+                    )}
+                    <span style={{ fontSize:".58rem", color:"var(--text3)", flexShrink:0 }}>{t.date.slice(8)}/{t.date.slice(5,7)}</span>
+                  </>
+                );
+              }
               return (
-                <span key={tid} style={{ fontSize: ".5rem", padding: "1px 5px", background: `${tag.color}22`, color: tag.color, borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
-                  {tag.icon} {tag.name}
-                </span>
+                <>
+                  <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
+                  {(t.tagIds || []).map(tid => {
+                    const tag = allTags.find(tg => tg.id === tid);
+                    if (!tag) return null;
+                    return (
+                      <span key={tid} style={{ fontSize: ".5rem", padding: "1px 5px", background: `${tag.color}22`, color: tag.color, borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                        {tag.icon} {tag.name}
+                      </span>
+                    );
+                  })}
+                </>
               );
-            })}
+            })()}
           </div>
         </div>
         <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
