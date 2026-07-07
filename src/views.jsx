@@ -13,7 +13,7 @@ import {
 //  entre cagnottes : ils n'apparaissent pas sur un relevé.
 // ─────────────────────────────────────────────────────────────────
 function isPointable(type) {
-  return type !== "decagnottage" && type !== "transfer";
+  return type !== "decagnottage" && type !== "transfer" && type !== "dissolution_cagnotte";
 }
 
 // ─────────────────────────────────────────────────────────────────
