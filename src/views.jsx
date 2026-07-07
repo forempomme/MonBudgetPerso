@@ -2386,11 +2386,11 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
                     : t.type === "decagnottage"         ? "rgba(224,136,112,.04)"
                     : t.type === "epargne"              ? "rgba(176,144,224,.04)"
                     : "var(--bg)",
-          borderLeft: t.type === "dissolution_cagnotte" ? "3px solid rgba(104,212,152,.3)"
-                    : t.type === "decagnottage"         ? "3px solid rgba(224,136,112,.3)"
-                    : t.type === "epargne"              ? "3px solid rgba(176,144,224,.3)"
-                    : "3px solid transparent",
-          display: "flex", alignItems: "center", gap: 8, padding: "11px 11px 11px 11px",
+          boxShadow: t.type === "dissolution_cagnotte" ? "inset 3px 0 0 rgba(104,212,152,.35)"
+                   : t.type === "decagnottage"         ? "inset 3px 0 0 rgba(224,136,112,.35)"
+                   : t.type === "epargne"              ? "inset 3px 0 0 rgba(176,144,224,.35)"
+                   : "none",
+          display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
         {/* Bouton pointage — masqué pour decagnottage et transfer, spacer pour alignement */}
