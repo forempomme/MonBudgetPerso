@@ -13,7 +13,7 @@ import {
 //  entre cagnottes : ils n'apparaissent pas sur un relevé.
 // ─────────────────────────────────────────────────────────────────
 function isPointable(type) {
-  return type !== "decagnottage" && type !== "transfer" && type !== "dissolution_cagnotte";
+  return type !== "decagnottage" && type !== "transfer";
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -2330,15 +2330,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
   const startY  = useRef(null);
-  const isHoriz = useRef(null);
-
-  // Ferme le swipe si une autre interaction se produit ailleurs
-  useEffect(() => {
-    if (!revealed) return;
-    const close = () => { setOffset(0); setRevealed(false); };
-    window.addEventListener("touchstart", close, { passive: true });
-    return () => window.removeEventListener("touchstart", close);
-  }, [revealed]);
+  const isHoriz = useRef(false);
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
@@ -2369,17 +2361,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         onTouchStart={e => {
           startX.current  = e.touches[0].clientX;
           startY.current  = e.touches[0].clientY;
-          isHoriz.current = null; // null = pas encore déterminé
+          isHoriz.current = false;
         }}
         onTouchMove={e => {
           const dx = e.touches[0].clientX - startX.current;
           const dy = e.touches[0].clientY - startY.current;
-          // Détermine la direction une seule fois, avec un seuil de 8px
-          if (isHoriz.current === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-            isHoriz.current = Math.abs(dx) > Math.abs(dy) * 1.5; // horizontal doit être nettement dominant
+          if (!isHoriz.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+            isHoriz.current = Math.abs(dx) > Math.abs(dy);
           }
           if (!isHoriz.current) return;
-          e.preventDefault(); // bloque le scroll seulement si c'est un swipe confirmé
           if (dx < 0) setOffset(Math.max(-PANEL, dx));
           else if (revealed) setOffset(Math.min(0, -PANEL + dx));
         }}
@@ -2392,9 +2382,9 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         style={{
           transform: `translateX(${offset}px)`,
           transition: (offset === 0 || offset === -PANEL) ? "transform .2s" : "none",
-          background: t.type === "dissolution_cagnotte" ? "rgba(104,212,152,.04)"
-                    : t.type === "decagnottage"         ? "rgba(224,136,112,.04)"
-                    : t.type === "epargne"              ? "rgba(176,144,224,.04)"
+          background: t.type === "dissolution_cagnotte" ? "#080f0c"
+                    : t.type === "decagnottage"         ? "#0e0906"
+                    : t.type === "epargne"              ? "#0b080f"
                     : "var(--bg)",
           boxShadow: t.type === "dissolution_cagnotte" ? "inset 3px 0 0 rgba(104,212,152,.35)"
                    : t.type === "decagnottage"         ? "inset 3px 0 0 rgba(224,136,112,.35)"
