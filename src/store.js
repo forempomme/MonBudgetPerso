@@ -36,6 +36,13 @@ import { uid, todayISO } from "./utils.js";
  * @property {string}  [categoryId]
  * @property {string}  [startYM]     – "YYYY-MM" : premier mois où ce frais s'applique (optionnel)
  *
+ * @typedef {Object} FixedIncome
+ * @property {string}  id
+ * @property {string}  name
+ * @property {number}  amount
+ * @property {string}  [categoryId]
+ * @property {string}  [startYM]     – "YYYY-MM" : premier mois où ce revenu s'applique (optionnel)
+ *
  * @property {Object.<string,string>} monthNotes   – clé "YYYY-MM", valeur texte libre
  *
  * @typedef {Object} AppData
@@ -57,6 +64,8 @@ export const A = /** @type {const} */ ({
   DELETE_CAGNOTTE:   "DELETE_CAGNOTTE",
   SAVE_FIXED:        "SAVE_FIXED",
   DELETE_FIXED:      "DELETE_FIXED",
+  SAVE_FIXED_INCOME:    "SAVE_FIXED_INCOME",
+  DELETE_FIXED_INCOME:  "DELETE_FIXED_INCOME",
   EXECUTE_TRANSFER:  "EXECUTE_TRANSFER",
   SAVE_CATEGORY:     "SAVE_CATEGORY",
   DELETE_CATEGORY:   "DELETE_CATEGORY",
@@ -100,6 +109,7 @@ export const DEFAULT_DATA = {
   ],
   cagnottes: [],
   fixedExpenses: [],
+  fixedIncomes:  [],
   provisionalExpenses: [],
   lastBackupDate:        null,
   backupHistory:         [],   // [{ id, date, txCount, sizeKo }] — 10 dernières
@@ -302,6 +312,9 @@ export function reducer(state, action) {
         newFixed[idx] = {
           ...old,
           ...fixed,
+          // Préserver les champs non envoyés par le modal (startYM, monthlyOverrides)
+          startYM:        fixed.startYM !== undefined ? fixed.startYM : old.startYM,
+          monthlyOverrides: old.monthlyOverrides,
           prevAmount:   amountChanged ? old.amount  : old.prevAmount,
           prevAmountYM: amountChanged ? curYM        : old.prevAmountYM,
         };
@@ -317,20 +330,44 @@ export function reducer(state, action) {
       return { ...state, fixedExpenses: newFixed };
     }
 
+    case A.SAVE_FIXED_INCOME: {
+      const { idx, income } = action;
+      const newIncomes = [...(state.fixedIncomes || [])];
+      if (idx != null) {
+        const old = newIncomes[idx];
+        newIncomes[idx] = {
+          ...old,
+          ...income,
+          startYM: income.startYM !== undefined ? income.startYM : old.startYM,
+        };
+      } else {
+        newIncomes.push({ ...income, id: uid("fi"), startYM: income.startYM || null });
+      }
+      return { ...state, fixedIncomes: newIncomes };
+    }
+
+    case A.DELETE_FIXED_INCOME: {
+      const newIncomes = [...(state.fixedIncomes || [])];
+      newIncomes.splice(action.idx, 1);
+      return { ...state, fixedIncomes: newIncomes };
+    }
+
     // ── Transfer between cagnottes ────────────────────────────────
     case A.EXECUTE_TRANSFER: {
-      const { fromId, toId, amt, date } = action;
+      const { fromId, toId, amt, date, reason } = action;
 
       // Retrait vers le compte courant
       if (toId === "__account__") {
         const cag = state.cagnottes.find(c => c.id === fromId);
+        const label = `Transfert ${cag?.name ?? "cagnotte"} → compte`;
         const newTx = {
           id: uid("ret"),
           type: "dissolution_cagnotte",
           amount: amt,
-          date: date || new Date().toISOString().slice(0, 10),
+          date: date || (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(),
           targetCagId: fromId,
-          note: `Retrait — ${cag?.name ?? "cagnotte"}`,
+          note: reason ? `${label} — ${reason}` : label,
+          withdrawReason: reason || null,
         };
         return {
           ...state,
