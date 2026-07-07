@@ -2330,7 +2330,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
   const startY  = useRef(null);
-  const isHoriz = useRef(false);
+  const isHoriz = useRef(null);
+
+  // Ferme le swipe si une autre interaction se produit ailleurs
+  useEffect(() => {
+    if (!revealed) return;
+    const close = () => { setOffset(0); setRevealed(false); };
+    window.addEventListener("touchstart", close, { passive: true });
+    return () => window.removeEventListener("touchstart", close);
+  }, [revealed]);
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
@@ -2361,15 +2369,17 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         onTouchStart={e => {
           startX.current  = e.touches[0].clientX;
           startY.current  = e.touches[0].clientY;
-          isHoriz.current = false;
+          isHoriz.current = null; // null = pas encore déterminé
         }}
         onTouchMove={e => {
           const dx = e.touches[0].clientX - startX.current;
           const dy = e.touches[0].clientY - startY.current;
-          if (!isHoriz.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-            isHoriz.current = Math.abs(dx) > Math.abs(dy);
+          // Détermine la direction une seule fois, avec un seuil de 8px
+          if (isHoriz.current === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+            isHoriz.current = Math.abs(dx) > Math.abs(dy) * 1.5; // horizontal doit être nettement dominant
           }
           if (!isHoriz.current) return;
+          e.preventDefault(); // bloque le scroll seulement si c'est un swipe confirmé
           if (dx < 0) setOffset(Math.max(-PANEL, dx));
           else if (revealed) setOffset(Math.min(0, -PANEL + dx));
         }}
