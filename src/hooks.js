@@ -8,10 +8,16 @@ import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 // ─────────────────────────────────────────────────────────────────
 function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
-    // Si startYM défini et que le mois demandé est avant le début → ne pas déduire
     if (f.startYM && ym < f.startYM) return s;
     const ov = f.monthlyOverrides?.[ym];
     return s + ((ov?.amount ?? f.amount) || 0);
+  }, 0);
+}
+
+function effectiveIncomesForMonth(fixedIncomes, ym) {
+  return (fixedIncomes || []).reduce((s, f) => {
+    if (f.startYM && ym < f.startYM) return s;
+    return s + (parseFloat(f.amount) || 0);
   }, 0);
 }
 
@@ -44,7 +50,7 @@ export function useTotalFixes(fixedExpenses) {
 //  Single-month stats
 //  Returns { inc, exp, expVar, decag, net }
 // ─────────────────────────────────────────────────────────────────
-export function useMonthStats(transactions, fixedExpenses, ym) {
+export function useMonthStats(transactions, fixedExpenses, ym, fixedIncomes) {
   return useMemo(() => {
     const isCur = ym === currentYM();
     let inc = 0, exp = 0, decag = 0;
@@ -107,7 +113,7 @@ export function useYearMonths(transactions, fixedExpenses, year) {
 // ─────────────────────────────────────────────────────────────────
 //  Current balance (all-time)
 // ─────────────────────────────────────────────────────────────────
-export function useBalance(transactions, fixedExpenses) {
+export function useBalance(transactions, fixedExpenses, fixedIncomes) {
   return useMemo(() => {
     let bal = 0;
     transactions.forEach(t => {
@@ -127,9 +133,11 @@ export function useBalance(transactions, fixedExpenses) {
       const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       monthRange(startYM, endYM).forEach(ym => {
         bal -= effectiveFixesForMonth(fixedExpenses, ym);
+        bal += effectiveIncomesForMonth(fixedIncomes, ym);
       });
     } else {
       bal -= effectiveFixesForMonth(fixedExpenses, currentYM());
+      bal += effectiveIncomesForMonth(fixedIncomes, currentYM());
     }
 
     return bal;
@@ -153,7 +161,10 @@ export function useSpark(transactions, fixedExpenses) {
         if (isIncome(t.type))          inc += a;
         else if (t.type === "expense") exp += a;
       });
-      if (ym === curYM) exp += effectiveFixesForMonth(fixedExpenses, ym);
+      if (ym === curYM) {
+        exp += effectiveFixesForMonth(fixedExpenses, ym);
+        inc += effectiveIncomesForMonth(fixedIncomes, ym);
+      }
       return inc - exp;
     });
   }, [transactions, fixedExpenses, curYM]);
@@ -215,8 +226,8 @@ export function usePriorYearStats(transactions, fixedExpenses) {
 //  Balance with pending recurring transactions for current month
 //  Déduit du solde les récurrentes non encore confirmées ce mois.
 // ─────────────────────────────────────────────────────────────────
-export function useBalanceWithRecurring(transactions, fixedExpenses, recurringTemplates) {
-  const balance = useBalance(transactions, fixedExpenses);
+export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates) {
+  const balance = useBalance(transactions, fixedExpenses, fixedIncomes);
 
   return useMemo(() => {
     if (!recurringTemplates || recurringTemplates.length === 0) return balance;
