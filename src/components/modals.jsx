@@ -841,6 +841,85 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────
+//  Fixed income modal
+// ─────────────────────────────────────────────────────────────────
+export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave, onClose }) {
+  const toast   = useToast();
+  const f       = editingIdx != null ? fixedIncomes[editingIdx] : null;
+  const incCats = categories.filter(c => c.type === "income");
+  const fallbackCat = incCats[0]?.id || "";
+
+  const [name,     setName]     = useState(f?.name       || "");
+  const [amt,      setAmt]      = useState(f?.amount      || "");
+  const [catId,    setCatId]    = useState(f?.categoryId  || fallbackCat);
+  const [startYM,  setStartYM]  = useState(f?.startYM    || "");
+  const [errors, setErrors] = useState({});
+
+  function validate() {
+    const e = {};
+    if (!name.trim())                              e.name = "Nom requis";
+    const a = parseAmt(amt);
+    if (!amt || isNaN(a) || a <= 0)                e.amt  = "Montant requis et doit être > 0";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  function handleSave() {
+    if (!validate()) return;
+    onSave({ idx: editingIdx, income: {
+      name: name.trim(),
+      amount: parseAmt(amt),
+      categoryId: catId,
+      startYM: startYM || null,
+    }});
+    toast(editingIdx != null ? "Revenu fixe modifié" : "Revenu fixe ajouté");
+  }
+
+  return (
+    <Modal onClose={onClose} title={editingIdx != null ? "Modifier le revenu fixe" : "Nouveau revenu fixe"}>
+      <Field label="Nom" error={errors.name}>
+        <input type="text" value={name} className={errors.name ? "error" : ""}
+          onChange={e => { setName(e.target.value); setErrors(v => ({...v, name: ""})); }} />
+      </Field>
+      <Field label="Montant (€)" error={errors.amt}>
+        <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
+          onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
+      </Field>
+      <Field label="Catégorie">
+        <select value={catId} onChange={e => setCatId(e.target.value)}>
+          <option value="">— Sans catégorie —</option>
+          {incCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+        </select>
+      </Field>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>📅 Début (optionnel)</label>
+          <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>— mois à partir duquel ce revenu s'applique</span>
+        </div>
+        {startYM
+          ? (
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="month" value={startYM} onChange={e => setStartYM(e.target.value)} style={{ flex: 1 }} />
+              <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }} onClick={() => setStartYM("")}>✕ Retirer</button>
+            </div>
+          )
+          : (
+            <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
+              onClick={() => setStartYM(new Date().toISOString().slice(0, 7))}>
+              ＋ Définir une date de début
+            </button>
+          )
+        }
+      </div>
+      <div className="grid-2" style={{ marginBottom: 0 }}>
+        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
+        <button className="btn btn-primary" style={{ width: "100%", background: "var(--success)" }} onClick={handleSave}>Valider</button>
+      </div>
+    </Modal>
+  );
+}
 // ─────────────────────────────────────────────────────────────────
 //  Cagnotte modal
 // ─────────────────────────────────────────────────────────────────
@@ -950,6 +1029,7 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
   const [amt,    setAmt]   = useState("");
   const [fromId, setFrom]  = useState(cagnottes[0]?.id || "");
   const [toId,   setTo]    = useState(cagnottes[1]?.id || cagnottes[0]?.id || "");
+  const [reason, setReason]= useState("");
   const [errors, setErrors] = useState({});
 
   const isWithdraw = mode === "withdraw";
@@ -969,7 +1049,7 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
 
   function handleSave() {
     if (!validate()) return;
-    onSave({ amt: parseAmt(amt), fromId, toId: isWithdraw ? "__account__" : toId });
+    onSave({ amt: parseAmt(amt), fromId, toId: isWithdraw ? "__account__" : toId, reason: reason.trim() || null });
     toast(isWithdraw ? "Retrait effectué" : "Transfert effectué");
   }
 
@@ -1007,6 +1087,15 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
           🏦 Le montant sera ajouté à votre solde bancaire estimé
         </div>
       )}
+      {/* ★ Raison optionnelle */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600, display: "block", marginBottom: 6 }}>
+          Raison <span style={{ fontWeight: 400, color: "var(--text3)" }}>(optionnel)</span>
+        </label>
+        <input type="text" value={reason} placeholder="Ex : Billet avion, remboursement…"
+          onChange={e => setReason(e.target.value)}
+          style={{ width: "100%", boxSizing: "border-box" }} />
+      </div>
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
         <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>
