@@ -169,6 +169,8 @@ body {
 .dash-fixe2::before     { background: rgba(232,148,74,.11);   opacity: 1; border-left: 3px solid #e8944a;       }
 .dash-cagnotte2 .stat-label { color: rgba(176,144,224,.8); }
 .dash-fixe2     .stat-label { color: rgba(232,148,74,.8);  }
+/* v1.39.0 */
+.dash-balance::before   { background: var(--sapin-glow);      opacity: 1; border-left: 3px solid var(--sapin);  }
 .dash-cagnotte2 .stat-val   { color: var(--purple); }
 .dash-fixe2     .stat-val   { color: #e8944a; }
 
@@ -222,6 +224,7 @@ body {
 .type-savings  { color: var(--warning); }
 .type-transfer { color: var(--accent);  }
 .type-decag    { color: var(--sapin);   }
+.type-balance  { color: var(--sapin);   }
 
 .btn-action { background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: .85rem; opacity: .7; transition: opacity .2s; }
 .btn-action:hover { opacity: 1; }
