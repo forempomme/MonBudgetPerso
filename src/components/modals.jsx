@@ -67,6 +67,7 @@ function SectionLabel({ children }) {
 // ─────────────────────────────────────────────────────────────────
 function NumPad({ value, onChange, type, onTypeChange }) {
   const OPERATORS = ["+", "-"];
+  const isAdj = type === "balance_adjustment";
   const isSimpleType = (type === "expense" || type === "income") && !isAdj;
 
   function evalSimple(expr) {
