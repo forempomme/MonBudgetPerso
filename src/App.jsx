@@ -632,13 +632,7 @@ export default function App() {
       <LockScreen
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
-        onUnlock={() => {
-          // requestAnimationFrame : s'assure que le bridge Capacitor a rendu la main
-          // avant que React démonte LockScreen et monte l'app principale
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => setLocked(false));
-          });
-        }}
+        onUnlock={() => setLocked(false)}
       />
     );
   }
