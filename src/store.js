@@ -4,7 +4,7 @@ import { uid, todayISO } from "./utils.js";
 //  JSDoc Types
 // ─────────────────────────────────────────────────────────────────
 /**
- * @typedef {'income'|'expense'|'epargne'|'decagnottage'|'dissolution_cagnotte'|'transfer'} TxType
+ * @typedef {'income'|'expense'|'epargne'|'decagnottage'|'dissolution_cagnotte'|'transfer'|'balance_adjustment'} TxType
  *
  * @typedef {Object} Transaction
  * @property {string}  id
