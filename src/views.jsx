@@ -13,7 +13,7 @@ import {
 //  entre cagnottes : ils n'apparaissent pas sur un relevé.
 // ─────────────────────────────────────────────────────────────────
 function isPointable(type) {
-  return type !== "decagnottage" && type !== "transfer" && type !== "dissolution_cagnotte" && type !== "balance_adjustment";
+  return type !== "decagnottage" && type !== "transfer";
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -247,38 +247,30 @@ async function sha256hex(str) {
 }
 
 export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
-  const [pin,        setPin]        = useState("");
-  const [error,      setError]      = useState(false);
-  const [unlocking,  setUnlocking]  = useState(false); // état intermédiaire — évite l'écran noir
+  const [pin,       setPin]       = useState("");
+  const [error,     setError]     = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
 
-  // Fonction de déverrouillage commune — ajoute un écran de transition opaque
-  // avant de laisser React démonter LockScreen et monter l'app
   function doUnlock() {
-    setUnlocking(true); // affiche un fond opaque immédiatement
-    // Double rAF : s'assure que le fond opaque est peint AVANT le setState parent
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        onUnlock();
-      });
-    });
+    setUnlocking(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => onUnlock()));
   }
 
   async function tryBio() {
     try {
+      // window.Capacitor.Plugins — pas d'import dynamique (évite l'erreur Rollup + crash)
       const BiometricAuth = window?.Capacitor?.Plugins?.BiometricAuth;
       if (!BiometricAuth) return;
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
       doUnlock();
     } catch {
-      // Biométrie refusée ou indisponible → rien, PIN de secours disponible
+      // Biométrie refusée ou indisponible
     }
   }
 
-  // Ref pour accéder à tryBio sans stale closure dans useEffect
   const tryBioRef = useRef(tryBio);
   useEffect(() => { tryBioRef.current = tryBio; });
 
-  // Déclenche la biométrie automatiquement à l'ouverture
   useEffect(() => {
     if (!bioEnabled) return;
     const timer = setTimeout(() => tryBioRef.current(), 800);
@@ -287,23 +279,19 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   }, [bioEnabled]);
 
   async function pressKey(k) {
-    if (unlocking) return; // bloque les inputs pendant la transition
+    if (unlocking) return;
     if (k === "⌫") { setPin(p => p.slice(0,-1)); setError(false); return; }
     const next = pin + k;
     setPin(next);
     if (next.length === 4) {
       const h = await sha256hex(next);
-      if (h === pinHash) {
-        doUnlock();
-      } else {
-        setTimeout(() => { setPin(""); setError(true); }, 200);
-      }
+      if (h === pinHash) { doUnlock(); }
+      else { setTimeout(() => { setPin(""); setError(true); }, 200); }
     }
   }
 
   const KEYS = [[1,2,3],[4,5,6],[7,8,9],["",0,"⌫"]];
 
-  // Écran de transition — fond opaque pendant le démontage
   if (unlocking) {
     return <div style={{ position:"fixed", inset:0, background:"#060810", zIndex:9999 }} />;
   }
@@ -313,24 +301,17 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
       <div style={{ fontSize:"2.8rem", marginBottom:12 }}>🐷</div>
       <div style={{ fontSize:".95rem", fontWeight:800, marginBottom:4 }}>Gestion du Budget</div>
       <div style={{ fontSize:".65rem", color:"var(--text3)", marginBottom:28 }}>Entre ton code PIN pour continuer</div>
-
-      {/* Points PIN */}
       <div style={{ display:"flex", gap:14, marginBottom:28 }}>
         {[0,1,2,3].map(i => (
           <div key={i} style={{ width:14, height:14, borderRadius:"50%", background:i<pin.length?"#fff":"transparent", border:"2px solid rgba(255,255,255,.35)", transition:"background .1s" }} />
         ))}
       </div>
-
       {error && <div style={{ fontSize:".65rem", color:"var(--danger)", marginBottom:12, fontWeight:700 }}>PIN incorrect, réessaie</div>}
-
-      {/* Biométrie */}
       {bioEnabled && (
         <button onClick={tryBio} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(112,184,224,.1)", border:"1.5px solid var(--accent)", borderRadius:30, padding:"10px 22px", color:"var(--accent)", fontWeight:700, fontSize:".75rem", cursor:"pointer", marginBottom:20, touchAction:"manipulation" }}>
           <span style={{ fontSize:"1.2rem" }}>👆</span> Empreinte digitale
         </button>
       )}
-
-      {/* Clavier */}
       <div style={{ display:"flex", flexDirection:"column", gap:8, width:"100%", maxWidth:240 }}>
         {KEYS.map((row, ri) => (
           <div key={ri} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
@@ -348,7 +329,6 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
     </div>
   );
 }
-
 export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring }) {
 
   // Sections masquables — persistées en localStorage
@@ -360,26 +340,16 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     if (hidden.includes(id)) return null;
     return <div>{children}</div>;
   }
-  function Sec({ id, children }) {
-    const isHidden = hidden.includes(id);
-    if (isHidden && !editMode) return null;
-    return (
-      <div style={{ position:"relative", opacity: isHidden ? .25 : 1, transition:"opacity .2s" }}>
-        {editMode && (
-          <button onClick={() => toggleSection(id)} style={{
-            position:"absolute", top:4, right:4, zIndex:10,
-            background: isHidden ? "var(--accent)" : "var(--surface2)",
-            border:`1px solid ${isHidden ? "var(--accent)" : "var(--border)"}`,
-            borderRadius:6, padding:"2px 8px",
-            fontSize:".52rem", fontWeight:700,
-            color: isHidden ? "var(--bg)" : "var(--text3)",
-            cursor:"pointer", pointerEvents:"all",
-          }}>{isHidden ? "👁 Afficher" : "🚫 Masquer"}</button>
-        )}
-        {children}
-      </div>
-    );
+  function toggleSection(id) {
+    setHidden(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      localStorage.setItem("accueil_hidden", JSON.stringify(next));
+      return next;
+    });
   }
+
+  // Wrapper de section masquable
+
   const { transactions, cagnottes, fixedExpenses } = data;
   const provisionalExpenses = data.provisionalExpenses || [];
   const curM      = currentYM();
@@ -431,11 +401,6 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
-    });
-
-    // ★ balance_adjustment : ajout direct au solde pointé (sans impacter le solde estimé)
-    transactions.filter(t => t.type === "balance_adjustment").forEach(t => {
-      ptInc += parseFloat(t.amount) || 0;
     });
 
     // Frais fixes — un état de pointage par mois
@@ -560,7 +525,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   return (
     <div>
-      
+
 
       {showBackup && (
         <div className="backup-alert" onClick={() => onSwitchTab("options")}>
@@ -2346,8 +2311,8 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
-    // Pour dissolution_cagnotte et balance_adjustment : utiliser directement t.note
-    const finalLabel = (t.type === "dissolution_cagnotte" || t.type === "balance_adjustment") && t.note ? t.note : l;
+    // Pour dissolution_cagnotte : utiliser directement t.note qui contient le bon libellé
+    const finalLabel = t.type === "dissolution_cagnotte" && t.note ? t.note : l;
     return { label: finalLabel, cls: txTypeClass(t.type), sign: txSign(t.type) };
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
@@ -2397,12 +2362,10 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           background: t.type === "dissolution_cagnotte" ? "#080f0c"
                     : t.type === "decagnottage"         ? "#0e0906"
                     : t.type === "epargne"              ? "#0b080f"
-                    : t.type === "balance_adjustment"   ? "#060e0a"
                     : "var(--bg)",
           boxShadow: t.type === "dissolution_cagnotte" ? "inset 3px 0 0 rgba(104,212,152,.35)"
                    : t.type === "decagnottage"         ? "inset 3px 0 0 rgba(224,136,112,.35)"
                    : t.type === "epargne"              ? "inset 3px 0 0 rgba(176,144,224,.35)"
-                   : t.type === "balance_adjustment"   ? "inset 3px 0 0 rgba(88,192,144,.4)"
                    : "none",
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
@@ -2434,7 +2397,6 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
             dissolution_cagnotte: "var(--success)",
             decagnottage:         "var(--coral)",
             epargne:              "var(--purple)",
-            balance_adjustment:   "var(--sapin)",
           };
           const specialColor = TYPE_COLOR[t.type];
           return (
@@ -2457,7 +2419,6 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
                 dissolution_cagnotte: { label:"↑ Retrait cagnotte", bg:"rgba(104,212,152,.1)",  color:"var(--success)" },
                 decagnottage:         { label:"↩ Retrait cagnotte", bg:"rgba(224,136,112,.1)",  color:"var(--coral)"   },
                 epargne:              { label:"↓ Épargne",           bg:"rgba(176,144,224,.1)",  color:"var(--purple)"  },
-                balance_adjustment:   { label:"⚖ Équilibre",         bg:"rgba(88,192,144,.1)",   color:"var(--sapin)"   },
               };
               const badge = TYPE_BADGE[t.type];
               if (badge) {
