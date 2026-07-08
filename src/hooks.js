@@ -121,6 +121,8 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
       if (isIncome(t.type))          bal += a;
       else if (t.type === "expense") bal -= a;
       else if (t.type === "epargne") bal -= a;
+      // balance_adjustment n'impacte PAS le solde estimé (useBalance)
+      // Il impacte uniquement le solde pointé (rapprochement bancaire)
     });
 
     if (transactions.length > 0) {
