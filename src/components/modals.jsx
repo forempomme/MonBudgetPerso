@@ -67,7 +67,7 @@ function SectionLabel({ children }) {
 // ─────────────────────────────────────────────────────────────────
 function NumPad({ value, onChange, type, onTypeChange }) {
   const OPERATORS = ["+", "-"];
-  const isSimpleType = type === "expense" || type === "income";
+  const isSimpleType = (type === "expense" || type === "income") && !isAdj;
 
   function evalSimple(expr) {
     try {
@@ -219,7 +219,7 @@ export function TransModal({
   const [date,        setDate]        = useState(tx?.date         || todayISO());
   const [catId,       setCatId]       = useState(tx?.categoryId   || "");
   const [cagId,       setCagId]       = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
-  const [note,        setNote]        = useState(tx?.note         || "");
+  const [note,        setNote]        = useState(tx?.note         || (defaultType === "balance_adjustment" ? "Ajustement de solde" : ""));
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency,   setFrequency]   = useState("monthly");
   const [occurrences, setOccurrences] = useState("");
@@ -235,7 +235,8 @@ export function TransModal({
   const cats  = categories.filter(c => isInc ? c.type === "income" : c.type === "expense");
 
   // Couleur accentuée selon le type
-  const accentColor = isInc ? "var(--success)" : isCag ? "var(--purple)" : "var(--danger)";
+  const isAdj = type === "balance_adjustment";
+  const accentColor = isAdj ? "var(--sapin)" : isInc ? "var(--success)" : isCag ? "var(--purple)" : "var(--danger)";
 
   // Raccourcis date
   const todayStr     = todayISO();
@@ -307,12 +308,12 @@ export function TransModal({
   }
 
   // Label et emoji du bouton valider
-  const saveLabel = isInc
-    ? "Enregistrer le revenu"
+  const saveLabel = isAdj ? "Enregistrer l'équilibre"
+    : isInc ? "Enregistrer le revenu"
     : type === "epargne" ? "Déposer dans la cagnotte"
     : type === "decagnottage" ? "Retirer de la cagnotte"
     : "Enregistrer la dépense";
-  const saveEmoji = isInc ? "💰" : type === "epargne" ? "🐷" : "💸";
+  const saveEmoji = isAdj ? "⚖️" : isInc ? "💰" : type === "epargne" ? "🐷" : "💸";
 
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier l'opération" : "Nouvelle opération"}>
@@ -320,12 +321,13 @@ export function TransModal({
       {/* ── Pills type ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
         {[
-          { k: "expense",     emoji: "💸", label: "Dépense"  },
-          { k: "income",      emoji: "💰", label: "Revenu"   },
-          { k: "epargne",     emoji: "🐷", label: "Cagnotte" },
+          { k: "expense",            emoji: "💸", label: "Dépense"   },
+          { k: "income",             emoji: "💰", label: "Revenu"    },
+          { k: "epargne",            emoji: "🐷", label: "Cagnotte"  },
+          { k: "balance_adjustment", emoji: "⚖️", label: "Équilibre" },
         ].map(({ k, emoji, label }) => {
           const sel = type === k || (k === "epargne" && isCag);
-          const c   = k === "income" ? "var(--success)" : k === "epargne" ? "var(--purple)" : "var(--danger)";
+          const c   = k === "income" ? "var(--success)" : k === "epargne" ? "var(--purple)" : k === "balance_adjustment" ? "var(--sapin)" : "var(--danger)";
           return (
             <button key={k}
               onTouchStart={e => e.stopPropagation()}
@@ -364,6 +366,15 @@ export function TransModal({
         </div>
       )}
 
+      {/* ── Info équilibre ── */}
+      {isAdj && (
+        <div style={{ marginBottom: 10, padding: "9px 12px", background: "rgba(88,192,144,.08)", border: "1px solid rgba(88,192,144,.2)", borderRadius: 10 }}>
+          <div style={{ fontSize: ".68rem", color: "var(--sapin)", fontWeight: 700, marginBottom: 2 }}>⚖️ Opération d'équilibre</div>
+          <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5 }}>
+            Ajuste le solde pointé sans impacter le solde estimé. Utile pour corriger un écart bancaire.
+          </div>
+        </div>
+      )}
       {/* ── NumPad (inclut l'affichage montant) ── */}
       <div style={{ marginBottom: 10 }}>
         {errors.amount && <FieldError msg={errors.amount} />}
@@ -376,7 +387,7 @@ export function TransModal({
       </div>
 
       {/* ── Catégorie — overlay fixed, scroll bloqué, drag détecté ── */}
-      {!isCag && (
+      {!isCag && !isAdj && (
         <div style={{ marginBottom: 10 }}>
           <SectionLabel>Catégorie</SectionLabel>
 
@@ -591,7 +602,7 @@ export function TransModal({
 
       {/* ── Note ── */}
       <div style={{ marginBottom: 10 }}>
-        <input type="text" placeholder="Note (optionnel)…" value={note}
+        <input type="text" placeholder={isAdj ? "Ex: Écart bancaire, arrondi…" : "Note (optionnel)…"} value={note}
           onChange={e => setNote(e.target.value)}
           style={{ width: "100%", boxSizing: "border-box" }}
         />
@@ -651,7 +662,7 @@ export function TransModal({
       </div>
 
       {/* ── Récurrence ── */}
-      {!isCag && !editingId && (
+      {!isCag && !isAdj && !editingId && (
         <div style={{ marginBottom: 10 }}>
           <div
             onClick={() => setIsRecurring(r => !r)}
