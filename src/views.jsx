@@ -252,19 +252,22 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
 
   async function tryBio() {
     try {
-      const { BiometricAuth } = await import("@aparajita/capacitor-biometric-auth");
+      // Accès via window.Capacitor.Plugins — pas d'import dynamique qui bloque le rendu
+      const BiometricAuth = window?.Capacitor?.Plugins?.BiometricAuth;
+      if (!BiometricAuth) return;
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
-      onUnlock();
+      // Délai post-unlock : laisse le pont Capacitor libérer le thread UI avant le re-render React
+      setTimeout(() => onUnlock(), 100);
     } catch {
       // Biométrie indisponible ou refusée → PIN de secours affiché
     }
   }
 
   // Déclenche automatiquement la biométrie à l'ouverture
-  // Délai 300ms : le bridge Capacitor n'est pas encore initialisé au premier render
+  // Délai 1500ms : laisse le bridge Capacitor ET le splash screen se terminer complètement
   useEffect(() => {
     if (!bioEnabled) return;
-    const timer = setTimeout(() => tryBio(), 300);
+    const timer = setTimeout(() => tryBio(), 1500);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
