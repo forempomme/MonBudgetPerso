@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.38.4";
+export const APP_VERSION = "1.39.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -83,6 +83,7 @@ export function deltaInfo(cur, prev) {
 /** True for types that add to income */
 export function isIncome(type) {
   return type === "income" || type === "dissolution_cagnotte";
+  // balance_adjustment intentionnellement exclu — n'impacte pas le solde estimé
 }
 
 /** Human-readable label for a transaction */
@@ -98,7 +99,8 @@ export function txLabel(t, categories, cagnottes) {
       const cag = cagnottes.find(c => c.id === t.targetCagId);
       return `Décagnottage : ${cag?.name || "Cagnotte"}`;
     }
-    case "transfer": return "Transfert inter-cagnotte";
+    case "transfer":            return "Transfert inter-cagnotte";
+    case "balance_adjustment":  return t.note || "Ajustement de solde";
     default: return t.note || cat?.name || "Inconnu";
   }
 }
@@ -111,12 +113,13 @@ export function txTypeClass(type) {
     case "epargne":              return "type-savings";
     case "decagnottage":         return "type-decag";
     case "transfer":             return "type-transfer";
+    case "balance_adjustment":   return "type-balance";
     default:                     return "type-expense";
   }
 }
 
 export function txSign(type) {
-  if (type === "income" || type === "dissolution_cagnotte") return "+";
+  if (type === "income" || type === "dissolution_cagnotte" || type === "balance_adjustment") return "+";
   if (type === "decagnottage" || type === "transfer")       return "";
   return "−";
 }
