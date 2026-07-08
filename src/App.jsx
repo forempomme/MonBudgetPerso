@@ -286,7 +286,6 @@ export default function App() {
   const [transModal,    setTransModal]    = useState(null);
   const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
-  const [accueilEdit,   setAccueilEdit]   = useState(false);
   const [fixedModal,       setFixedModal]       = useState(null);
   const [fixedIncomeModal, setFixedIncomeModal] = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
@@ -494,8 +493,6 @@ export default function App() {
         roundingCagnotteId={data.roundingCagnotteId}
         roundingLastTransferDate={data.roundingLastTransferDate}
         onMarkRoundingTransferred={markRoundingTransferred}
-        editMode={accueilEdit}
-        onExitEditMode={() => setAccueilEdit(false)}
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
         onConfirmRecurring={(tpl, month) => {
           // Garde anti-double-clic : vérifier qu'aucune transaction avec ce templateId n'existe déjà ce mois
@@ -703,17 +700,16 @@ export default function App() {
             animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
           }}>
           {[
-            { type:"expense",      icon:"💸", label:"Dépense",    color:"var(--danger)"  },
-            { type:"income",       icon:"💰", label:"Revenu",     color:"var(--success)" },
-            { type:"epargne",      icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
-            { type:"scheduled",    icon:"📅", label:"Programmée", color:"var(--warning)" },
-            { type:"edit_accueil", icon:"✏️", label:"Accueil",    color:"var(--accent)"  },
+            { type:"expense",            icon:"💸", label:"Dépense",    color:"var(--danger)"  },
+            { type:"income",             icon:"💰", label:"Revenu",     color:"var(--success)" },
+            { type:"epargne",            icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
+            { type:"scheduled",          icon:"📅", label:"Programmée", color:"var(--warning)" },
+            { type:"balance_adjustment", icon:"⚖️", label:"Équilibre",  color:"var(--sapin)"   },
           ].map((item, i) => (
             <div key={item.type}
               onClick={() => {
                 setFabOpen(false);
-                if (item.type === "edit_accueil") { navigateTo("accueil"); setAccueilEdit(true); }
-                else if (item.type === "scheduled") setScheduledModal(true);
+                if (item.type === "scheduled") setScheduledModal(true);
                 else setTransModal({ editingId: null, defaultType: item.type });
               }}
               style={{
