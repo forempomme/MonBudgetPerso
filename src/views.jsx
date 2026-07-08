@@ -258,13 +258,15 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
 
   async function tryBio() {
     try {
-      // window.Capacitor.Plugins — pas d'import dynamique (évite l'erreur Rollup + crash)
-      const BiometricAuth = window?.Capacitor?.Plugins?.BiometricAuth;
+      // Import dynamique via variable — Rollup ne résout pas les imports dynamiques
+      // dont la chaîne n'est pas un littéral statique
+      const pkg = "@aparajita/capacitor-biometric-auth";
+      const { BiometricAuth } = await import(/* @vite-ignore */ pkg);
       if (!BiometricAuth) return;
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
       doUnlock();
     } catch {
-      // Biométrie refusée ou indisponible
+      // Biométrie refusée, indisponible ou plugin absent → PIN de secours
     }
   }
 
