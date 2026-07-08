@@ -247,43 +247,66 @@ async function sha256hex(str) {
 }
 
 export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
-  const [pin,   setPin]   = useState("");
-  const [error, setError] = useState(false);
+  const [pin,        setPin]        = useState("");
+  const [error,      setError]      = useState(false);
+  const [unlocking,  setUnlocking]  = useState(false); // état intermédiaire — évite l'écran noir
+
+  // Fonction de déverrouillage commune — ajoute un écran de transition opaque
+  // avant de laisser React démonter LockScreen et monter l'app
+  function doUnlock() {
+    setUnlocking(true); // affiche un fond opaque immédiatement
+    // Double rAF : s'assure que le fond opaque est peint AVANT le setState parent
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        onUnlock();
+      });
+    });
+  }
 
   async function tryBio() {
     try {
-      // Accès via window.Capacitor.Plugins — pas d'import dynamique qui bloque le rendu
       const BiometricAuth = window?.Capacitor?.Plugins?.BiometricAuth;
       if (!BiometricAuth) return;
       await BiometricAuth.authenticate({ reason: "Accéder à Gestion du Budget" });
-      // Délai post-unlock : laisse le pont Capacitor libérer le thread UI avant le re-render React
-      setTimeout(() => onUnlock(), 100);
+      doUnlock();
     } catch {
-      // Biométrie indisponible ou refusée → PIN de secours affiché
+      // Biométrie refusée ou indisponible → rien, PIN de secours disponible
     }
   }
 
-  // Déclenche automatiquement la biométrie à l'ouverture
-  // Délai 1500ms : laisse le bridge Capacitor ET le splash screen se terminer complètement
+  // Ref pour accéder à tryBio sans stale closure dans useEffect
+  const tryBioRef = useRef(tryBio);
+  useEffect(() => { tryBioRef.current = tryBio; });
+
+  // Déclenche la biométrie automatiquement à l'ouverture
   useEffect(() => {
     if (!bioEnabled) return;
-    const timer = setTimeout(() => tryBio(), 1500);
+    const timer = setTimeout(() => tryBioRef.current(), 800);
     return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bioEnabled]);
 
   async function pressKey(k) {
+    if (unlocking) return; // bloque les inputs pendant la transition
     if (k === "⌫") { setPin(p => p.slice(0,-1)); setError(false); return; }
     const next = pin + k;
     setPin(next);
     if (next.length === 4) {
       const h = await sha256hex(next);
-      if (h === pinHash) { onUnlock(); }
-      else { setTimeout(() => { setPin(""); setError(true); }, 200); }
+      if (h === pinHash) {
+        doUnlock();
+      } else {
+        setTimeout(() => { setPin(""); setError(true); }, 200);
+      }
     }
   }
 
   const KEYS = [[1,2,3],[4,5,6],[7,8,9],["",0,"⌫"]];
+
+  // Écran de transition — fond opaque pendant le démontage
+  if (unlocking) {
+    return <div style={{ position:"fixed", inset:0, background:"#060810", zIndex:9999 }} />;
+  }
 
   return (
     <div style={{ position:"fixed", inset:0, background:"#060810", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
@@ -315,7 +338,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
               k === ""
                 ? <div key={ki} />
                 : <button key={ki} onClick={() => pressKey(String(k))}
-                    style={{ height:58, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", borderRadius:12, color:"#fff", fontSize:k==="⌫"?"1.2rem":"1.2rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+                    style={{ height:58, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", borderRadius:12, color:"#fff", fontSize:"1.2rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
                     {k}
                   </button>
             ))}
@@ -333,11 +356,10 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     try { return JSON.parse(localStorage.getItem("accueil_hidden") || "[]"); }
     catch { return []; }
   });
-    function Sec({ id, children }) {
-    if (hiddenSections.includes(id)) return null;
+  function Sec({ id, children }) {
+    if (hidden.includes(id)) return null;
     return <div>{children}</div>;
   }
-  
   function Sec({ id, children }) {
     const isHidden = hidden.includes(id);
     if (isHidden && !editMode) return null;
