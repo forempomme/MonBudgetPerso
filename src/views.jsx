@@ -13,7 +13,7 @@ import {
 //  entre cagnottes : ils n'apparaissent pas sur un relevé.
 // ─────────────────────────────────────────────────────────────────
 function isPointable(type) {
-  return type !== "decagnottage" && type !== "transfer";
+  return type !== "decagnottage" && type !== "transfer" && type !== "dissolution_cagnotte" && type !== "balance_adjustment";
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -323,22 +323,18 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   );
 }
 
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, editMode = false, onExitEditMode, onDeleteScheduled, onConfirmRecurring }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
     try { return JSON.parse(localStorage.getItem("accueil_hidden") || "[]"); }
     catch { return []; }
   });
-  function toggleSection(id) {
-    setHidden(prev => {
-      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
-      localStorage.setItem("accueil_hidden", JSON.stringify(next));
-      return next;
-    });
+    function Sec({ id, children }) {
+    if (hiddenSections.includes(id)) return null;
+    return <div>{children}</div>;
   }
-
-  // Wrapper de section masquable
+  
   function Sec({ id, children }) {
     const isHidden = hidden.includes(id);
     if (isHidden && !editMode) return null;
@@ -410,6 +406,11 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       const isInc = isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
+    });
+
+    // ★ balance_adjustment : ajout direct au solde pointé (sans impacter le solde estimé)
+    transactions.filter(t => t.type === "balance_adjustment").forEach(t => {
+      ptInc += parseFloat(t.amount) || 0;
     });
 
     // Frais fixes — un état de pointage par mois
@@ -534,21 +535,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   return (
     <div>
-      {editMode && (
-        <div style={{
-          display:"flex", justifyContent:"space-between", alignItems:"center",
-          background:"rgba(200,184,96,.1)", border:"1px solid var(--warning)44",
-          borderRadius:10, padding:"8px 14px", marginBottom:10,
-        }}>
-          <span style={{ fontSize:".62rem", color:"var(--warning)", fontWeight:700 }}>
-            ✏️ Mode édition — masquez les sections inutiles
-          </span>
-          <button onClick={onExitEditMode} style={{
-            background:"var(--warning)", border:"none", borderRadius:7,
-            padding:"4px 12px", color:"var(--bg)", fontSize:".6rem", fontWeight:800, cursor:"pointer",
-          }}>✓ Terminer</button>
-        </div>
-      )}
+      
 
       {showBackup && (
         <div className="backup-alert" onClick={() => onSwitchTab("options")}>
@@ -2334,8 +2321,8 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const cat    = categories.find(c => c.id === t.categoryId);
   const { label, cls, sign } = (() => {
     const l = txLabel(t, categories, cagnottes);
-    // Pour dissolution_cagnotte : utiliser directement t.note qui contient le bon libellé
-    const finalLabel = t.type === "dissolution_cagnotte" && t.note ? t.note : l;
+    // Pour dissolution_cagnotte et balance_adjustment : utiliser directement t.note
+    const finalLabel = (t.type === "dissolution_cagnotte" || t.type === "balance_adjustment") && t.note ? t.note : l;
     return { label: finalLabel, cls: txTypeClass(t.type), sign: txSign(t.type) };
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
@@ -2385,10 +2372,12 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           background: t.type === "dissolution_cagnotte" ? "#080f0c"
                     : t.type === "decagnottage"         ? "#0e0906"
                     : t.type === "epargne"              ? "#0b080f"
+                    : t.type === "balance_adjustment"   ? "#060e0a"
                     : "var(--bg)",
           boxShadow: t.type === "dissolution_cagnotte" ? "inset 3px 0 0 rgba(104,212,152,.35)"
                    : t.type === "decagnottage"         ? "inset 3px 0 0 rgba(224,136,112,.35)"
                    : t.type === "epargne"              ? "inset 3px 0 0 rgba(176,144,224,.35)"
+                   : t.type === "balance_adjustment"   ? "inset 3px 0 0 rgba(88,192,144,.4)"
                    : "none",
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
@@ -2420,6 +2409,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
             dissolution_cagnotte: "var(--success)",
             decagnottage:         "var(--coral)",
             epargne:              "var(--purple)",
+            balance_adjustment:   "var(--sapin)",
           };
           const specialColor = TYPE_COLOR[t.type];
           return (
@@ -2442,6 +2432,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
                 dissolution_cagnotte: { label:"↑ Retrait cagnotte", bg:"rgba(104,212,152,.1)",  color:"var(--success)" },
                 decagnottage:         { label:"↩ Retrait cagnotte", bg:"rgba(224,136,112,.1)",  color:"var(--coral)"   },
                 epargne:              { label:"↓ Épargne",           bg:"rgba(176,144,224,.1)",  color:"var(--purple)"  },
+                balance_adjustment:   { label:"⚖ Équilibre",         bg:"rgba(88,192,144,.1)",   color:"var(--sapin)"   },
               };
               const badge = TYPE_BADGE[t.type];
               if (badge) {
