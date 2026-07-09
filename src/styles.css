@@ -279,12 +279,16 @@ body {
 .filter-row::-webkit-scrollbar { display: none; }
 .filter-chip { padding: 6px 14px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 20px; font-size: .68rem; font-weight: 600; color: var(--text2); white-space: nowrap; cursor: pointer; transition: all .2s; }
 .filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.sort-chip { padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 12px; font-size: .62rem; font-weight: 700; color: var(--text3); cursor: pointer; white-space: nowrap; transition: all .15s; }
-.sort-chip.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
-.chart-filter-chip { padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 12px; font-size: .62rem; font-weight: 700; color: var(--text3); cursor: pointer; white-space: nowrap; transition: all .15s; }
+/* Base commune : sort-chip, chart-filter-chip et donut-filter-chip partageaient
+   exactement le même style, dupliqué 3 fois. Regroupés ici, seule la couleur
+   "active" diffère (gérée par les 2 règles ci-dessous). */
+.sort-chip, .chart-filter-chip, .donut-filter-chip {
+  padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border-soft);
+  border-radius: 12px; font-size: .62rem; font-weight: 700; color: var(--text3);
+  cursor: pointer; white-space: nowrap; transition: all .15s;
+}
+.sort-chip.active, .donut-filter-chip.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
 .chart-filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.donut-filter-chip { padding: 4px 10px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 12px; font-size: .62rem; font-weight: 700; color: var(--text3); cursor: pointer; transition: all .15s; }
-.donut-filter-chip.active { background: var(--accent2); color: #fff; border-color: var(--accent2); }
 
 /* ── Buttons ────────────────────────────────────────────────── */
 .btn { padding: 12px 16px; border-radius: var(--radius-sm); border: none; font-family: var(--ui); font-weight: 600; font-size: .85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .2s, transform .15s; }

@@ -118,8 +118,8 @@ export const DEFAULT_DATA = {
   alertEnabled:         false,
   alertThreshold:       500,
   categoryThresholds:   {},
-  autoSavings:          [],
-  scheduledTransactions:[],    // [{ id, amount, date, categoryId, note, confirmed }]    // [{ id, cagnotteId, amount, dayOfMonth, enabled }]
+  autoSavings:          [],   // [{ id, cagnotteId, amount, dayOfMonth, enabled }]
+  scheduledTransactions:[],    // [{ id, amount, date, categoryId, note, confirmed }]
   pinEnabled:           false,
   pinHash:              null,  // SHA-256 hex
   bioEnabled:           false,

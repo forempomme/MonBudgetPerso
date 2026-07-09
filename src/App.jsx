@@ -319,9 +319,27 @@ export default function App() {
       type: tx.type, amount: tx.amount,
       date: `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(Math.min(now.getDate(), lastDay)).padStart(2,"0")}`,
       categoryId: tx.categoryId, note: tx.note,
+      targetCagId: tx.targetCagId, tagIds: tx.tagIds,
     }});
     addToast("Transaction dupliquée à aujourd'hui", "success");
   }, [addToast]);
+
+  // Confirmation d'une opération récurrente (utilisée depuis Accueil ET Historique)
+  const confirmRecurring = useCallback((tpl, month) => {
+    // Garde anti-double-clic : vérifier qu'aucune transaction avec ce templateId n'existe déjà ce mois
+    const alreadyConfirmed = (data.transactions || []).some(
+      t => t.templateId === tpl.id && t.date.startsWith(month)
+    );
+    if (alreadyConfirmed) return;
+    const [y, m] = month.split("-").map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const day = Math.min(new Date().getDate(), lastDay);
+    dispatch({ type: A.SAVE_TRANSACTION, tx: {
+      type: tpl.type, amount: tpl.amount,
+      date: `${month}-${String(day).padStart(2, "0")}`,
+      categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
+    }});
+  }, [data.transactions]);
 
   const saveCag = useCallback((cag) => {
     dispatch({ type: A.SAVE_CAGNOTTE, cag });
@@ -479,8 +497,11 @@ export default function App() {
   }
 
   // ── View map ─────────────────────────────────────────────────
-  const views = {
-    accueil: (
+  // Fonction (pas un objet) : seule la vue active est construite à chaque render,
+  // au lieu de recréer les 6 vues (avec tous leurs callbacks) à chaque interaction.
+  function renderView(tab) {
+  switch (tab) {
+  case "accueil": return (
       <AccueilView data={data}
         onShowDetail={(type, period) => setDetailModal({ type, period })}
         onSwitchTab={navigateTo}
@@ -494,24 +515,10 @@ export default function App() {
         roundingLastTransferDate={data.roundingLastTransferDate}
         onMarkRoundingTransferred={markRoundingTransferred}
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
-        onConfirmRecurring={(tpl, month) => {
-          // Garde anti-double-clic : vérifier qu'aucune transaction avec ce templateId n'existe déjà ce mois
-          const alreadyConfirmed = (data.transactions || []).some(
-            t => t.templateId === tpl.id && t.date.startsWith(month)
-          );
-          if (alreadyConfirmed) return;
-          const [y, m] = month.split("-").map(Number);
-          const lastDay = new Date(y, m, 0).getDate();
-          const day = Math.min(new Date().getDate(), lastDay);
-          dispatch({ type: A.SAVE_TRANSACTION, tx: {
-            type: tpl.type, amount: tpl.amount,
-            date: `${month}-${String(day).padStart(2, "0")}`,
-            categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
-          }});
-        }}
+        onConfirmRecurring={confirmRecurring}
       />
-    ),
-    cagnottes: (
+  );
+  case "cagnottes": return (
       <CagnottesView data={data}
         onNewCag={()    => setCagModal({ editingId: null })}
         onEditCag={id   => setCagModal({ editingId: id  })}
@@ -519,8 +526,8 @@ export default function App() {
         onTransfer={()  => setTransferModal(true)}
         onShowCagHistory={id => setCagHistModal(id)}
       />
-    ),
-    historique: (
+  );
+  case "historique": return (
       <HistoriqueView data={{...data, autoSavings: data.autoSavings||[]}}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
@@ -529,20 +536,7 @@ export default function App() {
         onTogglePointFix={togglePointFix}
         onOverrideFixMonth={overrideFixMonth}
         onDeleteRecurring={deleteRecurring}
-        onConfirmRecurring={(tpl, month) => {
-          const alreadyConfirmed = (data.transactions || []).some(
-            t => t.templateId === tpl.id && t.date.startsWith(month)
-          );
-          if (alreadyConfirmed) return;
-          const [y, m] = month.split("-").map(Number);
-          const lastDay = new Date(y, m, 0).getDate();
-          const day = Math.min(new Date().getDate(), lastDay);
-          dispatch({ type: A.SAVE_TRANSACTION, tx: {
-            type: tpl.type, amount: tpl.amount,
-            date: `${month}-${String(day).padStart(2,"0")}`,
-            categoryId: tpl.categoryId, note: tpl.label, templateId: tpl.id,
-          }});
-        }}
+        onConfirmRecurring={confirmRecurring}
         onApplyAutoSaving={planId => {
           const now  = new Date();
           const ym   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
@@ -559,8 +553,8 @@ export default function App() {
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}
       />
-    ),
-    fixes: (
+  );
+  case "fixes": return (
       <FixesView data={data}
         onNewFixed={()    => setFixedModal({ editingIdx: null })}
         onEditFixed={idx  => setFixedModal({ editingIdx: idx  })}
@@ -571,8 +565,8 @@ export default function App() {
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
       />
-    ),
-    rapport: (
+  );
+  case "rapport": return (
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
         categoryThresholds={data.categoryThresholds || {}}
         onSaveCategoryThreshold={saveCategoryThreshold}
@@ -585,8 +579,8 @@ export default function App() {
         onPushBack={pushBack}
         onPopBack={popBack}
       />
-    ),
-    options: (
+  );
+  case "options": return (
       <OptionsView data={data}
         onEditCat={idOrObj => {
           // Si c'est un objet avec id → sauvegarde directe (ex: mise à jour du linkedToId)
@@ -623,8 +617,10 @@ export default function App() {
         onPushBack={pushBack}
         onPopBack={popBack}
       />
-    ),
-  };
+  );
+  default: return null;
+  }
+  }
 
   // ── Écran de verrou ──────────────────────────────────────────
   if (locked) {
@@ -673,7 +669,7 @@ export default function App() {
       {/* ── Main content ── */}
       <div className="container" key={animKey} style={{
         animation: slideDir !== 0 ? `tab-slide-${slideDir > 0 ? "right" : "left"} .28s ease both` : "none",
-      }}>{views[tab]}</div>
+      }}>{renderView(tab)}</div>
 
       {/* ── Tab bar ── */}
       <div className="tabs">
