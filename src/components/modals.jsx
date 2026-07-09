@@ -1,4 +1,15 @@
-// modals.jsx — v1.29.2
+// modals.jsx — v1.29.4
+// Changelog v1.29.4 : Fix récurrentes — se répétaient une fois de trop.
+//   • La 1ère opération n'était jamais reliée au modèle récurrent (templateId absent)
+//   • Elle ne comptait donc pas dans le compteur "Nombre de fois", qui se déclenchait
+//     un mois trop tard → une confirmation supplémentaire était proposée
+//   • Fix : l'id du modèle est généré avant l'enregistrement et attaché dès la 1ère opération
+//
+// Changelog v1.29.3 : Fix écran noir à l'ouverture du bouton + (FAB).
+//   • `isAdj` était utilisé dans NumPad() sans y être défini (variable du composant parent)
+//   • ReferenceError au montage → crash React non rattrapé → écran noir, app figée
+//   • Fix : `isAdj` calculé localement dans NumPad
+//
 // Changelog v1.29.2 : Fix grille catégorie — scroll + sélection fantôme.
 //   • Overlay onTouchMove + e.preventDefault() → bloque le scroll du fond (page + modal)
 //   • Drag détecté sur chaque cellule via catTouchRef (startY/startX/moved)
@@ -26,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
@@ -283,9 +294,14 @@ export function TransModal({
       }
     }
     setDupWarning(null);
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined });
-    if (isRecurring && !editingId && !isCag) {
+    // On génère l'id du modèle récurrent ICI (avant l'enregistrement) pour pouvoir
+    // relier la toute première opération à ce modèle — sinon elle ne compte pas
+    // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
+    const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId });
+    if (recurringId) {
       onSaveRecurring?.({
+        id: recurringId,
         type, amount: parsedAmt, categoryId: catId, note, frequency,
         occurrences: frequency === "monthly" && occurrences !== "" ? parseInt(occurrences, 10) : null,
         label: note || (categories.find(c => c.id === catId)?.name) || "Récurrente",
