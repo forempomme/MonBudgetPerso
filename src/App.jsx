@@ -218,6 +218,16 @@ export default function App() {
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
   }, []);
 
+  // ── Avertissements ponctuels émis par le reducer (ex: cagnotte d'arrondi
+  //    introuvable) : on les affiche en toast puis on les efface aussitôt,
+  //    pour ne pas les réafficher au prochain render.
+  useEffect(() => {
+    if (data.warning) {
+      addToast(data.warning, "error");
+      dispatch({ type: A.CLEAR_WARNING });
+    }
+  }, [data.warning, addToast]);
+
   // ── File import ref ──────────────────────────────────────────
   const importRef = useRef();
 

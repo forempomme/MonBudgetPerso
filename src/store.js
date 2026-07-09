@@ -93,6 +93,7 @@ export const A = /** @type {const} */ ({
   DELETE_TAG:               "DELETE_TAG",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
   IMPORT_DATA:              "IMPORT_DATA",
+  CLEAR_WARNING:            "CLEAR_WARNING",
   RESET:               "RESET",
 });
 
@@ -128,6 +129,9 @@ export const DEFAULT_DATA = {
   roundingCagnotteId:        null,
   roundingRule:              "ceil",
   roundingLastTransferDate:  null,
+  // Message d'avertissement ponctuel (ex: cagnotte d'arrondi introuvable) —
+  // lu et affiché en toast par App.jsx, puis effacé via CLEAR_WARNING.
+  warning:                   null,
   notifSettings: {
     enabled:    false,
     recurring:  true,
@@ -137,6 +141,23 @@ export const DEFAULT_DATA = {
     backup:     true,
   },
 };
+
+// ─────────────────────────────────────────────────────────────────
+//  Arrondi automatique : calcule le montant à mettre de côté pour une
+//  dépense donnée, selon les réglages actuels. Retourne null si aucun
+//  arrondi ne doit s'appliquer (désactivé, cagnotte manquante, ou
+//  montant déjà rond).
+// ─────────────────────────────────────────────────────────────────
+function computeRoundAmount(state, amount) {
+  if (!state.roundingEnabled || !state.roundingCagnotteId) return null;
+  if (!state.cagnottes.some(c => c.id === state.roundingCagnotteId)) return null;
+  const rule    = state.roundingRule || "ceil";
+  const rounded = rule === "5"  ? Math.ceil(amount / 5)  * 5
+                : rule === "10" ? Math.ceil(amount / 10) * 10
+                :                 Math.ceil(amount);
+  const roundAmt = parseFloat((rounded - amount).toFixed(2));
+  return roundAmt > 0.005 ? roundAmt : null;
+}
 
 // ─────────────────────────────────────────────────────────────────
 //  Reducer
@@ -184,13 +205,39 @@ export function reducer(state, action) {
           );
         }
 
-        return {
-          ...state,
-          cagnottes,
-          transactions: state.transactions.map(t =>
-            t.id === tx.id ? { ...t, ...tx } : t
-          ),
-        };
+        let transactions = state.transactions.map(t =>
+          t.id === tx.id ? { ...t, ...tx } : t
+        );
+        let warning = state.warning;
+
+        // ── Arrondi lié à cette dépense : on le recalcule (ou on l'enlève) ──
+        const linkedRound = state.transactions.find(t => t.isRounding && t.sourceTxId === tx.id);
+        if (linkedRound) {
+          // On annule d'abord son ancien effet sur la cagnotte
+          cagnottes = cagnottes.map(c =>
+            c.id === linkedRound.targetCagId ? { ...c, current: c.current - linkedRound.amount } : c
+          );
+          const newRoundAmt = tx.type === "expense" ? computeRoundAmount(state, parseFloat(tx.amount) || 0) : null;
+          if (newRoundAmt != null) {
+            cagnottes = cagnottes.map(c =>
+              c.id === state.roundingCagnotteId ? { ...c, current: c.current + newRoundAmt } : c
+            );
+            transactions = transactions.map(t =>
+              t.id === linkedRound.id
+                ? { ...t, amount: newRoundAmt, date: tx.date, note: `Arrondi · ${tx.note || ""}`.trim() }
+                : t
+            );
+          } else {
+            // Plus d'arrondi à appliquer (montant devenu rond, type changé, ou cagnotte manquante)
+            transactions = transactions.filter(t => t.id !== linkedRound.id);
+            if (state.roundingEnabled && state.roundingCagnotteId && tx.type === "expense" &&
+                !state.cagnottes.some(c => c.id === state.roundingCagnotteId)) {
+              warning = "Ta cagnotte d'arrondi n'existe plus — vérifie tes réglages dans Options.";
+            }
+          }
+        }
+
+        return { ...state, cagnottes, transactions, warning };
       }
 
       // ── New transaction ──
@@ -210,34 +257,36 @@ export function reducer(state, action) {
       let newTxs = [...state.transactions, newTx];
 
       // ── Arrondi automatique ──────────────────────────────────
+      let warning = state.warning;
       if (
         state.roundingEnabled &&
         tx.type === "expense" &&
         state.roundingCagnotteId &&
         !tx.isRounding
       ) {
-        const amount  = parseFloat(tx.amount) || 0;
-        const rule    = state.roundingRule || "ceil";
-        const rounded = rule === "5"  ? Math.ceil(amount / 5)  * 5
-                      : rule === "10" ? Math.ceil(amount / 10) * 10
-                      :                 Math.ceil(amount);
-        const roundAmt = parseFloat((rounded - amount).toFixed(2));
-        if (roundAmt > 0.005) {
-          const roundTx = {
-            id: uid("rtx"), type: "epargne",
-            amount: roundAmt, date: tx.date,
-            targetCagId: state.roundingCagnotteId,
-            note: `Arrondi · ${tx.note || ""}`.trim(),
-            isRounding: true,
-          };
-          newTxs = [...newTxs, roundTx];
-          cagnottes = cagnottes.map(c =>
-            c.id === state.roundingCagnotteId ? { ...c, current: c.current + roundAmt } : c
-          );
+        if (!state.cagnottes.some(c => c.id === state.roundingCagnotteId)) {
+          // La cagnotte visée par l'arrondi n'existe plus : on ne crée pas de
+          // transaction fantôme qui n'irait nulle part, on prévient l'utilisateur.
+          warning = "Ta cagnotte d'arrondi n'existe plus — vérifie tes réglages dans Options.";
+        } else {
+          const roundAmt = computeRoundAmount(state, parseFloat(tx.amount) || 0);
+          if (roundAmt != null) {
+            const roundTx = {
+              id: uid("rtx"), type: "epargne",
+              amount: roundAmt, date: tx.date,
+              targetCagId: state.roundingCagnotteId,
+              note: `Arrondi · ${tx.note || ""}`.trim(),
+              isRounding: true, sourceTxId: newTx.id,
+            };
+            newTxs = [...newTxs, roundTx];
+            cagnottes = cagnottes.map(c =>
+              c.id === state.roundingCagnotteId ? { ...c, current: c.current + roundAmt } : c
+            );
+          }
         }
       }
 
-      return { ...state, cagnottes, transactions: newTxs };
+      return { ...state, cagnottes, transactions: newTxs, warning };
     }
 
     case A.DELETE_TRANSACTION: {
@@ -614,6 +663,9 @@ export function reducer(state, action) {
 
     case A.IMPORT_DATA:
       return { ...DEFAULT_DATA, ...action.data };
+
+    case A.CLEAR_WARNING:
+      return { ...state, warning: null };
 
     case A.RESET:
       return DEFAULT_DATA;
