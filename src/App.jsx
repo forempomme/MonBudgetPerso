@@ -526,6 +526,7 @@ export default function App() {
         onMarkRoundingTransferred={markRoundingTransferred}
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
         onConfirmRecurring={confirmRecurring}
+        onTogglePointFix={togglePointFix}
       />
   );
   case "cagnottes": return (

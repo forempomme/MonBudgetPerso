@@ -226,21 +226,22 @@ export function usePriorYearStats(transactions, fixedExpenses) {
 
 // ─────────────────────────────────────────────────────────────────
 //  Balance with pending recurring transactions for current month
-//  Déduit du solde les récurrentes non encore confirmées ce mois.
+//  Déduit du solde les récurrentes non encore confirmées ce mois,
+//  ainsi que les programmées dont l'échéance est ce mois-ci ou déjà
+//  passée mais pas encore confirmée (ex: précommande payée à la sortie —
+//  ça ne pèse sur le solde estimé qu'à partir du mois de l'échéance).
 // ─────────────────────────────────────────────────────────────────
-export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates) {
+export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions) {
   const balance = useBalance(transactions, fixedExpenses, fixedIncomes);
 
   return useMemo(() => {
-    if (!recurringTemplates || recurringTemplates.length === 0) return balance;
-
     const now   = new Date();
     const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const curY  = now.getFullYear().toString();
 
     let pending = 0;
 
-    recurringTemplates.forEach(tpl => {
+    (recurringTemplates || []).forEach(tpl => {
       const amount = parseFloat(tpl.amount) || 0;
       if (amount <= 0) return;
 
@@ -258,7 +259,16 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncome
       }
     });
 
+    // Une programmée reste dans scheduledTransactions tant qu'elle n'est pas
+    // confirmée (CONFIRM_SCHEDULED la retire du tableau) — donc tout ce qui
+    // s'y trouve encore ET dont l'échéance est atteinte doit être anticipé.
+    (scheduledTransactions || []).forEach(s => {
+      const amount = parseFloat(s.amount) || 0;
+      if (amount <= 0) return;
+      if (s.date.slice(0, 7) <= curYM) pending += amount;
+    });
+
     return balance - pending;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balance, transactions, recurringTemplates]);
+  }, [balance, transactions, recurringTemplates, scheduledTransactions]);
 }
