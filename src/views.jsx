@@ -497,6 +497,28 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   const [tabUpcoming,   setTabUpcoming]   = useState("both");
   const [openUpcoming,  setOpenUpcoming]  = useState(false);
 
+  // Le bouton "retour" (navigateur / geste Android) doit aussi fermer ce modal :
+  // on pousse une entrée d'historique factice à l'ouverture, et on écoute "popstate".
+  const upcomingHistoryPushed = useRef(false);
+  useEffect(() => {
+    if (!openUpcoming) return;
+    window.history.pushState({ upcomingModal: true }, "");
+    upcomingHistoryPushed.current = true;
+    const onPopState = () => { upcomingHistoryPushed.current = false; setOpenUpcoming(false); };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [openUpcoming]);
+
+  // Fermeture via le bouton ✕ (ou clic en dehors) : si une entrée a été poussée,
+  // on la consomme aussi pour que le prochain "retour" ne soit pas neutralisé.
+  const closeUpcoming = useCallback(() => {
+    if (upcomingHistoryPushed.current) {
+      upcomingHistoryPushed.current = false;
+      window.history.back();
+    }
+    setOpenUpcoming(false);
+  }, []);
+
   // Frais fixes non pointés ce mois
   const unpointedFixes = useMemo(() =>
     fixedExpenses.filter(f => !f.pointedMonths?.[curM]),
@@ -893,7 +915,12 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
             {/* Modal — remplace l'ancien dépliant inline */}
             {openUpcoming && (
-              <Modal onClose={()=>setOpenUpcoming(false)} title="⏳ À venir">
+              <Modal onClose={closeUpcoming} title="">
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+                  <div className="modal-title" style={{ marginBottom:0 }}>⏳ À venir</div>
+                  <button onClick={closeUpcoming} style={{ width:26, height:26, borderRadius:"50%", background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text2)", fontSize:".7rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
+                </div>
+
                 {/* Filtres */}
                 <div style={{ display:"flex", gap:6, overflowX:"auto", marginBottom:12, paddingBottom:2 }}>
                   {[["both","Tout"],["recurring","Récurrents"],["fixes","Fixes"],["scheduled","Programmés"]].map(([k,l])=>(
