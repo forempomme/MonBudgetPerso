@@ -892,11 +892,13 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           })}
         </div>
         <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-between", fontSize: ".6rem", color: "rgba(255,255,255,.55)", position: "relative" }}>
-          <span>Dépenses courantes estimées (médiane/6 mois)</span>
-          <span style={{ fontWeight: 800, color: "#fff" }}>≈ {fmt(projection.variableMedian)}/mois</span>
+          <span>Flux courant net estimé (médiane/6 mois)</span>
+          <span style={{ fontWeight: 800, color: projection.variableNetMedian >= 0 ? "var(--success)" : "var(--danger)" }}>
+            {projection.variableNetMedian >= 0 ? "+" : ""}{fmt(projection.variableNetMedian)}/mois
+          </span>
         </div>
         <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 8, lineHeight: 1.5, position: "relative" }}>
-          Estimation à partir de tes fixes, récurrentes et programmées connues. Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
+          Dépenses et revenus ponctuels (courses, freelance, remboursements…), fixes/récurrentes/programmées connues incluses. Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
         </div>
       </div>
       </div>
