@@ -128,6 +128,18 @@ body {
   0%, 100% { opacity: 1;  box-shadow: 0 0 8px var(--ind-glow, rgba(74,222,128,.5)); }
   50%       { opacity: .5; box-shadow: 0 0 4px var(--ind-glow, rgba(74,222,128,.3)); }
 }
+
+/* ── Carrousel hero (solde ↔ projection) ─────────────────────── */
+.hero-carousel {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  gap: 10px; margin: 0 -14px 8px; padding: 0 14px 2px;
+  scrollbar-width: none;
+}
+.hero-carousel::-webkit-scrollbar { display: none; }
+.hero-carousel > .hero-card { flex: 0 0 100%; scroll-snap-align: center; margin-bottom: 0; width: 100%; }
+.hero-dots { display: flex; justify-content: center; gap: 6px; margin-bottom: 12px; }
+.hero-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,.18); transition: all .2s; }
+.hero-dot.active { background: var(--accent); width: 16px; border-radius: 4px; }
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
