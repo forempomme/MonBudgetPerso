@@ -355,7 +355,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   // dépenses courantes + fixes/récurrentes/programmées déjà connus)
   const projection = useBalanceProjection(
     balance, transactions, fixedExpenses, data.fixedIncomes || [],
-    data.recurringTemplates || [], data.scheduledTransactions || [], 3
+    data.recurringTemplates || [], data.scheduledTransactions || [], 3, alertThreshold
   );
   const [heroIndex, setHeroIndex] = useState(0);
   const heroCarouselRef = useRef(null);
@@ -877,6 +877,17 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative" }}>
           Projection à 3 mois
         </div>
+
+        {/* Alerte : passera sous le seuil configuré */}
+        {projection.thresholdBreachMonth && (
+          <div style={{ display: "flex", alignItems: "center", gap:6, marginTop: 8, padding: "6px 9px", borderRadius: 8, background: "rgba(200,112,112,.14)", border: "1px solid rgba(200,112,112,.35)", position: "relative" }}>
+            <span style={{ fontSize: ".75rem" }}>⚠️</span>
+            <span style={{ fontSize: ".62rem", color: "#ffd4d4", fontWeight: 700 }}>
+              Passera sous ton seuil d'alerte ({fmt(alertThreshold)}) dès {projection.thresholdBreachMonth.label}
+            </span>
+          </div>
+        )}
+
         <div style={{ display: "flex", gap: 7, marginTop: 12, position: "relative" }}>
           {projection.months.map((m, i) => {
             const color = m.value < 0 ? "var(--danger)" : m.value < (alertThreshold || 0) ? "var(--warning)" : "var(--success)";
@@ -891,6 +902,14 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
             );
           })}
         </div>
+
+        {/* Explication : la plus grosse programmée qui pèse sur la projection */}
+        {projection.biggestSchedItem && (
+          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", marginTop: 9, position: "relative" }}>
+            💡 <b style={{ color: "#fff" }}>{projection.biggestSchedMonth.label}</b> : ta programmée "{projection.biggestSchedItem.note || "sans nom"}" de {fmt(projection.biggestSchedItem.amount)} tombe ce mois-là.
+          </div>
+        )}
+
         <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-between", fontSize: ".6rem", color: "rgba(255,255,255,.55)", position: "relative" }}>
           <span>Flux courant net estimé (médiane/6 mois)</span>
           <span style={{ fontWeight: 800, color: projection.variableNetMedian >= 0 ? "var(--success)" : "var(--danger)" }}>
