@@ -4,7 +4,7 @@ import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
-  usePriorYearStats, useTotalFixes,
+  usePriorYearStats, useTotalFixes, useBalanceProjection,
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -351,6 +351,20 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   const balance   = useBalanceWithRecurring(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || []);
 
+  // v1.39.10 : projection du solde sur les prochains mois (médiane des
+  // dépenses courantes + fixes/récurrentes/programmées déjà connus)
+  const projection = useBalanceProjection(
+    balance, transactions, fixedExpenses, data.fixedIncomes || [],
+    data.recurringTemplates || [], data.scheduledTransactions || [], 3
+  );
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroCarouselRef = useRef(null);
+  const onHeroScroll = () => {
+    const el = heroCarouselRef.current;
+    if (!el) return;
+    setHeroIndex(Math.round(el.scrollLeft / el.clientWidth));
+  };
+
   // ── Arrondi stats ─────────────────────────────────────────────
   const roundStats = useMemo(() => {
     if (!roundingEnabled || !roundingCagnotteId) return null;
@@ -548,6 +562,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         </div>
       )}
 
+      {/* ── Carrousel : solde ↔ projection ── */}
+      <div className="hero-carousel" ref={heroCarouselRef} onScroll={onHeroScroll}>
       {/* ── Carte solde animée ── */}
       <div
         className="hero-card"
@@ -845,6 +861,50 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── Carte Projection (médiane des dépenses courantes) ── */}
+      <div className="hero-card" style={{
+        background: "linear-gradient(135deg, #101f18 0%, #16321f 45%, #0e1e18 100%)",
+        border: "none", boxShadow: "0 4px 24px rgba(104,212,152,.15)",
+        overflow: "hidden", paddingBottom: 18,
+      }}>
+        <div style={{
+          position: "absolute", top: -30, right: -30, width: 130, height: 130,
+          borderRadius: "50%", pointerEvents: "none",
+          background: "radial-gradient(circle, rgba(104,212,152,.18) 0%, transparent 70%)",
+        }} />
+        <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative" }}>
+          Projection à 3 mois
+        </div>
+        <div style={{ display: "flex", gap: 7, marginTop: 12, position: "relative" }}>
+          {projection.months.map((m, i) => {
+            const color = m.value < 0 ? "var(--danger)" : m.value < (alertThreshold || 0) ? "var(--warning)" : "var(--success)";
+            return (
+              <div key={m.ym} style={{ display: "flex", alignItems: "center", flex: 1 }}>
+                {i > 0 && <div style={{ color: "rgba(255,255,255,.3)", fontSize: ".65rem", marginRight: 7 }}>→</div>}
+                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>{m.label}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, color }}>{fmt(m.value)}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-between", fontSize: ".6rem", color: "rgba(255,255,255,.55)", position: "relative" }}>
+          <span>Dépenses courantes estimées (médiane/6 mois)</span>
+          <span style={{ fontWeight: 800, color: "#fff" }}>≈ {fmt(projection.variableMedian)}/mois</span>
+        </div>
+        <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 8, lineHeight: 1.5, position: "relative" }}>
+          Estimation à partir de tes fixes, récurrentes et programmées connues. Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
+        </div>
+      </div>
+      </div>
+
+      {/* Dots du carrousel solde ↔ projection */}
+      <div className="hero-dots">
+        <div className={`hero-dot ${heroIndex === 0 ? "active" : ""}`} />
+        <div className={`hero-dot ${heroIndex === 1 ? "active" : ""}`} />
       </div>
 
       {/* ── 🐷 Cagnottes + 📌 Fixes ── */}
