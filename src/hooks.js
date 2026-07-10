@@ -272,3 +272,94 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncome
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balance, transactions, recurringTemplates, scheduledTransactions]);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Médiane des dépenses courantes (v1.39.10)
+//  "Courantes" = ni fixes (vivent dans fixedExpenses, pas dans
+//  transactions), ni récurrentes (templateId posé), ni arrondi auto
+//  (isRounding). Ce qui reste, c'est le quotidien (courses, sorties…),
+//  dont le montant varie d'un mois à l'autre — on en prend la médiane
+//  sur 6 mois plutôt que la moyenne, pour qu'un imprévu ponctuel
+//  (réparation, cadeau) ne fausse pas l'estimation des mois suivants.
+// ─────────────────────────────────────────────────────────────────
+function median(nums) {
+  if (nums.length === 0) return 0;
+  const sorted = [...nums].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+export function useVariableExpenseMedian(transactions, monthsWindow = 6) {
+  return useMemo(() => {
+    const now = new Date();
+    const monthlyTotals = [];
+    for (let i = 1; i <= monthsWindow; i++) {
+      const d  = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const total = transactions
+        .filter(t => t.type === "expense" && !t.templateId && !t.isRounding && t.date.startsWith(ym))
+        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+      monthlyTotals.push(total);
+    }
+    return median(monthlyTotals);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, monthsWindow]);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Projection du solde sur les prochains mois (v1.39.10)
+//  Intègre les montants CONNUS (fixes, récurrentes mensuelles,
+//  programmées déjà datées) + une estimation des dépenses courantes
+//  (médiane ci-dessus). Les récurrentes annuelles ne sont pas
+//  anticipées ici : on ne sait pas de façon fiable à quel mois futur
+//  elles retomberont. C'est une estimation, pas une prévision exacte —
+//  elle ne peut pas deviner un imprévu ponctuel.
+// ─────────────────────────────────────────────────────────────────
+const PROJ_MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
+export function useBalanceProjection(balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead = 3) {
+  const variableMedian = useVariableExpenseMedian(transactions, 6);
+
+  return useMemo(() => {
+    const now = new Date();
+    const months = [];
+    let running = balance;
+
+    for (let i = 1; i <= monthsAhead; i++) {
+      const d  = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+      const fixExp = (fixedExpenses || []).reduce((s, f) => {
+        const ov = f.monthlyOverrides?.[ym];
+        return s + ((ov?.amount ?? f.amount) || 0);
+      }, 0);
+      const fixInc = (fixedIncomes || []).reduce((s, f) => {
+        const ov = f.monthlyOverrides?.[ym];
+        return s + ((ov?.amount ?? f.amount) || 0);
+      }, 0);
+
+      const recPending = (recurringTemplates || []).reduce((s, tpl) => {
+        if (tpl.frequency !== "monthly") return s;
+        const amount = parseFloat(tpl.amount) || 0;
+        if (amount <= 0) return s;
+        if (tpl.occurrences != null) {
+          const doneSoFar = transactions.filter(t => t.templateId === tpl.id).length;
+          if (doneSoFar + i > tpl.occurrences) return s;
+        }
+        return s + amount;
+      }, 0);
+
+      const schedDue = (scheduledTransactions || []).reduce((s, sc) => {
+        if (sc.date.slice(0, 7) === ym) return s + (parseFloat(sc.amount) || 0);
+        return s;
+      }, 0);
+
+      running = running + fixInc - fixExp - recPending - schedDue - variableMedian;
+
+      months.push({ ym, label: PROJ_MONTHS_SHORT[d.getMonth()], value: running });
+    }
+
+    return { months, variableMedian };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead, variableMedian]);
+}
