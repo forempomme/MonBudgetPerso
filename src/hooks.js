@@ -328,13 +328,14 @@ export function useVariableCashflowMedian(transactions, monthsWindow = 6) {
 // ─────────────────────────────────────────────────────────────────
 const PROJ_MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
-export function useBalanceProjection(balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead = 3) {
+export function useBalanceProjection(balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead = 3, alertThreshold = null) {
   const variableNetMedian = useVariableCashflowMedian(transactions, 6);
 
   return useMemo(() => {
     const now = new Date();
     const months = [];
     let running = balance;
+    let deltaFromPrev = 0; // pour repérer le mois qui baisse le plus
 
     for (let i = 1; i <= monthsAhead; i++) {
       const d  = new Date(now.getFullYear(), now.getMonth() + i, 1);
@@ -364,18 +365,39 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
       }, 0);
 
       // Les programmées sont toujours des dépenses (l'app ne propose que
-      // des catégories de dépense pour ce type de transaction).
-      const schedDue = (scheduledTransactions || []).reduce((s, sc) => {
-        if (sc.date.slice(0, 7) === ym) return s + (parseFloat(sc.amount) || 0);
-        return s;
-      }, 0);
+      // des catégories de dépense pour ce type de transaction). On garde
+      // le détail (pas juste le total) pour pouvoir expliquer le mois.
+      const schedItems = (scheduledTransactions || []).filter(sc => sc.date.slice(0, 7) === ym);
+      const schedDue   = schedItems.reduce((s, sc) => s + (parseFloat(sc.amount) || 0), 0);
 
+      const prevRunning = running;
       running = running + fixInc - fixExp + recNet - schedDue + variableNetMedian;
 
-      months.push({ ym, label: PROJ_MONTHS_SHORT[d.getMonth()], value: running });
+      months.push({
+        ym, label: PROJ_MONTHS_SHORT[d.getMonth()], value: running,
+        delta: running - prevRunning, schedItems,
+      });
     }
 
-    return { months, variableNetMedian };
+    // Repère le premier mois où la projection passe sous le seuil d'alerte
+    let thresholdBreachMonth = null;
+    if (alertThreshold != null && alertThreshold > 0) {
+      thresholdBreachMonth = months.find(m => m.value < alertThreshold) || null;
+    }
+
+    // Repère le mois qui explique le mieux une baisse (la plus grosse
+    // programmée parmi tous les mois projetés, s'il y en a une)
+    let biggestSchedMonth = null, biggestSchedItem = null;
+    months.forEach(m => {
+      m.schedItems.forEach(sc => {
+        const a = parseFloat(sc.amount) || 0;
+        if (!biggestSchedItem || a > (parseFloat(biggestSchedItem.amount) || 0)) {
+          biggestSchedItem = sc; biggestSchedMonth = m;
+        }
+      });
+    });
+
+    return { months, variableNetMedian, thresholdBreachMonth, biggestSchedMonth, biggestSchedItem };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead, variableNetMedian]);
+  }, [balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead, variableNetMedian, alertThreshold]);
 }
