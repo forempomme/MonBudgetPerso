@@ -352,14 +352,24 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
 
       // Une récurrente peut être un revenu (ex: bonus mensuel) ou une
       // dépense (ex: abonnement) — on respecte son type, pas une
-      // hypothèse "toujours dépense".
+      // hypothèse "toujours dépense". On tient aussi compte du fait
+      // qu'une récurrente à occurrences limitées peut se terminer
+      // AVANT la fin de la fenêtre de projection : une fois le nombre
+      // de fois atteint, elle arrête de peser sur les mois suivants.
+      const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       const recNet = (recurringTemplates || []).reduce((s, tpl) => {
         if (tpl.frequency !== "monthly") return s;
         const amount = parseFloat(tpl.amount) || 0;
         if (amount <= 0) return s;
         if (tpl.occurrences != null) {
-          const doneSoFar = transactions.filter(t => t.templateId === tpl.id).length;
-          if (doneSoFar + i > tpl.occurrences) return s;
+          const confirmed  = transactions.filter(t => t.templateId === tpl.id);
+          const doneSoFar  = confirmed.length;
+          // Si le mois en cours n'est pas encore confirmé, le solde de
+          // départ (balance) l'anticipe déjà comme "fait" — il compte
+          // donc pour 1 occurrence de plus que ce qui est dans les données.
+          const doneThisMonth  = confirmed.some(t => t.date.startsWith(curYM));
+          const effectiveDone  = doneThisMonth ? doneSoFar : doneSoFar + 1;
+          if (effectiveDone + i > tpl.occurrences) return s;
         }
         return s + (tpl.type === "income" ? amount : -amount);
       }, 0);
