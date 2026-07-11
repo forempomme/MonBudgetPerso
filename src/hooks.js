@@ -411,3 +411,48 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead, variableNetMedian, alertThreshold]);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Fiabilité de la projection (v1.39.14)
+//  Compare, pour chaque mois désormais PASSÉ, ce que la toute première
+//  projection avait annoncé (projectionSnapshots, figé une fois pour
+//  toutes) avec le solde réellement atteint à la fin de ce mois-là.
+// ─────────────────────────────────────────────────────────────────
+function balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, targetYM) {
+  let bal = 0;
+  transactions.forEach(t => {
+    if (t.date.slice(0, 7) > targetYM) return;
+    const a = parseFloat(t.amount) || 0;
+    if      (isIncome(t.type))      bal += a;
+    else if (t.type === "expense")  bal -= a;
+    else if (t.type === "epargne")  bal -= a;
+  });
+  if (transactions.length > 0) {
+    const earliest = transactions.reduce(
+      (min, t) => (t.date < min ? t.date : min), transactions[0].date
+    );
+    const startYM = earliest.slice(0, 7);
+    if (startYM <= targetYM) {
+      monthRange(startYM, targetYM).forEach(ym => {
+        bal -= effectiveFixesForMonth(fixedExpenses, ym);
+        bal += effectiveIncomesForMonth(fixedIncomes, ym);
+      });
+    }
+  }
+  return bal;
+}
+
+export function useProjectionAccuracy(transactions, fixedExpenses, fixedIncomes, projectionSnapshots) {
+  return useMemo(() => {
+    const curYM = currentYM();
+    const results = [];
+    Object.entries(projectionSnapshots || {}).forEach(([ym, snap]) => {
+      if (ym >= curYM) return; // le mois n'est pas encore passé
+      const actual = balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, ym);
+      results.push({ ym, predicted: snap.predictedValue, actual, delta: actual - snap.predictedValue });
+    });
+    results.sort((a, b) => b.ym.localeCompare(a.ym));
+    return results;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, fixedExpenses, fixedIncomes, projectionSnapshots]);
+}

@@ -94,6 +94,7 @@ export const A = /** @type {const} */ ({
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
   IMPORT_DATA:              "IMPORT_DATA",
   CLEAR_WARNING:            "CLEAR_WARNING",
+  SAVE_PROJECTION_SNAPSHOT: "SAVE_PROJECTION_SNAPSHOT",
   RESET:               "RESET",
 });
 
@@ -132,6 +133,11 @@ export const DEFAULT_DATA = {
   // Message d'avertissement ponctuel (ex: cagnotte d'arrondi introuvable) —
   // lu et affiché en toast par App.jsx, puis effacé via CLEAR_WARNING.
   warning:                   null,
+  // Fiabilité de la projection (v1.39.14) : figé au tout premier calcul pour
+  // chaque mois futur — { [ym]: { predictedValue, predictedOn } } — jamais
+  // réécrit ensuite, pour comparer "ce qu'on avait annoncé" vs la réalité
+  // une fois le mois passé.
+  projectionSnapshots:       {},
   notifSettings: {
     enabled:    false,
     recurring:  true,
@@ -666,6 +672,21 @@ export function reducer(state, action) {
 
     case A.CLEAR_WARNING:
       return { ...state, warning: null };
+
+    case A.SAVE_PROJECTION_SNAPSHOT: {
+      const { ym, predictedValue } = action;
+      // Déjà figé pour ce mois : on ne réécrit jamais (on garde la toute
+      // première anticipation) — et on renvoie le MÊME state (pas de copie)
+      // pour ne pas déclencher de re-render/effet en boucle pour rien.
+      if (state.projectionSnapshots?.[ym]) return state;
+      return {
+        ...state,
+        projectionSnapshots: {
+          ...state.projectionSnapshots,
+          [ym]: { predictedValue, predictedOn: todayISO() },
+        },
+      };
+    }
 
     case A.RESET:
       return DEFAULT_DATA;

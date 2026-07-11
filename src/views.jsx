@@ -4,7 +4,7 @@ import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
-  usePriorYearStats, useTotalFixes, useBalanceProjection,
+  usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -322,7 +322,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
     </div>
   );
 }
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onSaveProjectionSnapshot }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -364,6 +364,23 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     if (!el) return;
     setHeroIndex(Math.round(el.scrollLeft / el.clientWidth));
   };
+
+  // v1.39.14 : on fige la toute première projection vue pour chaque mois —
+  // le reducer ignore lui-même les mois déjà figés (no-op), donc pas de
+  // souci à rappeler ça à chaque render.
+  useEffect(() => {
+    projection.months.forEach(m => {
+      if (!data.projectionSnapshots?.[m.ym]) {
+        onSaveProjectionSnapshot?.(m.ym, m.value);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projection.months]);
+
+  // Fiabilité : compare les projections passées à la réalité une fois le mois écoulé
+  const projectionAccuracy = useProjectionAccuracy(
+    transactions, fixedExpenses, data.fixedIncomes || [], data.projectionSnapshots || {}
+  );
 
   // ── Arrondi stats ─────────────────────────────────────────────
   const roundStats = useMemo(() => {
@@ -919,6 +936,25 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 8, lineHeight: 1.5, position: "relative" }}>
           Dépenses et revenus ponctuels (courses, freelance, remboursements…), fixes/récurrentes/programmées connues incluses. Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
         </div>
+
+        {/* Fiabilité : ce qu'on avait annoncé vs la réalité, mois par mois */}
+        {projectionAccuracy.length > 0 && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.1)", position: "relative" }}>
+            <div style={{ fontSize: ".6rem", fontWeight: 700, color: "rgba(255,255,255,.6)", marginBottom: 6 }}>Fiabilité de la projection</div>
+            {projectionAccuracy.slice(0, 3).map(a => {
+              const good = Math.abs(a.delta) <= 50;
+              return (
+                <div key={a.ym} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".6rem", padding: "3px 0", color: "rgba(255,255,255,.65)" }}>
+                  <span>{a.ym}</span>
+                  <span>Prévu {fmt(a.predicted)} → Réel {fmt(a.actual)}</span>
+                  <span style={{ fontWeight: 800, color: good ? "var(--success)" : Math.abs(a.delta) <= 150 ? "var(--warning)" : "var(--danger)" }}>
+                    {a.delta >= 0 ? "+" : ""}{fmt(a.delta)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
       </div>
 

@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.39.13";
+export const APP_VERSION = "1.39.14";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];

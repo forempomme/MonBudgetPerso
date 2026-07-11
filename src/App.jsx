@@ -527,6 +527,7 @@ export default function App() {
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
         onConfirmRecurring={confirmRecurring}
         onTogglePointFix={togglePointFix}
+        onSaveProjectionSnapshot={(ym, predictedValue) => dispatch({ type: A.SAVE_PROJECTION_SNAPSHOT, ym, predictedValue })}
       />
   );
   case "cagnottes": return (
