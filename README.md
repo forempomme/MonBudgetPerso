@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.39.3`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.39.14`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -26,18 +26,19 @@ Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
 ### Onglet Accueil
 
-- **Hero card animée** — solde bancaire estimé avec dégradé, shimmer, orbes pulsées, compteur animé
-- **Sparkline 6 mois** — barres du solde au même jour chaque mois, montants rotatés à −35°
-- **Badge delta** — 🔼/🔽 X% vs le même jour du mois précédent, affiché à côté du solde
+- **Carrousel hero (swipeable)** — deux cartes glissables horizontalement, avec indicateur à points :
+  - **Solde bancaire estimé** — dégradé, shimmer, orbes pulsées, compteur animé, sparkline 6 mois, badge delta 🔼/🔽
+  - **Projection à 3 mois** — solde prévu mois par mois à partir des fixes, récurrentes, programmées connues + une estimation du flux courant net (voir [Logique solde](#logique-solde)) ; inclut une alerte si le seuil configuré sera franchi, une explication de la plus grosse programmée qui pèse sur un mois, et un encart **Fiabilité** comparant les projections passées à la réalité une fois le mois écoulé
 - **SmartIndicator** — point coloré : vert / jaune (solde < seuil ou backup > 7 j) / rouge (solde négatif ou backup > 14 j). Tap → bulle explicative
-- **Solde prévisionnel** — si des frais prévisionnels sont définis, deuxième ligne avec solde après ces dépenses
 - **Rapprochement bancaire** — mini-cartes cliquables « ✓ Solde pointé » et « ⏳ En attente » + barre de progression
 - **Opération d'équilibre** — ajuste le solde pointé sans impacter le solde estimé (⚖️ dans le FAB)
 - **Colonne arrondis** (si arrondi activé) — Mois / Année / À virer
 - Cartes 🐷 Cagnottes (avec taux d'épargne du mois) et 📌 Fixes/mois
 - **Cartes stat teintées** — Revenus, Dépenses, Cagnotte, Dép. variables avec barre dégradée
 - **Récap cagnotte au tap** — sheet avec répartition des mouvements par cagnotte
-- **Section ⏳ À venir** (repliable) — onglets Tout / Récurrents / Fixes / Programmés, compte à rebours, badge occurrences restantes
+- **Modal ⏳ À venir** — s'ouvre en tapant la carte (remplace l'ancien dépliant inline), centré à l'écran, fermable par le bouton ✕ ou le bouton retour (Android/navigateur) :
+  - Onglets Tout / Récurrents / Fixes / Programmés, badge occurrences restantes sur les récurrentes
+  - Chaque dépense fixe non pointée a sa propre case à cocher, plus un bouton **✓ Tout pointer** qui pointe en un tap toutes les fixes non pointées actuellement visibles (filtre respecté)
 
 ### FAB (bouton +)
 
@@ -50,6 +51,8 @@ Menu à 5 options :
 | 🐷 Épargne | Ouvre TransModal en mode épargne |
 | 📅 Programmée | Ouvre ScheduledModal |
 | ⚖️ Équilibre | Ouvre TransModal en mode balance_adjustment |
+
+**Récurrentes** — depuis une dépense/revenu, cocher « Récurrente » avec fréquence (mensuelle/annuelle) et nombre de fois optionnel. La toute première opération est reliée au modèle récurrent dès sa création (`templateId`), pour que le compteur d'occurrences compte juste dès le départ.
 
 ### Onglet Cagnottes
 
@@ -67,7 +70,7 @@ Menu à 5 options :
 - Rapprochement du mois (mini-cartes pointé / en attente)
 - **Vues** : Liste / Catégories / Calendrier
 - **Code couleur par type** : fond teinté + bande gauche colorée pour épargne (violet), retrait cagnotte (corail/vert), équilibre (sapin), badge type sous le label
-- **Swipe gauche** → ✏️ Modifier / 📋 Dupliquer / 🗑 Supprimer
+- **Swipe gauche** → ✏️ Modifier / 📋 Dupliquer / 🗑 Supprimer (la duplication recopie désormais aussi `targetCagId` et `tagIds` — une épargne/décagnottage dupliqué reste bien lié à sa cagnotte)
 - Pointage ○/✓ (désactivé pour les types non-pointables : dissolution, decagnottage, balance_adjustment)
 - Sections : Épargnes à confirmer / Programmées ce mois / Récurrentes à confirmer / Frais fixes du mois
 - Tags — chips colorées sous chaque transaction taguée
@@ -110,10 +113,12 @@ Menu à 5 options :
 
 **🐷 Versements automatiques** — virement mensuel fixe vers une cagnotte avec double-garde anti-doublon (UTC corrigé en heure locale)
 
+**🐷 Arrondi automatique** — arrondit chaque dépense vers une cagnotte cible. Si la cagnotte visée a été supprimée, aucune transaction fantôme n'est créée : un message d'avertissement s'affiche en toast à la place. Éditer une dépense déjà arrondie recalcule (ou retire) automatiquement l'arrondi lié.
+
 ### Transactions programmées
 
-- FAB → 📅 Programmée : montant, date future, catégorie, note
-- Section « ⏳ À venir » accueil avec compte à rebours
+- FAB → 📅 Programmée : montant, date future, catégorie, note. Pensé pour les cas type précommande payée à la sortie : la dépense est saisie aujourd'hui mais ne pèsera sur le solde estimé qu'à partir du mois de son échéance
+- Section « ⏳ À venir » (modal) — programmées futures uniquement ; celles dont l'échéance est le mois en cours basculent dans Historique pour confirmation
 - Confirmation automatique au démarrage (heure locale)
 - Badge **PROG** dans l'historique
 
@@ -171,7 +176,7 @@ gestion-du-budget/
 │   ├── main.jsx
 │   ├── App.jsx          — state, FAB, modals, callbacks
 │   ├── store.js         — reducer, actions A.*, DEFAULT_DATA
-│   ├── hooks.js         — useBalance, useBalanceWithRecurring, useMonthStats…
+│   ├── hooks.js         — useBalance, useBalanceWithRecurring, useBalanceProjection…
 │   ├── utils.js         — fmt, isIncome, txLabel, txTypeClass, txSign, APP_VERSION
 │   ├── views.jsx        — toutes les vues + LockScreen + SwipeRow
 │   ├── styles.css       — variables thème, animations, classes type-*
@@ -182,7 +187,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.39.3
+└── package.json         — version: 1.39.14
 ```
 
 ---
@@ -232,6 +237,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 | `tags` | `Tag[]` | Tags transversaux |
 | `notifSettings` | `NotifSettings` | Config notifications locales |
 | `pinEnabled` / `pinHash` / `bioEnabled` | — | Sécurité |
+| `warning` | `string \| null` | Avertissement ponctuel émis par le reducer (ex: cagnotte d'arrondi introuvable), affiché en toast puis effacé via `CLEAR_WARNING` |
+| `projectionSnapshots` | `{ [ym]: { predictedValue, predictedOn } }` | Première projection figée pour chaque mois futur, jamais réécrite — sert à comparer prévu/réel une fois le mois passé |
 
 ### Types de transactions (`TxType`)
 
@@ -240,7 +247,10 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 ### Logique solde
 
 - **Solde estimé** (`useBalance`) — transactions réelles + frais fixes depuis le premier mois, **hors** `balance_adjustment`
-- **Solde avec récurrentes** (`useBalanceWithRecurring`) — déduit les récurrentes non confirmées du mois courant
+- **Solde avec récurrentes et programmées** (`useBalanceWithRecurring`) — déduit du solde estimé les récurrentes non confirmées **et** les programmées dont l'échéance est ce mois-ci ou déjà passée (mais pas encore confirmées) ; une programmée dont l'échéance est dans un mois futur ne pèse pas encore sur le solde
+- **Projection** (`useBalanceProjection`) — anticipe le solde sur N mois (3 par défaut) à partir des fixes, des récurrentes mensuelles (en respectant leur type revenu/dépense et leur nombre d'occurrences restantes — une récurrente qui se termine arrête bien de peser sur les mois suivants), des programmées déjà datées, et d'une estimation du flux courant net
+- **Flux courant net** (`useVariableCashflowMedian`) — médiane, sur 6 mois, du solde net (revenus moins dépenses) des transactions qui ne sont ni fixes, ni récurrentes, ni un arrondi automatique ; la médiane (plutôt qu'une moyenne) évite qu'un imprévu ponctuel (grosse réparation, gros cadeau) ne fausse l'estimation des mois suivants
+- **Fiabilité de la projection** (`useProjectionAccuracy`) — compare, pour chaque mois désormais passé, la toute première projection figée (`projectionSnapshots`) au solde réellement atteint à la fin de ce mois
 - **Solde pointé** (rapprochement) — inclut les `balance_adjustment`
 - **Dates** — toujours en heure locale (pas `toISOString()` UTC)
 
@@ -252,7 +262,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Action | Description |
 |--------|-------------|
-| `SAVE_TRANSACTION` | Créer/modifier. Arrondi automatique si `roundingEnabled` |
+| `SAVE_TRANSACTION` | Créer/modifier. Arrondi automatique si `roundingEnabled` (recalculé à l'édition, retiré proprement si la cagnotte d'arrondi n'existe plus) |
 | `DELETE_TRANSACTION` | Supprimer + restaure `cagnotte.current` si epargne/decagnottage |
 | `SAVE_FIXED` / `DELETE_FIXED` | Frais fixes. `startYM` et `monthlyOverrides` préservés à l'édition |
 | `SAVE_FIXED_INCOME` / `DELETE_FIXED_INCOME` | Revenus fixes récurrents |
@@ -260,14 +270,18 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 | `SAVE_SCHEDULED` / `CONFIRM_SCHEDULED` | Transactions programmées |
 | `EXECUTE_TRANSFER` | Entre cagnottes ou vers compte (avec `reason`) |
 | `SAVE_NOTIF_SETTINGS` | Config notifications |
-| `SAVE_FIXED_INCOME` | Revenus fixes |
+| `CLEAR_WARNING` | Efface le message d'avertissement ponctuel (`warning`) après affichage |
+| `SAVE_PROJECTION_SNAPSHOT` | Fige la première projection connue pour un mois donné (no-op si déjà figée) |
 
 ### Hooks custom
 
 | Hook | Retourne |
 |------|----------|
 | `useBalance(txs, fixes, incomes)` | Solde estimé toutes périodes |
-| `useBalanceWithRecurring(txs, fixes, incomes, recurring)` | Solde − récurrentes non confirmées |
+| `useBalanceWithRecurring(txs, fixes, incomes, recurring, scheduled)` | Solde − récurrentes et programmées non confirmées du mois |
+| `useVariableCashflowMedian(txs, monthsWindow)` | Médiane du flux courant net sur N mois |
+| `useBalanceProjection(balance, txs, fixes, incomes, recurring, scheduled, monthsAhead, alertThreshold)` | `{ months, variableNetMedian, thresholdBreachMonth, biggestSchedMonth, biggestSchedItem }` |
+| `useProjectionAccuracy(txs, fixes, incomes, projectionSnapshots)` | Liste `{ ym, predicted, actual, delta }` pour les mois passés |
 | `useMonthStats(txs, fixes, ym, incomes)` | `{ inc, exp, expVar, decag, net }` |
 | `useYearMonths` / `useYearTotals` | Stats annuelles |
 | `useTotalFixes` | Total frais fixes brut |
@@ -277,6 +291,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 1. **Versements auto** — si `today >= dayOfMonth && lastAppliedYm !== curYM` et aucune transaction `isAutoSaving` existante ce mois → dispatch `APPLY_AUTO_SAVING`
 2. **Programmées** — si `date.startsWith(curYM) && today >= scheduledDay` → dispatch `CONFIRM_SCHEDULED`
 3. **Notifications** — planifiées uniquement sur action utilisateur (pas au démarrage)
+4. **Avertissements** — si `data.warning` est renseigné, affiché en toast puis effacé via `CLEAR_WARNING`
+5. **Instantanés de projection** — à chaque calcul de la projection (Accueil), les mois pas encore figés dans `projectionSnapshots` sont sauvegardés (no-op côté reducer si déjà présents, pas de risque de boucle)
 
 ### SwipeRow — code couleur historique
 
@@ -302,7 +318,18 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 ## Changelog
 
 | Version | Type | Description |
-|---------|------|-------------|
+|---------|------|--------------|
+| **1.39.14** | minor | Fiabilité de la projection — `projectionSnapshots` fige la première prédiction de chaque mois futur ; encart comparant prévu vs réel une fois le mois passé, dans la carte Projection |
+| **1.39.13** | patch | Fix projection — une récurrente à occurrences limitées continuait de peser un mois de trop après sa fin réelle (décalage lié au mois en cours déjà anticipé dans le solde) |
+| **1.39.12** | minor | Projection — alerte si le solde estimé franchira le seuil d'alerte configuré, et explication de la plus grosse programmée qui pèse sur le mois le plus bas |
+| **1.39.11** | patch | Fix projection — le flux courant intègre désormais aussi les revenus variables (freelance, remboursements…) via un flux net, pas seulement les dépenses ; fix récurrentes de type revenu, traitées à tort comme des dépenses |
+| **1.39.10** | minor | Nouvelle hero card **Projection à 3 mois**, glissable horizontalement à côté du solde (carrousel + points), basée sur la médiane du flux courant sur 6 mois |
+| **1.39.9** | patch | Modal "À venir" — ajout d'un bouton ✕ et gestion du bouton retour (Android/navigateur) pour le fermer, les deux fonctionnent désormais |
+| **1.39.8** | minor | "À venir" — le dépliant inline devient un modal centré avec les mêmes filtres ; pointage individuel des fixes + bouton "✓ Tout pointer" pour pointer en un tap toutes les fixes non pointées visibles |
+| **1.39.7** | patch | Solde estimé — intègre désormais les programmées dont l'échéance est ce mois-ci ou déjà passée (comme c'était déjà le cas pour les récurrentes) |
+| **1.39.6** | patch | Fix arrondi automatique — plus de transaction fantôme si la cagnotte cible a été supprimée (avertissement à la place) ; l'arrondi lié à une dépense se recalcule (ou se retire) quand on édite cette dépense |
+| **1.39.5** | patch | Fix récurrentes — la toute première opération n'était pas reliée au modèle récurrent (`templateId` absent), ce qui la faisait se répéter une fois de trop par rapport au nombre de fois choisi |
+| **1.39.4** | patch | Fix écran noir au bouton + (`isAdj` non défini dans `NumPad`) ; fix duplication d'opération (cagnotte et tags non recopiés) ; factorisation de `onConfirmRecurring` (dupliqué) ; optimisation de l'affichage des onglets (une seule vue construite par render) ; fusion des styles de chips dupliqués |
 | **1.39.3** | patch | Fix LockScreen — suppression de la double définition de `Sec` référençant `editMode` (crash silencieux post-unlock) ; biométrie restaurée avec `import()` dynamique original |
 | **1.39.2** | patch | Fix écran noir post-PIN — suppression du code orphelin LockScreen (65 lignes hors fonction) |
 | **1.39.1** | patch | Fix écran noir post-biométrie — suppression du `useEffect` notifications au démarrage |
