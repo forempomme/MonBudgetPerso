@@ -1276,7 +1276,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
   const now     = new Date();
   const curM    = now.toISOString().slice(0, 7);
   const curY    = now.getFullYear().toString();
-  const tf      = useTotalFixes(fixedExpenses);
+  const tf      = useTotalFixes(fixedExpenses, curM);
   const prefix  = period === "month" ? curM : period === "year" ? curY : "";
 
   const CFG = {
@@ -1387,7 +1387,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
 export function MonthDetailModal({ config, transactions, categories, cagnottes, fixedExpenses, onClose }) {
   const { year, monthIdx } = config;
   const mStr  = `${year}-${(monthIdx + 1).toString().padStart(2, "0")}`;
-  const tf    = useTotalFixes(fixedExpenses);
+  const tf    = useTotalFixes(fixedExpenses, mStr);
   const isCurM = mStr === new Date().toISOString().slice(0, 7);
   let inc = 0, exp = 0;
   const txs = transactions.filter(t => t.date.startsWith(mStr));

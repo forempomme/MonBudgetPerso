@@ -396,7 +396,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   }, [transactions, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, curM, curY, cagnottes]);
   const curMonth  = useMonthStats(transactions, fixedExpenses, curM, data.fixedIncomes || []);
   const prevMonth = useMonthStats(transactions, fixedExpenses, prevM, data.fixedIncomes || []);
-  const tf        = useTotalFixes(fixedExpenses);
+  const tf        = useTotalFixes(fixedExpenses, curM);
 
   // ── Rapprochement bancaire ────────────────────────────────────
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
@@ -550,9 +550,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     setOpenUpcoming(false);
   }, []);
 
-  // Frais fixes non pointés ce mois
+  // Frais fixes non pointés ce mois (respecte startYM : pas encore commencé = pas affiché)
   const unpointedFixes = useMemo(() =>
-    fixedExpenses.filter(f => !f.pointedMonths?.[curM]),
+    fixedExpenses.filter(f => (!f.startYM || curM >= f.startYM) && !f.pointedMonths?.[curM]),
     [fixedExpenses, curM]
   );
 
@@ -1709,9 +1709,12 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     return transactions.reduce((min, t) => t.date < min ? t.date : min, transactions[0].date).slice(0, 7);
   }, [transactions]);
 
-  // Frais fixes — visibles uniquement depuis le mois de démarrage
+  // Frais fixes — visibles uniquement depuis le mois de démarrage DE CHAQUE frais fixe
+  // (avant : ne vérifiait que le tout premier mois d'utilisation de l'app, pas le
+  // `startYM` propre à chaque frais fixe → un frais configuré pour démarrer plus tard
+  // apparaissait quand même dans les mois précédents)
   const monthFixes = useMemo(() =>
-    month >= startYM ? fixedExpenses : [],
+    month >= startYM ? fixedExpenses.filter(f => !f.startYM || month >= f.startYM) : [],
     [fixedExpenses, month, startYM]
   );
 
@@ -3009,8 +3012,8 @@ function PeriodCompare({ transactions, fixedExpenses }) {
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
   });
-  const tf    = useTotalFixes(fixedExpenses);
   const curYM = currentYM();
+  const tf    = useTotalFixes(fixedExpenses, curYM);
 
   const months = useMemo(() => {
     const list = [];
@@ -3686,7 +3689,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
         .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
       const fixExp = inRange ? fixedExpenses
-        .filter(f => f.categoryId === selCatId)
+        .filter(f => f.categoryId === selCatId && (!f.startYM || ym >= f.startYM))
         .reduce((s, f) => { const ov = f.monthlyOverrides?.[ym]; return s + ((ov?.amount ?? f.amount) || 0); }, 0) : 0;
       const inc    = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
       const total  = exp + fixExp;
@@ -3948,7 +3951,8 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   );
 
   const { top5, topTotal } = useMemo(() => {
-    const tf    = fixedExpenses.reduce((s, f) => s + f.amount, 0);
+    const nowYM = currentYM();
+    const tf    = fixedExpenses.filter(f => !f.startYM || nowYM >= f.startYM).reduce((s, f) => s + f.amount, 0);
     const isCur = currentYear === new Date().getFullYear();
     const yearStr = currentYear.toString();
     const expMap = {};
@@ -4379,11 +4383,11 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
 function buildInsights(data, currentYear, months) {
   const { transactions, categories, fixedExpenses, cagnottes } = data;
   const yStr   = currentYear.toString();
-  const tf     = fixedExpenses.reduce((s, f) => s + f.amount, 0);
   const now    = new Date();
+  const curYM  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const tf     = fixedExpenses.filter(f => !f.startYM || curYM >= f.startYM).reduce((s, f) => s + f.amount, 0);
   const isCurY = currentYear === now.getFullYear();
   // ⚠ Correction UTC : utilise l'heure locale au lieu de toISOString()
-  const curYM  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const MOIS   = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
   let inc = 0, exp = 0, sav = 0;

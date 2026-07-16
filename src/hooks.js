@@ -39,10 +39,12 @@ function monthRange(startYM, endYM) {
 //  Primitive hook: total frais fixes (montant de base, sans override)
 //  Utilisé uniquement pour l'affichage de la card récap Fixes.
 // ─────────────────────────────────────────────────────────────────
-export function useTotalFixes(fixedExpenses) {
+export function useTotalFixes(fixedExpenses, ym = null) {
   return useMemo(
-    () => fixedExpenses.reduce((s, f) => s + (f.amount || 0), 0),
-    [fixedExpenses]
+    () => fixedExpenses
+      .filter(f => !ym || !f.startYM || ym >= f.startYM)
+      .reduce((s, f) => s + (f.amount || 0), 0),
+    [fixedExpenses, ym]
   );
 }
 
