@@ -5,6 +5,7 @@ import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
+  effectiveFixesForMonth, effectiveIncomesForMonth,
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -653,7 +654,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               else if (t.type === "expense") balPrev -= a;
               else if (t.type === "epargne") balPrev -= a;
             });
-            // Soustraire les fixes pour chaque mois jusqu'au mois précédent inclus
+            // Soustraire les fixes et ajouter les revenus fixes pour chaque mois
+            // jusqu'au mois précédent inclus (même logique que useBalance, via
+            // les helpers partagés — respecte le startYM propre à chaque fixe)
             if (transactions.length > 0) {
               const earliest = transactions.reduce((m, t) => t.date < m ? t.date : m, transactions[0].date);
               const startYM  = earliest.slice(0, 7);
@@ -661,10 +664,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               const [ey, em] = prevYM.split("-").map(Number);
               while (y < ey || (y === ey && m <= em)) {
                 const ym = `${y}-${String(m).padStart(2, "0")}`;
-                balPrev -= fixedExpenses.reduce((s, f) => {
-                  const ov = f.monthlyOverrides?.[ym];
-                  return s + ((ov?.amount ?? f.amount) || 0);
-                }, 0);
+                balPrev -= effectiveFixesForMonth(fixedExpenses, ym);
+                balPrev += effectiveIncomesForMonth(data.fixedIncomes || [], ym);
                 if (++m > 12) { m = 1; y++; }
               }
             }
@@ -694,10 +695,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                 const [ey, em] = ym.split("-").map(Number);
                 while (y < ey || (y === ey && m <= em)) {
                   const loopYM = `${y}-${String(m).padStart(2, "0")}`;
-                  bal -= fixedExpenses.reduce((s, f) => {
-                    const ov = f.monthlyOverrides?.[loopYM];
-                    return s + ((ov?.amount ?? f.amount) || 0);
-                  }, 0);
+                  bal -= effectiveFixesForMonth(fixedExpenses, loopYM);
+                  bal += effectiveIncomesForMonth(data.fixedIncomes || [], loopYM);
                   if (++m > 12) { m = 1; y++; }
                 }
               }
