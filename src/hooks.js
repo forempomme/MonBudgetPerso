@@ -6,7 +6,7 @@ import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 //  Tient compte des monthlyOverrides (modifications ponctuelles
 //  depuis l'Historique qui n'impactent que ce mois).
 // ─────────────────────────────────────────────────────────────────
-function effectiveFixesForMonth(fixedExpenses, ym) {
+export function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
     if (f.startYM && ym < f.startYM) return s;
     const ov = f.monthlyOverrides?.[ym];
@@ -14,7 +14,7 @@ function effectiveFixesForMonth(fixedExpenses, ym) {
   }, 0);
 }
 
-function effectiveIncomesForMonth(fixedIncomes, ym) {
+export function effectiveIncomesForMonth(fixedIncomes, ym) {
   return (fixedIncomes || []).reduce((s, f) => {
     if (f.startYM && ym < f.startYM) return s;
     return s + (parseFloat(f.amount) || 0);
