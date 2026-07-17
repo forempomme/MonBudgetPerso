@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Sparkline, Modal } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign } from "./utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign, todayISO } from "./utils.js";
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
@@ -1679,7 +1679,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   }, [data.autoSavings, transactions, month]);
 
   const scheduledPending = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayISO();
     return (data.scheduledTransactions || []).filter(s =>
       !s.confirmed && s.date.startsWith(month) && s.date > today
     );
@@ -2699,8 +2699,9 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
   const [provName,     setProvName]    = useState("");
   const [provAmt,      setProvAmt]     = useState("");
   const [provErr,      setProvErr]     = useState({});
-  const totalFixes   = fixedExpenses.reduce((s, f) => s + (f.amount || 0), 0);
-  const totalIncomes = fixedIncomes.reduce((s, f) => s + (f.amount || 0), 0);
+  const curYM        = currentYM();
+  const totalFixes    = effectiveFixesForMonth(fixedExpenses, curYM);
+  const totalIncomes  = effectiveIncomesForMonth(fixedIncomes, curYM);
   const provTotal    = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
   const total = totalFixes; // alias pour compatibilité
 
@@ -3277,6 +3278,7 @@ function SuiviModal({ onClose, categories, transactions, fixedExpenses, threshol
       .filter(t => t.date.startsWith(curYM) && t.type === "expense")
       .forEach(t => { map[t.categoryId] = (map[t.categoryId] || 0) + (parseFloat(t.amount) || 0); });
     fixedExpenses.forEach(f => {
+      if (f.startYM && curYM < f.startYM) return;
       const ov = f.monthlyOverrides?.[curYM];
       const a  = (ov?.amount ?? f.amount) || 0;
       map[f.categoryId] = (map[f.categoryId] || 0) + a;
@@ -3713,15 +3715,12 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
       for (let m = 1; m <= monthsElapsed; m++) {
         const ym = `${yearStr}-${String(m).padStart(2, "0")}`;
         if (ym < startYM) continue; // avant le démarrage de l'app
+        if (f.startYM && ym < f.startYM) continue; // avant le démarrage DE CE frais précis
         const ov = f.monthlyOverrides?.[ym];
         total += (ov?.amount ?? f.amount) || 0;
       }
       return s + total;
     }, 0);
-  const monthsWithFix = Array.from({ length: monthsElapsed }, (_, i) => {
-    const ym = `${yearStr}-${String(i + 1).padStart(2, "0")}`;
-    return ym >= startYM ? 1 : 0;
-  }).reduce((s, v) => s + v, 0);
   const yearTotal  = yearExp + yearFixExp;
   const yearInc    = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
   const yearNet    = Math.max(0, yearTotal - yearInc);
@@ -3780,18 +3779,27 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
           </div>
           {yearFixExp > 0 && (() => {
             const fixes = fixedExpenses.filter(f => f.categoryId === selCatId);
+            // Nombre de mois propre à CHAQUE frais (peut différer d'un frais à l'autre
+            // dans la même catégorie si l'un a démarré plus tard que l'autre)
+            const monthsForFix = (f) => Array.from({ length: monthsElapsed }, (_, i) => {
+              const ym = `${yearStr}-${String(i + 1).padStart(2, "0")}`;
+              return ym >= startYM && (!f.startYM || ym >= f.startYM) ? 1 : 0;
+            }).reduce((s, v) => s + v, 0);
             return (
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontSize: ".6rem", color: "var(--warning)", padding: "5px 9px", background: "var(--warning-glow)", borderRadius: "6px 6px 0 0" }}>
-                  📌 Dont {fmt(yearFixExp)} de frais fixes ({monthsWithFix} mois)
+                  📌 Dont {fmt(yearFixExp)} de frais fixes
                 </div>
                 <div style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderTop: "none", borderRadius: "0 0 6px 6px", padding: "6px 9px", display: "flex", flexDirection: "column", gap: 3 }}>
-                  {fixes.map(f => (
-                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", fontSize: ".6rem" }}>
-                      <span style={{ color: "var(--text2)" }}>• {f.name}</span>
-                      <span style={{ fontFamily: "var(--mono)", color: "var(--warning)", fontWeight: 700 }}>{monthsWithFix} × {fmt(f.amount)} = {fmt(f.amount * monthsWithFix)}</span>
-                    </div>
-                  ))}
+                  {fixes.map(f => {
+                    const nMonths = monthsForFix(f);
+                    return (
+                      <div key={f.id} style={{ display: "flex", justifyContent: "space-between", fontSize: ".6rem" }}>
+                        <span style={{ color: "var(--text2)" }}>• {f.name}</span>
+                        <span style={{ fontFamily: "var(--mono)", color: "var(--warning)", fontWeight: 700 }}>{nMonths} × {fmt(f.amount)} = {fmt(f.amount * nMonths)}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -4035,7 +4043,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             const spent = data.transactions
               .filter(t => t.date.startsWith(curYM) && t.type === "expense" && t.categoryId === c.id)
               .reduce((s, t) => s + (parseFloat(t.amount)||0), 0)
-              + data.fixedExpenses.filter(f=>f.categoryId===c.id)
+              + data.fixedExpenses.filter(f=>f.categoryId===c.id && (!f.startYM || curYM>=f.startYM))
                   .reduce((s,f)=>{ const ov=f.monthlyOverrides?.[curYM]; return s+((ov?.amount??f.amount)||0); }, 0);
             return spent >= limit * 0.8;
           });
