@@ -427,9 +427,12 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });
 
-    // Frais fixes — un état de pointage par mois
+    // Frais fixes — un état de pointage par mois (respecte le startYM propre
+    // à chaque frais : avant son démarrage, il ne compte ni pointé ni en
+    // attente, il n'existe tout simplement pas encore pour ce mois-là)
     allMonths.forEach(ym => {
       fixedExpenses.forEach(f => {
+        if (f.startYM && ym < f.startYM) return;
         const ov = f.monthlyOverrides?.[ym];
         const a  = (ov?.amount ?? f.amount) || 0;
         if (f.pointedMonths?.[ym]) ptExp   += a;
@@ -440,8 +443,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     const pointableTxs = transactions.filter(t => isPointable(t.type));
     const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
     const nbPtFix = allMonths.reduce((n, ym) =>
-      n + fixedExpenses.filter(f => f.pointedMonths?.[ym]).length, 0);
-    const totalFix = allMonths.length * fixedExpenses.length;
+      n + fixedExpenses.filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
+    const totalFix = allMonths.reduce((n, ym) =>
+      n + fixedExpenses.filter(f => !f.startYM || ym >= f.startYM).length, 0);
 
     return {
       soldePointe:    ptInc  - ptExp,
