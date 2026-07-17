@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
@@ -252,8 +252,8 @@ export function TransModal({
 
   // Raccourcis date
   const todayStr     = todayISO();
-  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); })();
-  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return d.toISOString().slice(0,10); })();
+  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
   const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
 
   function findDuplicate(amt, catId, txDate, txType) {
@@ -850,7 +850,7 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
           )
           : (
             <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-              onClick={() => setStartYM(new Date().toISOString().slice(0, 7))}>
+              onClick={() => setStartYM(currentYM())}>
               ＋ Définir une date de début
             </button>
           )
@@ -935,7 +935,7 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
           )
           : (
             <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-              onClick={() => setStartYM(new Date().toISOString().slice(0, 7))}>
+              onClick={() => setStartYM(currentYM())}>
               ＋ Définir une date de début
             </button>
           )
@@ -1141,7 +1141,7 @@ export function ScheduledModal({ categories, onSave, onClose }) {
   const toast = useToast();
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
-  const defaultDate = tomorrow.toISOString().slice(0, 10);
+  const defaultDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,"0")}-${String(tomorrow.getDate()).padStart(2,"0")}`;
 
   const [amount, setAmount]   = useState("");
   const [date,   setDate]     = useState(defaultDate);
@@ -1150,7 +1150,7 @@ export function ScheduledModal({ categories, onSave, onClose }) {
   const [errors, setErrors]   = useState({});
 
   const expenseCats = categories.filter(c => c.type === "expense" || !c.type);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
 
   function validate() {
     const e = {};
@@ -1274,7 +1274,7 @@ export function ConfirmModal({ title, msg, onConfirm, onClose }) {
 export function DetailModal({ config, transactions, categories, cagnottes, fixedExpenses, onClose }) {
   const { type, period } = config;
   const now     = new Date();
-  const curM    = now.toISOString().slice(0, 7);
+  const curM    = currentYM();
   const curY    = now.getFullYear().toString();
   const tf      = useTotalFixes(fixedExpenses, curM);
   const prefix  = period === "month" ? curM : period === "year" ? curY : "";
@@ -1388,7 +1388,7 @@ export function MonthDetailModal({ config, transactions, categories, cagnottes, 
   const { year, monthIdx } = config;
   const mStr  = `${year}-${(monthIdx + 1).toString().padStart(2, "0")}`;
   const tf    = useTotalFixes(fixedExpenses, mStr);
-  const isCurM = mStr === new Date().toISOString().slice(0, 7);
+  const isCurM = mStr === currentYM();
   let inc = 0, exp = 0;
   const txs = transactions.filter(t => t.date.startsWith(mStr));
   txs.forEach(t => {
