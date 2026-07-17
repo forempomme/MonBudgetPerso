@@ -43,7 +43,10 @@ export function useTotalFixes(fixedExpenses, ym = null) {
   return useMemo(
     () => fixedExpenses
       .filter(f => !ym || !f.startYM || ym >= f.startYM)
-      .reduce((s, f) => s + (f.amount || 0), 0),
+      .reduce((s, f) => {
+        const ov = ym ? f.monthlyOverrides?.[ym] : null;
+        return s + ((ov?.amount ?? f.amount) || 0);
+      }, 0),
     [fixedExpenses, ym]
   );
 }
@@ -91,6 +94,7 @@ export function useYearMonths(transactions, fixedExpenses, year) {
     const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
     const MONTHS_MINI  = ["J","F","M","A","M","J","J","A","S","O","N","D"];
     const isCurYear = year === curYear;
+    const isFutureYear = year > curYear;
 
     return Array.from({ length: 12 }, (_, i) => {
       const mStr = `${year}-${(i + 1).toString().padStart(2, "0")}`;
@@ -103,7 +107,10 @@ export function useYearMonths(transactions, fixedExpenses, year) {
         else if (t.type === "epargne") sav += a;
       });
 
-      if (isCurYear && i === curMonth) {
+      // Frais fixes de ce mois précis, s'il est déjà passé ou en cours (on
+      // n'anticipe pas les mois futurs de l'année en cours, pas encore vécus)
+      const isPastOrCurrent = !isFutureYear && (!isCurYear || i <= curMonth);
+      if (isPastOrCurrent) {
         exp += effectiveFixesForMonth(fixedExpenses, mStr);
       }
 
@@ -181,7 +188,9 @@ export function useYearTotals(transactions, fixedExpenses, year) {
   const now = new Date();
 
   return useMemo(() => {
-    const isCur = year === now.getFullYear();
+    const curYear      = now.getFullYear();
+    const isCurYear     = year === curYear;
+    const isFutureYear  = year > curYear;
     let inc = 0, exp = 0, sav = 0;
     transactions.filter(t => t.date.startsWith(year.toString())).forEach(t => {
       const a = parseFloat(t.amount) || 0;
@@ -189,11 +198,18 @@ export function useYearTotals(transactions, fixedExpenses, year) {
       else if (t.type === "expense") exp += a;
       else if (t.type === "epargne") sav += a;
     });
-    if (isCur) {
-      const curM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      exp += effectiveFixesForMonth(fixedExpenses, curM);
+    // Frais fixes : tous les mois déjà "vécus" de l'année (les 12 pour une
+    // année passée, jusqu'au mois en cours inclus pour l'année en cours,
+    // aucun pour une année future) — pas seulement le mois en cours.
+    if (!isFutureYear) {
+      const lastMonthIdx = isCurYear ? now.getMonth() : 11;
+      for (let m = 0; m <= lastMonthIdx; m++) {
+        const mStr = `${year}-${String(m + 1).padStart(2, "0")}`;
+        exp += effectiveFixesForMonth(fixedExpenses, mStr);
+      }
     }
     return { inc, exp, sav };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, fixedExpenses, year]);
 }
 
