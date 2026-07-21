@@ -1011,6 +1011,24 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
         const total = allItems.reduce((s,i) => s+(parseFloat(i.amount)||0), 0);
         const unpointedVisibleFixes = visibleItems.filter(i => i._type === "fix");
 
+        // Répartition "ce mois" vs mois suivants — les récurrentes et fixes en
+        // attente sont toujours "ce mois" ; seules les programmées peuvent
+        // être datées dans un mois futur (v1.39.19)
+        const thisMonthTotal =
+          recurItems.reduce((s,i)=>s+(parseFloat(i.amount)||0),0) +
+          fixItems.reduce((s,i)=>s+(parseFloat(i.amount)||0),0) +
+          schedItems.filter(s=>s.date.startsWith(curM)).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+        const futureByMonth = {};
+        schedItems.filter(s=>!s.date.startsWith(curM)).forEach(s => {
+          const ym = s.date.slice(0,7);
+          futureByMonth[ym] = (futureByMonth[ym]||0) + (parseFloat(s.amount)||0);
+        });
+        const futureMonthsSorted = Object.keys(futureByMonth).sort();
+        const nearestFutureYM    = futureMonthsSorted[0];
+        const nearestFutureTotal = nearestFutureYM ? futureByMonth[nearestFutureYM] : null;
+        const extraFutureMonths  = Math.max(0, futureMonthsSorted.length - 1);
+        const monthLabel = ym => MONTHS_SHORT[parseInt(ym.slice(5,7),10)-1];
+
         return (
           <>
             <style>{`@keyframes av-sh{0%{left:-60%;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:110%;opacity:0}}`}</style>
@@ -1020,16 +1038,26 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
               <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(255,255,255,.18),rgba(200,220,255,.08),transparent)", zIndex:1 }}/>
               <div style={{ position:"absolute", top:0, left:"-60%", width:"55%", height:"100%", background:"linear-gradient(105deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%)", animation:"av-sh 4s ease-in-out infinite", pointerEvents:"none", zIndex:1 }}/>
               <div style={{ position:"absolute", top:-20, right:-20, width:70, height:70, borderRadius:"50%", background:"radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%)", pointerEvents:"none" }}/>
-              <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px", position:"relative", zIndex:2 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px 4px", position:"relative", zIndex:2 }}>
                 <span style={{ fontSize:".9rem" }}>⏳</span>
                 <span style={{ fontSize:".68rem", fontWeight:800, color:C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
                 <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                   {recurItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(220,228,240,.10)", color:C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>}
                   {fixItems.length>0   && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(90,184,224,.10)", color:"var(--accent)", border:"1px solid rgba(90,184,224,.2)" }}>↻ {fixItems.length}</span>}
                   {schedItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(200,184,96,.10)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.2)" }}>📅 {schedItems.length}</span>}
-                  <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:C }}>−{fmt(total)}</span>
                 </div>
                 <span style={{ color:C, fontSize:".8rem", opacity:.7 }}>›</span>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:8, padding:"0 14px 11px", position:"relative", zIndex:2 }}>
+                <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>
+                  Ce mois <b style={{ fontFamily:"var(--mono)", color:C, fontWeight:800 }}>−{fmt(thisMonthTotal)}</b>
+                </span>
+                {nearestFutureYM && (
+                  <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>
+                    · {monthLabel(nearestFutureYM)} <b style={{ fontFamily:"var(--mono)", color:"var(--warning)", fontWeight:800 }}>−{fmt(nearestFutureTotal)}</b>
+                    {extraFutureMonths>0 && <span style={{ color:"rgba(200,220,245,.4)" }}> +{extraFutureMonths}</span>}
+                  </span>
+                )}
               </div>
             </div>
 
