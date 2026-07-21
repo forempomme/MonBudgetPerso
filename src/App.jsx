@@ -726,8 +726,19 @@ export default function App() {
           style={{ position:"fixed", inset:0, zIndex:89 }} />
       )}
       {quickFanOpen && (
-        <div onClick={() => setQuickFanOpen(false)}
-          style={{ position:"fixed", inset:0, zIndex:94 }} />
+        <>
+          <div onClick={() => setQuickFanOpen(false)}
+            style={{
+              position:"fixed", inset:0, zIndex:93,
+              background:"rgba(0,0,0,.68)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
+            }} />
+          {/* Halo autour du FAB pour signaler que l'éventail en part */}
+          <div style={{
+            position:"fixed", bottom:0, right:0, width:220, height:220, zIndex:94,
+            borderRadius:"50%", pointerEvents:"none",
+            background:"radial-gradient(circle, rgba(112,184,224,.28) 0%, transparent 70%)",
+          }} />
+        </>
       )}
       {quickFanOpen && (() => {
         const items = [...(data.quickTemplates || []), { id: "__manage__", icon: "⚙️", isManage: true }];
@@ -763,7 +774,7 @@ export default function App() {
           );
         });
       })()}
-      <div style={{ position:"fixed", bottom:110, right:18, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
+      <div style={{ position:"fixed", bottom:110, right:18, zIndex:96, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
         {fabOpen && (
           <div style={{
             background:"var(--surface)", border:"1px solid var(--border)",
