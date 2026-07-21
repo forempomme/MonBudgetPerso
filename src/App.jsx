@@ -8,6 +8,7 @@ import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
+  QuickTemplateSheet, QuickTemplateManagerModal,
 } from "./components/modals.jsx";
 import {
   AccueilView, CagnottesView, HistoriqueView,
@@ -146,6 +147,27 @@ export default function App() {
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
+  const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
+  const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
+
+  // Appui long sur le FAB (450ms) : ouvre l'éventail de templates au lieu
+  // du menu habituel. Un tap court garde le comportement existant.
+  const fabPressTimer   = useRef(null);
+  const fabLongPressed  = useRef(false);
+  const handleFabPressStart = useCallback(() => {
+    fabLongPressed.current = false;
+    fabPressTimer.current = setTimeout(() => {
+      fabLongPressed.current = true;
+      setQuickFanOpen(true);
+    }, 450);
+  }, []);
+  const handleFabPressEnd = useCallback(() => {
+    clearTimeout(fabPressTimer.current);
+  }, []);
+  const handleFabClick = useCallback(() => {
+    if (fabLongPressed.current) { fabLongPressed.current = false; return; }
+    setFabOpen(o => !o);
+  }, []);
   const overrideFixMonth  = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_FIX_MONTH, id, ym, override }), []);
 
   // Filtre pointage partagé entre AccueilView et HistoriqueView
@@ -296,6 +318,9 @@ export default function App() {
   const [transModal,    setTransModal]    = useState(null);
   const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
+  const [quickFanOpen,   setQuickFanOpen]   = useState(false);   // éventail de templates (appui long sur +)
+  const [quickEditTpl,   setQuickEditTpl]   = useState(null);    // template en cours de saisie (sheet montant/date)
+  const [quickManagerOpen, setQuickManagerOpen] = useState(false); // gestion des templates (⚙️ dans l'éventail)
   const [fixedModal,       setFixedModal]       = useState(null);
   const [fixedIncomeModal, setFixedIncomeModal] = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
@@ -609,6 +634,7 @@ export default function App() {
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
+        onOpenQuickTemplates={() => setQuickManagerOpen(true)}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
@@ -698,6 +724,41 @@ export default function App() {
         <div onClick={() => setFabOpen(false)}
           style={{ position:"fixed", inset:0, zIndex:89 }} />
       )}
+      {quickFanOpen && (
+        <div onClick={() => setQuickFanOpen(false)}
+          style={{ position:"fixed", inset:0, zIndex:94 }} />
+      )}
+      {quickFanOpen && (() => {
+        const items = [...(data.quickTemplates || []), { id: "__manage__", icon: "⚙️", isManage: true }];
+        const n = items.length;
+        const startAngle = 150, endAngle = 250;
+        return items.map((t, i) => {
+          const angle = n === 1 ? (startAngle + endAngle) / 2 : startAngle + (endAngle - startAngle) * (i / (n - 1));
+          const rad  = angle * Math.PI / 180;
+          const dist = 92;
+          const x = Math.cos(rad) * dist;
+          const y = Math.sin(rad) * dist;
+          return (
+            <div key={t.id}
+              onClick={() => {
+                setQuickFanOpen(false);
+                if (t.isManage) setQuickManagerOpen(true);
+                else setQuickEditTpl(t);
+              }}
+              style={{
+                position: "fixed", bottom: 110 + 26 + y, right: 18 + 26 + x,
+                width: 48, height: 48, borderRadius: "50%",
+                background: t.isManage ? "rgba(112,184,224,.15)" : "var(--surface2)",
+                border: `1px solid ${t.isManage ? "var(--accent)" : "var(--border)"}`,
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.15rem",
+                boxShadow: "0 4px 16px rgba(0,0,0,.45)", zIndex: 95, cursor: "pointer",
+                animation: `fanItemIn .2s ${i * 0.03}s both cubic-bezier(.34,1.56,.64,1)`,
+              }}>
+              {t.icon}
+            </div>
+          );
+        });
+      })()}
       <div style={{ position:"fixed", bottom:110, right:18, zIndex:90, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
         {fabOpen && (
           <div style={{
@@ -740,9 +801,15 @@ export default function App() {
           ))}
           </div>
         )}
-        {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative */}
+        {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative.
+            Tap court = menu habituel. Appui long (450ms) = éventail de templates rapides. */}
         <button className="fab"
-          onClick={() => setFabOpen(o => !o)}
+          onMouseDown={handleFabPressStart}
+          onMouseUp={handleFabPressEnd}
+          onMouseLeave={handleFabPressEnd}
+          onTouchStart={handleFabPressStart}
+          onTouchEnd={handleFabPressEnd}
+          onClick={handleFabClick}
           style={{ position:"relative", bottom:"auto", right:"auto", background:"linear-gradient(135deg,#5ab8e0,#3090c0)", boxShadow:"0 6px 24px rgba(80,160,210,.5)", transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
           ＋
         </button>
@@ -751,6 +818,10 @@ export default function App() {
         @keyframes fabItemIn {
           from { opacity:0; transform:scale(.7) translateY(10px); }
           to   { opacity:1; transform:scale(1) translateY(0); }
+        }
+        @keyframes fanItemIn {
+          from { opacity:0; transform:scale(.5); }
+          to   { opacity:1; transform:scale(1); }
         }
       `}</style>
 
@@ -789,6 +860,23 @@ export default function App() {
           editingIdx={fixedModal.editingIdx}
           onSave={payload => { saveFixed(payload); setFixedModal(null); }}
           onClose={() => setFixedModal(null)}
+        />
+      )}
+      {quickEditTpl && (
+        <QuickTemplateSheet
+          template={quickEditTpl}
+          categories={data.categories}
+          onSave={tx => { saveTransaction(tx); setQuickEditTpl(null); }}
+          onClose={() => setQuickEditTpl(null)}
+        />
+      )}
+      {quickManagerOpen && (
+        <QuickTemplateManagerModal
+          templates={data.quickTemplates || []}
+          categories={data.categories}
+          onSave={tpl => saveQuickTemplate(tpl)}
+          onDelete={id => deleteQuickTemplate(id)}
+          onClose={() => setQuickManagerOpen(false)}
         />
       )}
       {fixedIncomeModal && (
