@@ -1527,3 +1527,194 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
     </Modal>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  QuickTemplateSheet — v1.39.18
+//  Saisie rapide d'une opération depuis un template (appui long sur +).
+//  Réutilise le vrai NumPad (mêmes touches, mêmes couleurs) : le montant
+//  et la date restent à saisir à chaque fois, rien n'est pré-rempli.
+// ─────────────────────────────────────────────────────────────────
+export function QuickTemplateSheet({ template, categories, onSave, onClose }) {
+  const [type, setType]   = useState(template.type || "expense");
+  const [amount, setAmount] = useState("");
+  const [date, setDate]   = useState(todayISO());
+  const [showNative, setShowNative] = useState(false);
+  const [err, setErr]     = useState(null);
+  const toast = useToast();
+
+  const todayStr     = todayISO();
+  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
+
+  const cat = categories.find(c => c.id === template.categoryId);
+
+  function handleSave() {
+    const amt = parseAmt(amount);
+    if (!amount || isNaN(amt) || amt <= 0) { setErr("Montant requis"); return; }
+    onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name });
+    toast?.(`${template.icon} ${template.name} enregistré`, "success");
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} title="">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", flexShrink: 0 }}>
+          {template.icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: ".85rem" }}>{template.name}</div>
+          <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>{cat?.name || "Sans catégorie"}</div>
+        </div>
+      </div>
+
+      {/* Raccourcis date — identiques à la saisie normale */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        {[["Aujourd'hui", todayStr], ["Hier", yesterdayStr], ["Avant-hier", beforeStr]].map(([label, val]) => (
+          <button key={val} onClick={() => { setDate(val); setShowNative(false); }}
+            className={`sort-chip ${date === val && !showNative ? "active" : ""}`} style={{ flex: 1 }}>
+            {label}
+          </button>
+        ))}
+        <button onClick={() => setShowNative(s => !s)}
+          className={`sort-chip ${showNative || !dateIsShortcut ? "active" : ""}`} style={{ flexShrink: 0, padding: "5px 10px" }}>
+          📅
+        </button>
+      </div>
+      {(showNative || !dateIsShortcut) && (
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          style={{ width: "100%", marginBottom: 12, padding: "8px 10px", borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border-soft)", color: "var(--text)", fontSize: ".72rem" }} />
+      )}
+
+      <NumPad value={amount} onChange={setAmount} type={type} onTypeChange={setType} />
+      {err && <div style={{ color: "var(--danger)", fontSize: ".65rem", marginTop: 8 }}>{err}</div>}
+
+      <button className="btn" onClick={handleSave} style={{
+        width: "100%", marginTop: 14, padding: 13, borderRadius: 12,
+        background: type === "expense" ? "var(--danger)" : "var(--success)",
+        color: "#fff", fontWeight: 800, fontSize: ".78rem", border: "none", cursor: "pointer",
+      }}>
+        {type === "expense" ? "💸" : "💰"} Enregistrer
+      </button>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  QuickTemplateManagerModal — v1.39.18
+//  Créer / modifier / supprimer les templates de saisie rapide.
+// ─────────────────────────────────────────────────────────────────
+const QT_ICONS = ["🛒","☕","⛽","🅿️","🚇","🍽️","💊","🎬","🎁","📱","👕","🏋️","🐾","🧾","🏠","✈️"];
+
+export function QuickTemplateManagerModal({ templates, categories, onSave, onDelete, onClose }) {
+  const [editing, setEditing] = useState(null); // null = liste, {} ou tpl = formulaire
+
+  if (editing) {
+    return (
+      <QuickTemplateFormModal
+        tpl={editing}
+        categories={categories}
+        onSave={tpl => { onSave(tpl); setEditing(null); }}
+        onClose={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} title="⚡ Templates rapides">
+      <div style={{ maxHeight: "55vh", overflowY: "auto", marginBottom: 12 }}>
+        {templates.length === 0 ? (
+          <div className="empty-state"><div className="empty-icon">⚡</div><p>Aucun template pour l'instant</p></div>
+        ) : templates.map(t => {
+          const cat = categories.find(c => c.id === t.categoryId);
+          return (
+            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 4px", borderBottom: "1px solid rgba(210,225,245,.08)" }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1rem", flexShrink: 0 }}>{t.icon}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: ".75rem", fontWeight: 700 }}>{t.name}</div>
+                <div style={{ fontSize: ".6rem", color: "var(--text2)" }}>{cat?.name || "—"} · {t.type === "income" ? "Revenu" : "Dépense"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setEditing(t)} style={{ width: 26, height: 26, borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: ".65rem", cursor: "pointer" }}>✏️</button>
+                <button onClick={() => onDelete(t.id)} style={{ width: 26, height: 26, borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: ".65rem", cursor: "pointer" }}>🗑</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={() => setEditing({})} style={{
+        width: "100%", padding: 11, borderRadius: 12, border: "1.5px dashed var(--border)",
+        background: "none", color: "var(--text2)", fontSize: ".72rem", fontWeight: 700, cursor: "pointer",
+      }}>
+        ＋ Nouveau template
+      </button>
+    </Modal>
+  );
+}
+
+function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
+  const isEdit = !!tpl.id;
+  const [name, setName]     = useState(tpl.name || "");
+  const [icon, setIcon]     = useState(tpl.icon || QT_ICONS[0]);
+  const [type, setType]     = useState(tpl.type || "expense");
+  const [categoryId, setCategoryId] = useState(tpl.categoryId || "");
+  const [err, setErr]       = useState({});
+
+  const cats = categories.filter(c => c.type === type || !c.type);
+
+  function handleSave() {
+    const e = {};
+    if (!name.trim()) e.name = "Nom requis";
+    if (!categoryId)  e.cat  = "Catégorie requise";
+    setErr(e);
+    if (Object.keys(e).length > 0) return;
+    onSave({ id: tpl.id || null, name: name.trim(), icon, type, categoryId });
+  }
+
+  return (
+    <Modal onClose={onClose} title={isEdit ? "Modifier le template" : "Nouveau template"}>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Nom</label>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Courses"
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.name ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".75rem" }} />
+        {err.name && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.name}</div>}
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Icône</label>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
+          {QT_ICONS.map(ic => (
+            <div key={ic} onClick={() => setIcon(ic)} style={{
+              aspectRatio: "1", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "1.1rem", cursor: "pointer", background: icon === ic ? "rgba(112,184,224,.15)" : "var(--surface2)",
+              border: `1px solid ${icon === ic ? "var(--accent)" : "var(--border-soft)"}`,
+            }}>{ic}</div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <button onClick={() => { setType("expense"); setCategoryId(""); }} className={`sort-chip ${type === "expense" ? "active" : ""}`} style={{ flex: 1 }}>💸 Dépense</button>
+        <button onClick={() => { setType("income"); setCategoryId(""); }} className={`sort-chip ${type === "income" ? "active" : ""}`} style={{ flex: 1 }}>💰 Revenu</button>
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Catégorie</label>
+        <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.cat ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".75rem" }}>
+          <option value="">— Choisir —</option>
+          {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+        </select>
+        {err.cat && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.cat}</div>}
+      </div>
+
+      <button onClick={handleSave} style={{
+        width: "100%", padding: 12, borderRadius: 12, background: "var(--accent)", color: "#06121c",
+        fontWeight: 800, fontSize: ".75rem", border: "none", cursor: "pointer",
+      }}>
+        Enregistrer le template
+      </button>
+    </Modal>
+  );
+}
