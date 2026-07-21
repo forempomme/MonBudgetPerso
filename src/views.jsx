@@ -4578,7 +4578,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
@@ -4681,6 +4681,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const roundCag    = data.cagnottes.find(c=>c.id===roundingCagnotteId);
   const linkedCount = data.categories.filter(c=>c.linkedToId).length;
   const recurCount  = (data.recurringTemplates||[]).length;
+  const quickTplCount = (data.quickTemplates||[]).length;
   const last        = (data.backupHistory||[])[0];
 
   const GROUPS = [
@@ -4725,6 +4726,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
           configured: recurCount > 0,
           hint: "Aucune transaction récurrente définie" },
+        { id:"quickTemplates", icon:"⚡", label:"Templates rapides",
+          badge: quickTplCount > 0 ? `${quickTplCount} template${quickTplCount>1?"s":""}` : "Aucun",
+          configured: quickTplCount > 0,
+          hint: "Aucun template rapide créé",
+          action: onOpenQuickTemplates },
       ]
     },
     {
@@ -4761,8 +4767,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 <div key={item.id}
                   onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
                   onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
-                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); setOpenSheet(item.id); }}
-                  onClick={()=>setOpenSheet(item.id)}
+                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); if (item.action) item.action(); else setOpenSheet(item.id); }}
+                  onClick={()=> item.action ? item.action() : setOpenSheet(item.id)}
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
                     borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
