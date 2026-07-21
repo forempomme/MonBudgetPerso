@@ -95,6 +95,8 @@ export const A = /** @type {const} */ ({
   IMPORT_DATA:              "IMPORT_DATA",
   CLEAR_WARNING:            "CLEAR_WARNING",
   SAVE_PROJECTION_SNAPSHOT: "SAVE_PROJECTION_SNAPSHOT",
+  SAVE_QUICK_TEMPLATE:      "SAVE_QUICK_TEMPLATE",
+  DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
 
@@ -138,6 +140,10 @@ export const DEFAULT_DATA = {
   // réécrit ensuite, pour comparer "ce qu'on avait annoncé" vs la réalité
   // une fois le mois passé.
   projectionSnapshots:       {},
+  // Templates de saisie rapide (v1.39.18) — [{ id, icon, name, categoryId, type }]
+  // Déclenchés par un appui long sur le bouton +. Le montant et la date
+  // restent à saisir à chaque fois (jamais mémorisés).
+  quickTemplates:            [],
   notifSettings: {
     enabled:    false,
     recurring:  true,
@@ -687,6 +693,24 @@ export function reducer(state, action) {
         },
       };
     }
+
+    case A.SAVE_QUICK_TEMPLATE: {
+      const tpl = action.tpl;
+      const existing = (state.quickTemplates || []).find(t => t.id === tpl.id);
+      if (existing) {
+        return {
+          ...state,
+          quickTemplates: state.quickTemplates.map(t => t.id === tpl.id ? { ...t, ...tpl } : t),
+        };
+      }
+      return {
+        ...state,
+        quickTemplates: [...(state.quickTemplates || []), { ...tpl, id: tpl.id || uid("qt") }],
+      };
+    }
+
+    case A.DELETE_QUICK_TEMPLATE:
+      return { ...state, quickTemplates: (state.quickTemplates || []).filter(t => t.id !== action.id) };
 
     case A.RESET:
       return DEFAULT_DATA;
