@@ -154,7 +154,8 @@ export default function App() {
   // du menu habituel. Un tap court garde le comportement existant.
   const fabPressTimer   = useRef(null);
   const fabLongPressed  = useRef(false);
-  const handleFabPressStart = useCallback(() => {
+  const handleFabPressStart = useCallback((e) => {
+    e?.preventDefault?.(); // évite la sélection de texte / le menu contextuel natif sur l'appui long
     fabLongPressed.current = false;
     fabPressTimer.current = setTimeout(() => {
       fabLongPressed.current = true;
@@ -731,13 +732,16 @@ export default function App() {
       {quickFanOpen && (() => {
         const items = [...(data.quickTemplates || []), { id: "__manage__", icon: "⚙️", isManage: true }];
         const n = items.length;
-        const startAngle = 150, endAngle = 250;
+        // Angle mesuré depuis "tout à gauche" (0°) vers "tout en haut" (90°) —
+        // le FAB étant collé au coin bas-droit, l'éventail doit uniquement
+        // s'ouvrir vers la gauche et le haut pour rester à l'écran.
+        const startAngle = 15, endAngle = 100;
         return items.map((t, i) => {
           const angle = n === 1 ? (startAngle + endAngle) / 2 : startAngle + (endAngle - startAngle) * (i / (n - 1));
           const rad  = angle * Math.PI / 180;
           const dist = 92;
-          const x = Math.cos(rad) * dist;
-          const y = Math.sin(rad) * dist;
+          const dx = Math.cos(rad) * dist; // positif = plus vers la gauche → augmente `right`
+          const dy = Math.sin(rad) * dist; // positif = plus vers le haut  → augmente `bottom`
           return (
             <div key={t.id}
               onClick={() => {
@@ -746,7 +750,7 @@ export default function App() {
                 else setQuickEditTpl(t);
               }}
               style={{
-                position: "fixed", bottom: 110 + 26 + y, right: 18 + 26 + x,
+                position: "fixed", bottom: 110 + 26 + dy, right: 18 + 26 + dx,
                 width: 48, height: 48, borderRadius: "50%",
                 background: t.isManage ? "rgba(112,184,224,.15)" : "var(--surface2)",
                 border: `1px solid ${t.isManage ? "var(--accent)" : "var(--border)"}`,
