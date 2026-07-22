@@ -286,10 +286,6 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
         if (f.pointedMonths?.[ym]) ptExp   += a;
         else                       noPtExp += a;
       });
-      // Revenus fixes : pas de système de pointage dédié (un salaire connu et
-      // régulier n'a pas besoin d'être vérifié comme une dépense variable) —
-      // toujours comptés côté "pointé".
-      ptInc += effectiveIncomesForMonth(fixedIncomes, ym);
     });
 
     const pointableTxs = transactions.filter(t => isPointable(t.type));
