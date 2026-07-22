@@ -621,6 +621,17 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
             const sparkData = Array.from({ length: 6 }, (_, i) => {
               const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
               const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+              const mLabel = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][d.getMonth()];
+
+              // Le dernier point (mois en cours) doit toujours correspondre
+              // EXACTEMENT au solde estimé affiché au-dessus — sinon les deux
+              // divergent dès que la définition du solde estimé évolue.
+              if (i === 5) {
+                return { val: balance, mois: mLabel, isLast: true };
+              }
+
+              // Mois passés : solde "brut" à cette date-là — pas de notion de
+              // récurrente/programmée "en attente" pour un mois déjà terminé.
               const dayStr = `${ym}-${String(todayDay).padStart(2, "0")}`;
               let bal = 0;
               transactions.forEach(t => {
@@ -642,8 +653,7 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                   if (++m > 12) { m = 1; y++; }
                 }
               }
-              const mLabel = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][d.getMonth()];
-              return { val: bal, mois: mLabel, isLast: i === 5 };
+              return { val: bal, mois: mLabel, isLast: false };
             });
 
             const sparkMax = Math.max(...sparkData.map(b => Math.abs(b.val)), 1);
