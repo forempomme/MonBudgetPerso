@@ -5,17 +5,8 @@ import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
-  effectiveFixesForMonth, effectiveIncomesForMonth,
+  effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isPointable,
 } from "./hooks.js";
-
-// ─────────────────────────────────────────────────────────────────
-//  Pointage — types exclus du rapprochement bancaire
-//  decagnottage et transfer sont des mouvements internes
-//  entre cagnottes : ils n'apparaissent pas sur un relevé.
-// ─────────────────────────────────────────────────────────────────
-function isPointable(type) {
-  return type !== "decagnottage" && type !== "transfer";
-}
 
 // ─────────────────────────────────────────────────────────────────
 //  SectionTitle — police renforcée, appliquée partout
@@ -400,61 +391,10 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
   const tf        = useTotalFixes(fixedExpenses, curM);
 
   // ── Rapprochement bancaire ────────────────────────────────────
-  const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
-    if (!transactions.length) return { soldePointe: 0, soldeAttente: 0, nbPointed: 0, totalPointable: 0 };
-
-    function monthRange(start, end) {
-      const list = [];
-      let [y, m] = start.split('-').map(Number);
-      const [ey, em] = end.split('-').map(Number);
-      while (y < ey || (y === ey && m <= em)) {
-        list.push(`${y}-${String(m).padStart(2,'0')}`);
-        if (++m > 12) { m = 1; y++; }
-      }
-      return list;
-    }
-    const startYM = transactions.reduce(
-      (min, t) => t.date < min ? t.date : min, transactions[0].date
-    ).slice(0, 7);
-    const allMonths = monthRange(startYM, curM);
-
-    let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
-
-    // Transactions (toutes périodes)
-    transactions.filter(t => isPointable(t.type)).forEach(t => {
-      const a = parseFloat(t.amount) || 0;
-      const isInc = isIncome(t.type);
-      if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
-      else           { if (isInc) noPtInc += a; else noPtExp += a; }
-    });
-
-    // Frais fixes — un état de pointage par mois (respecte le startYM propre
-    // à chaque frais : avant son démarrage, il ne compte ni pointé ni en
-    // attente, il n'existe tout simplement pas encore pour ce mois-là)
-    allMonths.forEach(ym => {
-      fixedExpenses.forEach(f => {
-        if (f.startYM && ym < f.startYM) return;
-        const ov = f.monthlyOverrides?.[ym];
-        const a  = (ov?.amount ?? f.amount) || 0;
-        if (f.pointedMonths?.[ym]) ptExp   += a;
-        else                       noPtExp += a;
-      });
-    });
-
-    const pointableTxs = transactions.filter(t => isPointable(t.type));
-    const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
-    const nbPtFix = allMonths.reduce((n, ym) =>
-      n + fixedExpenses.filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
-    const totalFix = allMonths.reduce((n, ym) =>
-      n + fixedExpenses.filter(f => !f.startYM || ym >= f.startYM).length, 0);
-
-    return {
-      soldePointe:    ptInc  - ptExp,
-      soldeAttente:   noPtInc - noPtExp,
-      nbPointed:      nbPtTx + nbPtFix,
-      totalPointable: pointableTxs.length + totalFix,
-    };
-  }, [transactions, fixedExpenses, curM]);
+  // Même source que le solde estimé (useBalanceWithRecurring) : les deux
+  // ne peuvent plus diverger, puisqu'ils partagent ce même calcul.
+  const { soldePointe, soldeAttente, nbPointed, totalPointable } =
+    useReconciliation(transactions, fixedExpenses, data.fixedIncomes || []);
 
   // Year stats (memoised)
   const { yInc, yExp, yExpVar, yDecag, ySav } = useMemo(() => {
@@ -520,6 +460,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     const recurringTemplates = data.recurringTemplates || [];
     if (!recurringTemplates.length) return [];
     return recurringTemplates.filter(tpl => {
+      const amount = parseFloat(tpl.amount) || 0;
+      if (amount <= 0) return false;
       const confirmed = (data.transactions || []).filter(t => t.templateId === tpl.id);
       if (tpl.occurrences != null && confirmed.length >= tpl.occurrences) return false;
       if (tpl.frequency === "yearly") {
