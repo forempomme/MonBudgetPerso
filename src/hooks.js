@@ -249,8 +249,75 @@ export function usePriorYearStats(transactions, fixedExpenses) {
 //  passée mais pas encore confirmée (ex: précommande payée à la sortie —
 //  ça ne pèse sur le solde estimé qu'à partir du mois de l'échéance).
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  Rapprochement bancaire (v1.39.24)
+//  Source UNIQUE pour "pointé" / "en attente" — utilisée à la fois pour
+//  l'affichage du rapprochement ET comme base du solde estimé, pour que
+//  les deux ne puissent plus diverger. Inclut les revenus fixes (toujours
+//  comptés "pointés" : pas de pointage manuel pour eux, contrairement aux
+//  frais fixes).
+// ─────────────────────────────────────────────────────────────────
+export function isPointable(type) {
+  return type !== "decagnottage" && type !== "transfer";
+}
+
+export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
+  return useMemo(() => {
+    let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
+
+    transactions.filter(t => isPointable(t.type)).forEach(t => {
+      const a = parseFloat(t.amount) || 0;
+      const isInc = isIncome(t.type);
+      if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
+      else           { if (isInc) noPtInc += a; else noPtExp += a; }
+    });
+
+    const curYM = currentYM();
+    const startYM = transactions.length
+      ? transactions.reduce((min, t) => (t.date < min ? t.date : min), transactions[0].date).slice(0, 7)
+      : curYM;
+    const allMonths = monthRange(startYM, curYM);
+
+    allMonths.forEach(ym => {
+      (fixedExpenses || []).forEach(f => {
+        if (f.startYM && ym < f.startYM) return;
+        const ov = f.monthlyOverrides?.[ym];
+        const a  = (ov?.amount ?? f.amount) || 0;
+        if (f.pointedMonths?.[ym]) ptExp   += a;
+        else                       noPtExp += a;
+      });
+      // Revenus fixes : pas de système de pointage dédié (un salaire connu et
+      // régulier n'a pas besoin d'être vérifié comme une dépense variable) —
+      // toujours comptés côté "pointé".
+      ptInc += effectiveIncomesForMonth(fixedIncomes, ym);
+    });
+
+    const pointableTxs = transactions.filter(t => isPointable(t.type));
+    const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
+    const nbPtFix = allMonths.reduce((n, ym) =>
+      n + (fixedExpenses || []).filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
+    const totalFix = allMonths.reduce((n, ym) =>
+      n + (fixedExpenses || []).filter(f => !f.startYM || ym >= f.startYM).length, 0);
+
+    return {
+      soldePointe:    ptInc  - ptExp,
+      soldeAttente:   noPtInc - noPtExp,
+      nbPointed:      nbPtTx + nbPtFix,
+      totalPointable: pointableTxs.length + totalFix,
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, fixedExpenses, fixedIncomes]);
+}
+
 export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions) {
-  const balance = useBalance(transactions, fixedExpenses, fixedIncomes);
+  // Le solde estimé part désormais de "pointé + en attente" (le même total
+  // que celui affiché dans le rapprochement bancaire) au lieu d'un calcul
+  // indépendant — les deux ne peuvent plus diverger. On ne soustrait
+  // ensuite QUE les récurrentes/programmées pas encore confirmées : les
+  // frais fixes non pointés sont déjà comptés une fois dans "en attente",
+  // les compter à nouveau ici créerait un doublon.
+  const { soldePointe, soldeAttente } = useReconciliation(transactions, fixedExpenses, fixedIncomes);
+  const reconciled = soldePointe + soldeAttente;
 
   return useMemo(() => {
     const now   = new Date();
@@ -268,12 +335,18 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncome
 
       if (tpl.occurrences != null && confirmedCount >= tpl.occurrences) return;
 
+      // Une récurrente peut être un revenu (ex: bonus mensuel) ou une dépense
+      // (ex: abonnement) — on respecte son type, pas une hypothèse "toujours
+      // dépense" (sinon un revenu en attente réduisait le solde au lieu de
+      // l'augmenter, ou pire, masquait complètement l'effet visible).
+      const signedAmount = tpl.type === "income" ? -amount : amount;
+
       if (tpl.frequency === "yearly") {
         const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
-        if (!doneThisYear) pending += amount;
+        if (!doneThisYear) pending += signedAmount;
       } else {
         const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
-        if (!doneThisMonth) pending += amount;
+        if (!doneThisMonth) pending += signedAmount;
       }
     });
 
@@ -286,9 +359,9 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncome
       if (s.date.slice(0, 7) <= curYM) pending += amount;
     });
 
-    return balance - pending;
+    return reconciled - pending;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balance, transactions, recurringTemplates, scheduledTransactions]);
+  }, [reconciled, transactions, recurringTemplates, scheduledTransactions]);
 }
 
 // ─────────────────────────────────────────────────────────────────
