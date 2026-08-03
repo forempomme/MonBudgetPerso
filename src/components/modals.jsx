@@ -1605,8 +1605,6 @@ export function QuickTemplateSheet({ template, categories, onSave, onClose }) {
 //  QuickTemplateManagerModal — v1.39.18
 //  Créer / modifier / supprimer les templates de saisie rapide.
 // ─────────────────────────────────────────────────────────────────
-const QT_ICONS = ["🛒","☕","⛽","🅿️","🚇","🍽️","💊","🎬","🎁","📱","👕","🏋️","🐾","🧾","🏠","✈️"];
-
 export function QuickTemplateManagerModal({ templates, categories, onSave, onDelete, onClose }) {
   const [editing, setEditing] = useState(null); // null = liste, {} ou tpl = formulaire
 
@@ -1656,7 +1654,7 @@ export function QuickTemplateManagerModal({ templates, categories, onSave, onDel
 function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
   const isEdit = !!tpl.id;
   const [name, setName]     = useState(tpl.name || "");
-  const [icon, setIcon]     = useState(tpl.icon || QT_ICONS[0]);
+  const [icon, setIcon]     = useState(tpl.icon || "");
   const [type, setType]     = useState(tpl.type || "expense");
   const [categoryId, setCategoryId] = useState(tpl.categoryId || "");
   const [err, setErr]       = useState({});
@@ -1666,10 +1664,11 @@ function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
   function handleSave() {
     const e = {};
     if (!name.trim()) e.name = "Nom requis";
+    if (!icon.trim()) e.icon = "Icône requise";
     if (!categoryId)  e.cat  = "Catégorie requise";
     setErr(e);
     if (Object.keys(e).length > 0) return;
-    onSave({ id: tpl.id || null, name: name.trim(), icon, type, categoryId });
+    onSave({ id: tpl.id || null, name: name.trim(), icon: icon.trim(), type, categoryId });
   }
 
   return (
@@ -1682,16 +1681,11 @@ function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
       </div>
 
       <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Icône</label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
-          {QT_ICONS.map(ic => (
-            <div key={ic} onClick={() => setIcon(ic)} style={{
-              aspectRatio: "1", borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "1.1rem", cursor: "pointer", background: icon === ic ? "rgba(112,184,224,.15)" : "var(--surface2)",
-              border: `1px solid ${icon === ic ? "var(--accent)" : "var(--border-soft)"}`,
-            }}>{ic}</div>
-          ))}
-        </div>
+        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Icône (émoji)</label>
+        <input type="text" maxLength={4} value={icon} placeholder="Ex: 🛒"
+          onChange={e => { setIcon(e.target.value); setErr(v => ({ ...v, icon: "" })); }}
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.icon ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".9rem" }} />
+        {err.icon && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.icon}</div>}
       </div>
 
       <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>

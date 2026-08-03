@@ -784,11 +784,11 @@ export default function App() {
             animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
           }}>
           {[
-            { type:"expense",            icon:"💸", label:"Dépense",    color:"var(--danger)"  },
-            { type:"income",             icon:"💰", label:"Revenu",     color:"var(--success)" },
-            { type:"epargne",            icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
-            { type:"scheduled",          icon:"📅", label:"Programmée", color:"var(--warning)" },
             { type:"balance_adjustment", icon:"⚖️", label:"Équilibre",  color:"var(--sapin)"   },
+            { type:"scheduled",          icon:"📅", label:"Programmée", color:"var(--warning)" },
+            { type:"epargne",            icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
+            { type:"income",             icon:"💰", label:"Revenu",     color:"var(--success)" },
+            { type:"expense",            icon:"💸", label:"Dépense",    color:"var(--danger)"  },
           ].map((item, i) => (
             <div key={item.type}
               onClick={() => {
