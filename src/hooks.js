@@ -17,7 +17,12 @@ import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 export function isActiveForMonth(f, ym) {
   if (f.startYM && ym < f.startYM) return false;
   if (f.paused) {
-    if (!f.pausedUntil || ym <= f.pausedUntil) return false;
+    // La pause ne s'applique qu'à partir du mois où elle a été activée
+    // (pausedFrom) — jamais rétroactivement sur les mois déjà passés,
+    // qui doivent rester tels qu'ils ont réellement eu lieu.
+    const from  = f.pausedFrom  || "0000-00";
+    const until = f.pausedUntil || "9999-99";
+    if (ym >= from && ym <= until) return false;
   }
   return true;
 }

@@ -791,6 +791,7 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
   const [catId,    setCatId]    = useState(f?.categoryId  || expCats[0]?.id || "");
   const [startYM,  setStartYM]  = useState(f?.startYM    || "");
   const [paused,       setPaused]       = useState(f?.paused || false);
+  const [pausedFrom,   setPausedFrom]   = useState(f?.pausedFrom || "");
   const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
   const [errors, setErrors] = useState({});
 
@@ -811,6 +812,9 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
       categoryId: catId,
       startYM: startYM || null,
       paused: paused,
+      // Point de départ de la pause : le mois en cours par défaut si on
+      // vient de l'activer (jamais rétroactif sur l'historique déjà passé)
+      pausedFrom:  paused ? (pausedFrom || currentYM()) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
     }});
     toast(editingIdx != null ? "Frais fixe modifié" : "Frais fixe ajouté");
@@ -870,7 +874,14 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
           <button
-            onClick={() => { setPaused(p => !p); if (paused) setPausedUntil(""); }}
+            onClick={() => {
+              setPaused(p => {
+                const next = !p;
+                if (next && !pausedFrom) setPausedFrom(currentYM());
+                if (!next) { setPausedFrom(""); setPausedUntil(""); }
+                return next;
+              });
+            }}
             style={{
               width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
               background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",
@@ -934,6 +945,7 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
   const [catId,    setCatId]    = useState(f?.categoryId  || fallbackCat);
   const [startYM,  setStartYM]  = useState(f?.startYM    || "");
   const [paused,       setPaused]       = useState(f?.paused || false);
+  const [pausedFrom,   setPausedFrom]   = useState(f?.pausedFrom || "");
   const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
   const [errors, setErrors] = useState({});
 
@@ -954,6 +966,7 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
       categoryId: catId,
       startYM: startYM || null,
       paused: paused,
+      pausedFrom:  paused ? (pausedFrom || currentYM()) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
     }});
     toast(editingIdx != null ? "Revenu fixe modifié" : "Revenu fixe ajouté");
@@ -1000,7 +1013,14 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
           <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
           <button
-            onClick={() => { setPaused(p => !p); if (paused) setPausedUntil(""); }}
+            onClick={() => {
+              setPaused(p => {
+                const next = !p;
+                if (next && !pausedFrom) setPausedFrom(currentYM());
+                if (!next) { setPausedFrom(""); setPausedUntil(""); }
+                return next;
+              });
+            }}
             style={{
               width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
               background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",

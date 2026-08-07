@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A } from "./store.js";
-import { LS_KEY, uid, APP_NAME, APP_VERSION } from "./utils.js";
+import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM } from "./utils.js";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
@@ -404,8 +404,13 @@ export default function App() {
   const quickPauseFixed = useCallback((idx) => {
     const f = data.fixedExpenses?.[idx];
     if (!f) return;
-    saveFixed({ idx, fixed: { paused: !f.paused, pausedUntil: null } });
-    addToast(f.paused ? "Frais réactivé" : "Frais mis en pause", f.paused ? "success" : "warning");
+    const willPause = !f.paused;
+    saveFixed({ idx, fixed: {
+      paused: willPause,
+      pausedFrom:  willPause ? currentYM() : null,
+      pausedUntil: null,
+    }});
+    addToast(f.paused ? "Frais réactivé" : "Frais mis en pause (dès ce mois-ci)", f.paused ? "success" : "warning");
   }, [data.fixedExpenses, saveFixed, addToast]);
 
   const deleteFixed = useCallback((idx) => {
@@ -426,8 +431,13 @@ export default function App() {
   const quickPauseIncome = useCallback((idx) => {
     const f = data.fixedIncomes?.[idx];
     if (!f) return;
-    saveFixedIncome({ idx, income: { paused: !f.paused, pausedUntil: null } });
-    addToast(f.paused ? "Revenu réactivé" : "Revenu mis en pause", f.paused ? "success" : "warning");
+    const willPause = !f.paused;
+    saveFixedIncome({ idx, income: {
+      paused: willPause,
+      pausedFrom:  willPause ? currentYM() : null,
+      pausedUntil: null,
+    }});
+    addToast(f.paused ? "Revenu réactivé" : "Revenu mis en pause (dès ce mois-ci)", f.paused ? "success" : "warning");
   }, [data.fixedIncomes, saveFixedIncome, addToast]);
 
   const deleteFixedIncome = useCallback((idx) => {
