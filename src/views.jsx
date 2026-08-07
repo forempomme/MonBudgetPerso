@@ -1452,7 +1452,8 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
   const [editing,     setEditing]     = useState(false);
   const [draftName,   setDraftName]   = useState("");
   const [draftAmount, setDraftAmount] = useState("");
-  const isInc = item.type === "income" || item.type === "dissolution_cagnotte";
+  const isInc = item.type === "income" || item.type === "dissolution_cagnotte"
+    || (item.type === "balance_adjustment" && item.adjSign === "+");
 
   // Swipe gauche → révèle Edit + Delete
   const swipeStart = useRef({ x:0, y:0 });
@@ -2513,7 +2514,14 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
     const l = txLabel(t, categories, cagnottes);
     // Pour dissolution_cagnotte : utiliser directement t.note qui contient le bon libellé
     const finalLabel = t.type === "dissolution_cagnotte" && t.note ? t.note : l;
-    return { label: finalLabel, cls: txTypeClass(t.type), sign: txSign(t.type) };
+    // Une opération d'équilibre peut ajouter OU soustraire selon adjSign —
+    // txSign() ne connaît pas ce champ, donc on corrige le signe ici (la
+    // couleur reste neutre/sapin dans les deux cas, cohérent avec le reste
+    // de l'app pour ce type d'opération).
+    const finalSign = t.type === "balance_adjustment"
+      ? (t.adjSign === "+" ? "+" : "−")
+      : txSign(t.type);
+    return { label: finalLabel, cls: txTypeClass(t.type), sign: finalSign };
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
 

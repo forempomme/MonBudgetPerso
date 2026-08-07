@@ -236,6 +236,7 @@ export function TransModal({
   const [frequency,   setFrequency]   = useState("monthly");
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
+  const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
   const [catOpen,     setCatOpen]     = useState(false);
@@ -298,7 +299,7 @@ export function TransModal({
     // relier la toute première opération à ce modèle — sinon elle ne compte pas
     // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId });
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined });
     if (recurringId) {
       onSaveRecurring?.({
         id: recurringId,
@@ -387,8 +388,22 @@ export function TransModal({
       {isAdj && (
         <div style={{ marginBottom: 10, padding: "9px 12px", background: "rgba(88,192,144,.08)", border: "1px solid rgba(88,192,144,.2)", borderRadius: 10 }}>
           <div style={{ fontSize: ".68rem", color: "var(--sapin)", fontWeight: 700, marginBottom: 2 }}>⚖️ Opération d'équilibre</div>
-          <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5 }}>
+          <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginBottom: 9 }}>
             Ajuste le solde pointé sans impacter le solde estimé. Utile pour corriger un écart bancaire.
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => setAdjSign("+")} style={{
+              flex: 1, padding: "7px", borderRadius: 9, fontSize: ".68rem", fontWeight: 800, cursor: "pointer",
+              background: adjSign === "+" ? "rgba(104,212,152,.15)" : "var(--surface2)",
+              border: `1.5px solid ${adjSign === "+" ? "var(--success)" : "var(--border-soft)"}`,
+              color: adjSign === "+" ? "var(--success)" : "var(--text2)",
+            }}>➕ Ajouter</button>
+            <button onClick={() => setAdjSign("-")} style={{
+              flex: 1, padding: "7px", borderRadius: 9, fontSize: ".68rem", fontWeight: 800, cursor: "pointer",
+              background: adjSign === "-" ? "rgba(200,112,112,.15)" : "var(--surface2)",
+              border: `1.5px solid ${adjSign === "-" ? "var(--danger)" : "var(--border-soft)"}`,
+              color: adjSign === "-" ? "var(--danger)" : "var(--text2)",
+            }}>➖ Soustraire</button>
           </div>
         </div>
       )}

@@ -288,7 +288,10 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
 
     transactions.filter(t => isPointable(t.type)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
-      const isInc = isIncome(t.type);
+      // Une opération d'équilibre (⚖️) peut ajouter OU soustraire du solde
+      // pointé selon le sens choisi (adjSign) — les anciennes opérations
+      // sans ce champ gardent leur comportement d'origine (soustraction).
+      const isInc = t.type === "balance_adjustment" ? t.adjSign === "+" : isIncome(t.type);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });
