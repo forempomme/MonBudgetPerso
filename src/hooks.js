@@ -6,9 +6,25 @@ import { currentYM, getPrevMonth, isIncome } from "./utils.js";
 //  Tient compte des monthlyOverrides (modifications ponctuelles
 //  depuis l'Historique qui n'impactent que ce mois).
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  isActiveForMonth — un frais/revenu fixe est actif pour un mois donné
+//  si : il a démarré (startYM) ET il n'est pas en pause ce mois-là
+//  (paused + pausedUntil optionnel pour une reprise automatique).
+//  Source unique utilisée PARTOUT où un frais/revenu fixe est filtré
+//  par mois, pour que "démarrage" et "pause" soient toujours respectés
+//  de façon cohérente (accueil, historique, rapport, popups…).
+// ─────────────────────────────────────────────────────────────────
+export function isActiveForMonth(f, ym) {
+  if (f.startYM && ym < f.startYM) return false;
+  if (f.paused) {
+    if (!f.pausedUntil || ym <= f.pausedUntil) return false;
+  }
+  return true;
+}
+
 export function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
-    if (f.startYM && ym < f.startYM) return s;
+    if (!isActiveForMonth(f, ym)) return s;
     const ov = f.monthlyOverrides?.[ym];
     return s + ((ov?.amount ?? f.amount) || 0);
   }, 0);
@@ -16,7 +32,7 @@ export function effectiveFixesForMonth(fixedExpenses, ym) {
 
 export function effectiveIncomesForMonth(fixedIncomes, ym) {
   return (fixedIncomes || []).reduce((s, f) => {
-    if (f.startYM && ym < f.startYM) return s;
+    if (!isActiveForMonth(f, ym)) return s;
     return s + (parseFloat(f.amount) || 0);
   }, 0);
 }
@@ -42,7 +58,7 @@ function monthRange(startYM, endYM) {
 export function useTotalFixes(fixedExpenses, ym = null) {
   return useMemo(
     () => fixedExpenses
-      .filter(f => !ym || !f.startYM || ym >= f.startYM)
+      .filter(f => !ym || isActiveForMonth(f, ym))
       .reduce((s, f) => {
         const ov = ym ? f.monthlyOverrides?.[ym] : null;
         return s + ((ov?.amount ?? f.amount) || 0);
@@ -280,7 +296,7 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
 
     allMonths.forEach(ym => {
       (fixedExpenses || []).forEach(f => {
-        if (f.startYM && ym < f.startYM) return;
+        if (!isActiveForMonth(f, ym)) return;
         const ov = f.monthlyOverrides?.[ym];
         const a  = (ov?.amount ?? f.amount) || 0;
         if (f.pointedMonths?.[ym]) ptExp   += a;
@@ -289,7 +305,7 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
       // Revenus fixes : désormais pointables au même titre que les frais
       // fixes, avec leur propre suivi mensuel (pointedMonths).
       (fixedIncomes || []).forEach(f => {
-        if (f.startYM && ym < f.startYM) return;
+        if (!isActiveForMonth(f, ym)) return;
         const ov = f.monthlyOverrides?.[ym];
         const a  = (ov?.amount ?? f.amount) || 0;
         if (f.pointedMonths?.[ym]) ptInc   += a;
@@ -300,13 +316,13 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
     const pointableTxs = transactions.filter(t => isPointable(t.type));
     const nbPtTx  = pointableTxs.filter(t => t.pointed).length;
     const nbPtFix = allMonths.reduce((n, ym) =>
-      n + (fixedExpenses || []).filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
+      n + (fixedExpenses || []).filter(f => isActiveForMonth(f, ym) && f.pointedMonths?.[ym]).length, 0);
     const totalFix = allMonths.reduce((n, ym) =>
-      n + (fixedExpenses || []).filter(f => !f.startYM || ym >= f.startYM).length, 0);
+      n + (fixedExpenses || []).filter(f => isActiveForMonth(f, ym)).length, 0);
     const nbPtInc = allMonths.reduce((n, ym) =>
-      n + (fixedIncomes || []).filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
+      n + (fixedIncomes || []).filter(f => isActiveForMonth(f, ym) && f.pointedMonths?.[ym]).length, 0);
     const totalInc = allMonths.reduce((n, ym) =>
-      n + (fixedIncomes || []).filter(f => !f.startYM || ym >= f.startYM).length, 0);
+      n + (fixedIncomes || []).filter(f => isActiveForMonth(f, ym)).length, 0);
 
     return {
       soldePointe:    ptInc  - ptExp,

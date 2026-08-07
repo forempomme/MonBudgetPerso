@@ -790,6 +790,8 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
   const [amt,      setAmt]      = useState(f?.amount      || "");
   const [catId,    setCatId]    = useState(f?.categoryId  || expCats[0]?.id || "");
   const [startYM,  setStartYM]  = useState(f?.startYM    || "");
+  const [paused,       setPaused]       = useState(f?.paused || false);
+  const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
   const [errors, setErrors] = useState({});
 
   function validate() {
@@ -808,6 +810,8 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
       amount: parseAmt(amt),
       categoryId: catId,
       startYM: startYM || null,
+      paused: paused,
+      pausedUntil: paused ? (pausedUntil || null) : null,
     }});
     toast(editingIdx != null ? "Frais fixe modifié" : "Frais fixe ajouté");
   }
@@ -861,6 +865,52 @@ export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onCl
           </div>
         )}
       </div>
+      {/* ★ Pause — indéfinie ou jusqu'à un mois donné (reprise automatique) */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
+          <button
+            onClick={() => { setPaused(p => !p); if (paused) setPausedUntil(""); }}
+            style={{
+              width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
+              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",
+            }}>
+            <span style={{
+              position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%",
+              background: "#fff", transition: "left .15s",
+            }} />
+          </button>
+        </div>
+        {paused && (
+          <>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
+              Ce frais n'est déduit nulle part tant qu'il est en pause (solde, historique, rapport…).
+            </div>
+            {pausedUntil
+              ? (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="month" value={pausedUntil} onChange={e => setPausedUntil(e.target.value)} style={{ flex: 1 }} />
+                  <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
+                    onClick={() => setPausedUntil("")}>
+                    ✕ Retirer
+                  </button>
+                </div>
+              )
+              : (
+                <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
+                  onClick={() => setPausedUntil(currentYM())}>
+                  ＋ Reprise automatique à une date connue (optionnel)
+                </button>
+              )
+            }
+            {pausedUntil && (
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+                Reprend automatiquement à partir du mois suivant {pausedUntil}. Laisse vide pour une pause indéfinie (à réactiver toi-même).
+              </div>
+            )}
+          </>
+        )}
+      </div>
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline"  style={{ width: "100%" }} onClick={onClose}>Annuler</button>
         <button className="btn btn-primary"  style={{ width: "100%" }} onClick={handleSave}>Valider</button>
@@ -883,6 +933,8 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
   const [amt,      setAmt]      = useState(f?.amount      || "");
   const [catId,    setCatId]    = useState(f?.categoryId  || fallbackCat);
   const [startYM,  setStartYM]  = useState(f?.startYM    || "");
+  const [paused,       setPaused]       = useState(f?.paused || false);
+  const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
   const [errors, setErrors] = useState({});
 
   function validate() {
@@ -901,6 +953,8 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
       amount: parseAmt(amt),
       categoryId: catId,
       startYM: startYM || null,
+      paused: paused,
+      pausedUntil: paused ? (pausedUntil || null) : null,
     }});
     toast(editingIdx != null ? "Revenu fixe modifié" : "Revenu fixe ajouté");
   }
@@ -940,6 +994,52 @@ export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave,
             </button>
           )
         }
+      </div>
+      {/* ★ Pause — indéfinie ou jusqu'à un mois donné (reprise automatique) */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
+          <button
+            onClick={() => { setPaused(p => !p); if (paused) setPausedUntil(""); }}
+            style={{
+              width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
+              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",
+            }}>
+            <span style={{
+              position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%",
+              background: "#fff", transition: "left .15s",
+            }} />
+          </button>
+        </div>
+        {paused && (
+          <>
+            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
+              Ce revenu n'est compté nulle part tant qu'il est en pause (solde, historique, rapport…).
+            </div>
+            {pausedUntil
+              ? (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="month" value={pausedUntil} onChange={e => setPausedUntil(e.target.value)} style={{ flex: 1 }} />
+                  <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
+                    onClick={() => setPausedUntil("")}>
+                    ✕ Retirer
+                  </button>
+                </div>
+              )
+              : (
+                <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
+                  onClick={() => setPausedUntil(currentYM())}>
+                  ＋ Reprise automatique à une date connue (optionnel)
+                </button>
+              )
+            }
+            {pausedUntil && (
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+                Reprend automatiquement à partir du mois suivant {pausedUntil}. Laisse vide pour une pause indéfinie.
+              </div>
+            )}
+          </>
+        )}
       </div>
       <div className="grid-2" style={{ marginBottom: 0 }}>
         <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>

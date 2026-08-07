@@ -401,6 +401,13 @@ export default function App() {
     dispatch({ type: A.SAVE_FIXED, ...payload });
   }, []);
 
+  const quickPauseFixed = useCallback((idx) => {
+    const f = data.fixedExpenses?.[idx];
+    if (!f) return;
+    saveFixed({ idx, fixed: { paused: !f.paused, pausedUntil: null } });
+    addToast(f.paused ? "Frais réactivé" : "Frais mis en pause", f.paused ? "success" : "warning");
+  }, [data.fixedExpenses, saveFixed, addToast]);
+
   const deleteFixed = useCallback((idx) => {
     setConfirmModal({
       title: "Supprimer ce frais fixe ?",
@@ -415,6 +422,13 @@ export default function App() {
   const saveFixedIncome = useCallback((payload) => {
     dispatch({ type: A.SAVE_FIXED_INCOME, ...payload });
   }, []);
+
+  const quickPauseIncome = useCallback((idx) => {
+    const f = data.fixedIncomes?.[idx];
+    if (!f) return;
+    saveFixedIncome({ idx, income: { paused: !f.paused, pausedUntil: null } });
+    addToast(f.paused ? "Revenu réactivé" : "Revenu mis en pause", f.paused ? "success" : "warning");
+  }, [data.fixedIncomes, saveFixedIncome, addToast]);
 
   const deleteFixedIncome = useCallback((idx) => {
     setConfirmModal({
@@ -600,9 +614,11 @@ export default function App() {
         onNewFixed={()    => setFixedModal({ editingIdx: null })}
         onEditFixed={idx  => setFixedModal({ editingIdx: idx  })}
         onDeleteFixed={deleteFixed}
+        onQuickPauseFixed={quickPauseFixed}
         onNewFixedIncome={()    => setFixedIncomeModal({ editingIdx: null })}
         onEditFixedIncome={idx  => setFixedIncomeModal({ editingIdx: idx  })}
         onDeleteFixedIncome={deleteFixedIncome}
+        onQuickPauseIncome={quickPauseIncome}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
       />

@@ -5,7 +5,7 @@ import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
-  effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isPointable,
+  effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isPointable, isActiveForMonth,
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -499,14 +499,14 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   // Frais fixes non pointés ce mois (respecte startYM : pas encore commencé = pas affiché)
   const unpointedFixes = useMemo(() =>
-    fixedExpenses.filter(f => (!f.startYM || curM >= f.startYM) && !f.pointedMonths?.[curM]),
+    fixedExpenses.filter(f => isActiveForMonth(f, curM) && !f.pointedMonths?.[curM]),
     [fixedExpenses, curM]
   );
 
   // Revenus fixes non pointés ce mois — même logique, désormais pointables
   const unpointedIncomes = useMemo(() => {
     const fixedIncomes = data.fixedIncomes || [];
-    return fixedIncomes.filter(f => (!f.startYM || curM >= f.startYM) && !f.pointedMonths?.[curM]);
+    return fixedIncomes.filter(f => isActiveForMonth(f, curM) && !f.pointedMonths?.[curM]);
   }, [data.fixedIncomes, curM]);
 
   function daysUntil(dateStr) {
@@ -1553,7 +1553,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
           }}>{item.pointed ? "✓" : ""}</button>
 
         <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          {item.cat?.icon ?? (isFixed ? "📌" : isInc ? "💰" : "💸")}
+          {item.cat?.icon ?? (isInc ? "💰" : isFixed ? "📌" : "💸")}
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -1570,8 +1570,8 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isFixed || !isInc ? "var(--danger)" : "var(--success)", opacity: item.pointed ? 1 : .55 }}>
-            {isInc && !isFixed ? "+" : "−"}{fmt(item.amount)}
+          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: isInc ? "var(--success)" : "var(--danger)", opacity: item.pointed ? 1 : .55 }}>
+            {isInc ? "+" : "−"}{fmt(item.amount)}
           </div>
           {isFixed && onEditFixed && (
             <button
@@ -1717,7 +1717,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   // `startYM` propre à chaque frais fixe → un frais configuré pour démarrer plus tard
   // apparaissait quand même dans les mois précédents)
   const monthFixes = useMemo(() =>
-    month >= startYM ? fixedExpenses.filter(f => !f.startYM || month >= f.startYM) : [],
+    month >= startYM ? fixedExpenses.filter(f => isActiveForMonth(f, month)) : [],
     [fixedExpenses, month, startYM]
   );
 
@@ -1726,7 +1726,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   // dédié, comme pour les frais fixes) : affichage informatif uniquement.
   const monthIncomes = useMemo(() => {
     const fixedIncomes = data.fixedIncomes || [];
-    return month >= startYM ? fixedIncomes.filter(f => !f.startYM || month >= f.startYM) : [];
+    return month >= startYM ? fixedIncomes.filter(f => isActiveForMonth(f, month)) : [];
   }, [data.fixedIncomes, month, startYM]);
 
   // Handler local : passe le mois courant pour le pointage par mois
@@ -2747,7 +2747,7 @@ function CatBreakdown({ txs, allTxs, categories, onSelectCat }) {
 // ─────────────────────────────────────────────────────────────────
 //  FIXES
 // ─────────────────────────────────────────────────────────────────
-export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onSaveProvisional, onDeleteProvisional }) {
+export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onSaveProvisional, onDeleteProvisional }) {
   const { fixedExpenses, categories } = data;
   const fixedIncomes         = data.fixedIncomes || [];
   const provisionalExpenses  = data.provisionalExpenses || [];
@@ -2856,7 +2856,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
                 const cat    = categories.find(c => c.id === f.categoryId);
                 const selKey = f.id ?? idx;
                 return (
-                  <div key={selKey} style={card4(selKey, "var(--danger)")}
+                  <div key={selKey} style={{ ...card4(selKey, "var(--danger)"), opacity: f.paused ? .5 : 1 }}
                     onClick={() => setSelected(selected === selKey ? null : selKey)}>
                     <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "📌"}</span>
                   {/* Nom sur 2 lignes max, jamais tronqué */}
@@ -2881,8 +2881,19 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
                       {Math.abs(f.amount - f.prevAmount).toFixed(2)} €
                     </div>
                   )}
+                  {/* Badge en pause */}
+                  {f.paused && (
+                    <div style={{
+                      fontSize: ".48rem", fontWeight: 700,
+                      color: "var(--warning)", marginTop: 2,
+                      background: "rgba(200,184,96,.12)", borderRadius: 3,
+                      padding: "1px 4px", border: "1px solid rgba(200,184,96,.25)",
+                    }}>
+                      ⏸️ En pause{f.pausedUntil ? ` jusqu'à ${f.pausedUntil}` : ""}
+                    </div>
+                  )}
                   {/* Badge startYM */}
-                  {f.startYM && (
+                  {f.startYM && !f.paused && (
                     <div style={{
                       fontSize: ".48rem", fontWeight: 700,
                       color: "var(--accent)", marginTop: 2,
@@ -2895,6 +2906,9 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
                   {/* Boutons visibles au tap uniquement */}
                   {selected === selKey && (
                     <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                        onClick={e => { e.stopPropagation(); onQuickPauseFixed?.(idx); }}
+                        title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
                       <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                         onClick={e => { e.stopPropagation(); onEditFixed(idx); }}>✏️</button>
                       <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
@@ -2931,7 +2945,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
                 const cat    = categories.find(c => c.id === f.categoryId);
                 const selKey = `inc_${f.id ?? idx}`;
                 return (
-                  <div key={selKey} style={card4(selKey, "var(--success)")}
+                  <div key={selKey} style={{ ...card4(selKey, "var(--success)"), opacity: f.paused ? .5 : 1 }}
                     onClick={() => setSelected(selected === selKey ? null : selKey)}>
                     <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "💰"}</span>
                     <div style={{
@@ -2943,13 +2957,21 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onNewF
                     <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>
                       +{fmt(f.amount)}
                     </div>
-                    {f.startYM && (
+                    {f.paused && (
+                      <div style={{ fontSize:".48rem", fontWeight:700, color:"var(--warning)", marginTop:2, background:"rgba(200,184,96,.12)", borderRadius:3, padding:"1px 4px", border:"1px solid rgba(200,184,96,.25)" }}>
+                        ⏸️ En pause{f.pausedUntil ? ` jusqu'à ${f.pausedUntil}` : ""}
+                      </div>
+                    )}
+                    {f.startYM && !f.paused && (
                       <div style={{ fontSize:".48rem", fontWeight:700, color:"var(--accent)", marginTop:2, background:"rgba(90,184,224,.1)", borderRadius:3, padding:"1px 4px", border:"1px solid rgba(90,184,224,.2)" }}>
                         📅 {f.startYM}
                       </div>
                     )}
                     {selected === selKey && (
                       <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                          onClick={e => { e.stopPropagation(); onQuickPauseIncome?.(idx); }}
+                          title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
                         <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                           onClick={e => { e.stopPropagation(); onEditFixedIncome(idx); }}>✏️</button>
                         <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
@@ -3336,7 +3358,7 @@ function SuiviModal({ onClose, categories, transactions, fixedExpenses, threshol
       .filter(t => t.date.startsWith(curYM) && t.type === "expense")
       .forEach(t => { map[t.categoryId] = (map[t.categoryId] || 0) + (parseFloat(t.amount) || 0); });
     fixedExpenses.forEach(f => {
-      if (f.startYM && curYM < f.startYM) return;
+      if (!isActiveForMonth(f, curYM)) return;
       const ov = f.monthlyOverrides?.[curYM];
       const a  = (ov?.amount ?? f.amount) || 0;
       map[f.categoryId] = (map[f.categoryId] || 0) + a;
@@ -3752,7 +3774,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
         .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
       const fixExp = inRange ? fixedExpenses
-        .filter(f => f.categoryId === selCatId && (!f.startYM || ym >= f.startYM))
+        .filter(f => f.categoryId === selCatId && isActiveForMonth(f, ym))
         .reduce((s, f) => { const ov = f.monthlyOverrides?.[ym]; return s + ((ov?.amount ?? f.amount) || 0); }, 0) : 0;
       const inc    = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
       const total  = exp + fixExp;
@@ -3773,7 +3795,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
       for (let m = 1; m <= monthsElapsed; m++) {
         const ym = `${yearStr}-${String(m).padStart(2, "0")}`;
         if (ym < startYM) continue; // avant le démarrage de l'app
-        if (f.startYM && ym < f.startYM) continue; // avant le démarrage DE CE frais précis
+        if (!isActiveForMonth(f, ym)) continue; // avant le démarrage ou en pause pour ce frais précis
         const ov = f.monthlyOverrides?.[ym];
         total += (ov?.amount ?? f.amount) || 0;
       }
@@ -3841,7 +3863,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
             // dans la même catégorie si l'un a démarré plus tard que l'autre)
             const monthsForFix = (f) => Array.from({ length: monthsElapsed }, (_, i) => {
               const ym = `${yearStr}-${String(i + 1).padStart(2, "0")}`;
-              return ym >= startYM && (!f.startYM || ym >= f.startYM) ? 1 : 0;
+              return ym >= startYM && isActiveForMonth(f, ym) ? 1 : 0;
             }).reduce((s, v) => s + v, 0);
             return (
               <div style={{ marginBottom: 10 }}>
@@ -4021,7 +4043,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
 
   const { top5, topTotal } = useMemo(() => {
     const nowYM = currentYM();
-    const tf    = fixedExpenses.filter(f => !f.startYM || nowYM >= f.startYM).reduce((s, f) => s + f.amount, 0);
+    const tf    = fixedExpenses.filter(f => isActiveForMonth(f, nowYM)).reduce((s, f) => s + f.amount, 0);
     const isCur = currentYear === new Date().getFullYear();
     const yearStr = currentYear.toString();
     const expMap = {};
@@ -4101,7 +4123,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             const spent = data.transactions
               .filter(t => t.date.startsWith(curYM) && t.type === "expense" && t.categoryId === c.id)
               .reduce((s, t) => s + (parseFloat(t.amount)||0), 0)
-              + data.fixedExpenses.filter(f=>f.categoryId===c.id && (!f.startYM || curYM>=f.startYM))
+              + data.fixedExpenses.filter(f=>f.categoryId===c.id && isActiveForMonth(f, curYM))
                   .reduce((s,f)=>{ const ov=f.monthlyOverrides?.[curYM]; return s+((ov?.amount??f.amount)||0); }, 0);
             return spent >= limit * 0.8;
           });
@@ -4454,7 +4476,7 @@ function buildInsights(data, currentYear, months) {
   const yStr   = currentYear.toString();
   const now    = new Date();
   const curYM  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  const tf     = fixedExpenses.filter(f => !f.startYM || curYM >= f.startYM).reduce((s, f) => s + f.amount, 0);
+  const tf     = fixedExpenses.filter(f => isActiveForMonth(f, curYM)).reduce((s, f) => s + f.amount, 0);
   const isCurY = currentYear === now.getFullYear();
   // ⚠ Correction UTC : utilise l'heure locale au lieu de toISOString()
   const MOIS   = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
