@@ -147,6 +147,7 @@ export default function App() {
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
+  const togglePointIncome = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym }), []);
   const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
   const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
 
@@ -553,6 +554,7 @@ export default function App() {
         onDeleteScheduled={id => dispatch({ type: A.DELETE_SCHEDULED, id })}
         onConfirmRecurring={confirmRecurring}
         onTogglePointFix={togglePointFix}
+        onTogglePointIncome={togglePointIncome}
         onSaveProjectionSnapshot={(ym, predictedValue) => dispatch({ type: A.SAVE_PROJECTION_SNAPSHOT, ym, predictedValue })}
       />
   );
@@ -572,6 +574,7 @@ export default function App() {
         onDuplicateTrans={duplicateTransaction}
         onTogglePointTx={togglePointTx}
         onTogglePointFix={togglePointFix}
+        onTogglePointIncome={togglePointIncome}
         onOverrideFixMonth={overrideFixMonth}
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={confirmRecurring}

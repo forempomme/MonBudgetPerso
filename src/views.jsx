@@ -314,7 +314,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
     </div>
   );
 }
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onSaveProjectionSnapshot }) {
+export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -502,6 +502,12 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
     fixedExpenses.filter(f => (!f.startYM || curM >= f.startYM) && !f.pointedMonths?.[curM]),
     [fixedExpenses, curM]
   );
+
+  // Revenus fixes non pointés ce mois — même logique, désormais pointables
+  const unpointedIncomes = useMemo(() => {
+    const fixedIncomes = data.fixedIncomes || [];
+    return fixedIncomes.filter(f => (!f.startYM || curM >= f.startYM) && !f.pointedMonths?.[curM]);
+  }, [data.fixedIncomes, curM]);
 
   function daysUntil(dateStr) {
     const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
@@ -953,23 +959,32 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       </Sec>
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
-      {(unpointedFixes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
+      {(unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
         const C = "#e8f2ff", Cbord = "rgba(210,225,245,.22)";
         const fixItems   = unpointedFixes.map(f  => ({ ...f, _type:"fix"       }));
+        const incItems   = unpointedIncomes.map(f=> ({ ...f, _type:"fixIncome" }));
         const schedItems = upcomingScheduled.map(s=> ({ ...s, _type:"scheduled" }));
         const recurItems = upcomingRecurring.map(r => ({ ...r, _type:"recurring" }));
-        const allItems   = [...recurItems, ...fixItems, ...schedItems];
-        const visibleItems = tabUpcoming==="fixes" ? fixItems : tabUpcoming==="scheduled" ? schedItems : tabUpcoming==="recurring" ? recurItems : allItems;
-        const total = allItems.reduce((s,i) => s+(parseFloat(i.amount)||0), 0);
-        const unpointedVisibleFixes = visibleItems.filter(i => i._type === "fix");
+        const allItems   = [...recurItems, ...fixItems, ...incItems, ...schedItems];
+        // Contribution signée d'un item au total : + pour un revenu (fixe ou
+        // récurrente de type revenu), − pour tout le reste.
+        const signedAmt = i => {
+          const a = parseFloat(i.amount) || 0;
+          const isPositive = i._type === "fixIncome" || (i._type === "recurring" && i.type === "income");
+          return isPositive ? a : -a;
+        };
+        const visibleItems = tabUpcoming==="fixes" ? [...fixItems, ...incItems] : tabUpcoming==="scheduled" ? schedItems : tabUpcoming==="recurring" ? recurItems : allItems;
+        const total = allItems.reduce((s,i) => s+signedAmt(i), 0);
+        const unpointedVisibleFixes = visibleItems.filter(i => i._type === "fix" || i._type === "fixIncome");
 
         // Répartition "ce mois" vs mois suivants — les récurrentes et fixes en
         // attente sont toujours "ce mois" ; seules les programmées peuvent
         // être datées dans un mois futur (v1.39.19)
         const thisMonthTotal =
-          recurItems.reduce((s,i)=>s+(parseFloat(i.amount)||0),0) +
-          fixItems.reduce((s,i)=>s+(parseFloat(i.amount)||0),0) +
-          schedItems.filter(s=>s.date.startsWith(curM)).reduce((s,i)=>s+(parseFloat(i.amount)||0),0);
+          recurItems.reduce((s,i)=>s+signedAmt(i),0) +
+          fixItems.reduce((s,i)=>s+signedAmt(i),0) +
+          incItems.reduce((s,i)=>s+signedAmt(i),0) +
+          schedItems.filter(s=>s.date.startsWith(curM)).reduce((s,i)=>s+signedAmt(i),0);
         const futureByMonth = {};
         schedItems.filter(s=>!s.date.startsWith(curM)).forEach(s => {
           const ym = s.date.slice(0,7);
@@ -996,13 +1011,14 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                 <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                   {recurItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(220,228,240,.10)", color:C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>}
                   {fixItems.length>0   && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(90,184,224,.10)", color:"var(--accent)", border:"1px solid rgba(90,184,224,.2)" }}>↻ {fixItems.length}</span>}
+                  {incItems.length>0   && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(104,212,152,.10)", color:"var(--success)", border:"1px solid rgba(104,212,152,.2)" }}>💰 {incItems.length}</span>}
                   {schedItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(200,184,96,.10)", color:"var(--warning)", border:"1px solid rgba(200,184,96,.2)" }}>📅 {schedItems.length}</span>}
                 </div>
                 <span style={{ color:C, fontSize:".8rem", opacity:.7 }}>›</span>
               </div>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:8, padding:"0 14px 11px", position:"relative", zIndex:2 }}>
                 <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>
-                  Ce mois <b style={{ fontFamily:"var(--mono)", color:C, fontWeight:800 }}>−{fmt(thisMonthTotal)}</b>
+                  Ce mois <b style={{ fontFamily:"var(--mono)", color: thisMonthTotal >= 0 ? "var(--success)" : C, fontWeight:800 }}>{thisMonthTotal >= 0 ? "+" : ""}{fmt(thisMonthTotal)}</b>
                 </span>
                 {nearestFutureYM && (
                   <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>
@@ -1028,22 +1044,23 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                   ))}
                 </div>
 
-                {/* Tout pointer — ne concerne que les fixes non pointées visibles */}
+                {/* Tout pointer — fixes ET revenus fixes non pointés visibles */}
                 {unpointedVisibleFixes.length > 0 && (
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"9px 12px", borderRadius:10, background:"rgba(104,212,152,.05)", border:"1px solid rgba(104,212,152,.2)", marginBottom:10 }}>
-                    <span style={{ fontSize:".65rem", color:"var(--text2)" }}>{unpointedVisibleFixes.length} fixe{unpointedVisibleFixes.length>1?"s":""} non pointée{unpointedVisibleFixes.length>1?"s":""}</span>
-                    <button onClick={()=>unpointedVisibleFixes.forEach(f=>onTogglePointFix?.(f.id, curM))} style={{ padding:"6px 12px", borderRadius:20, background:"rgba(104,212,152,.15)", border:"1px solid rgba(104,212,152,.4)", color:"var(--success)", fontSize:".64rem", fontWeight:800, cursor:"pointer" }}>✓ Tout pointer</button>
+                    <span style={{ fontSize:".65rem", color:"var(--text2)" }}>{unpointedVisibleFixes.length} élément{unpointedVisibleFixes.length>1?"s":""} non pointé{unpointedVisibleFixes.length>1?"s":""}</span>
+                    <button onClick={()=>unpointedVisibleFixes.forEach(f=>(f._type==="fixIncome" ? onTogglePointIncome : onTogglePointFix)?.(f.id, curM))} style={{ padding:"6px 12px", borderRadius:20, background:"rgba(104,212,152,.15)", border:"1px solid rgba(104,212,152,.4)", color:"var(--success)", fontSize:".64rem", fontWeight:800, cursor:"pointer" }}>✓ Tout pointer</button>
                   </div>
                 )}
 
                 {/* Liste */}
                 <div>
                   {visibleItems.map((item,i)=>{
-                    const isFix=item._type==="fix", isRec=item._type==="recurring", isSch=item._type==="scheduled";
+                    const isFix=item._type==="fix", isInc=item._type==="fixIncome", isRec=item._type==="recurring", isSch=item._type==="scheduled";
+                    const isRecIncome = isRec && item.type === "income";
                     const cat=data.categories?.find(c=>c.id===item.categoryId);
-                    const icon=isFix?(cat?.icon??"📌"):isRec?(cat?.icon??"🔄"):(cat?.icon??"📅");
-                    const label=isFix?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
-                    const sub=isFix?"Ce mois · non pointé":isRec?`Ce mois · ${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
+                    const icon=isFix?(cat?.icon??"📌"):isInc?(cat?.icon??"💰"):isRec?(cat?.icon??"🔄"):(cat?.icon??"📅");
+                    const label=(isFix||isInc)?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
+                    const sub=(isFix||isInc)?"Ce mois · non pointé":isRec?`Ce mois · ${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
                     const badge=isSch?daysUntil(item.date):null;
                     const recurBadge = isRec && item.occurrences != null ? (() => {
                       const done = (data.transactions||[]).filter(t => t.templateId === item.id).length;
@@ -1051,10 +1068,12 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                       return remaining > 0 ? `${remaining} fois restante${remaining > 1 ? "s" : ""}` : null;
                     })() : null;
                     const isConf=isSch&&deleteConfirm===item.id;
-                    const ibg=isRec?"rgba(220,228,240,.08)":isFix?"rgba(90,184,224,.08)":"rgba(200,184,96,.08)";
-                    const ibord=isRec?"rgba(210,225,245,.18)":isFix?"rgba(90,184,224,.2)":"rgba(200,184,96,.2)";
-                    const dot=isRec?C:isFix?"var(--accent)":"var(--warning)";
-                    const dotL=isRec?"🔄":isFix?"↻":"·";
+                    const ibg=isRec?"rgba(220,228,240,.08)":isFix?"rgba(90,184,224,.08)":isInc?"rgba(104,212,152,.08)":"rgba(200,184,96,.08)";
+                    const ibord=isRec?"rgba(210,225,245,.18)":isFix?"rgba(90,184,224,.2)":isInc?"rgba(104,212,152,.2)":"rgba(200,184,96,.2)";
+                    const dot=isRec?C:isFix?"var(--accent)":isInc?"var(--success)":"var(--warning)";
+                    const dotL=isRec?"🔄":(isFix||isInc)?"↻":"·";
+                    const amtColor = isInc || isRecIncome ? "var(--success)" : "var(--text)";
+                    const amtSign  = isInc || isRecIncome ? "+" : "−";
                     return (
                       <div key={(item.id||item._type)+i} style={{ borderBottom:i<visibleItems.length-1?`1px solid rgba(210,225,245,.08)`:"none" }}>
                         {isConf?(
@@ -1078,8 +1097,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                               </div>
                             </div>
                             <div style={{ display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
-                              <span style={{ fontFamily:"var(--mono)", fontSize:".75rem", fontWeight:800, color:"var(--text)" }}>−{fmt(item.amount)}</span>
+                              <span style={{ fontFamily:"var(--mono)", fontSize:".75rem", fontWeight:800, color:amtColor }}>{amtSign}{fmt(item.amount)}</span>
                               {isFix && <button onClick={()=>onTogglePointFix?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
+                              {isInc && <button onClick={()=>onTogglePointIncome?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
                               {isRec && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onConfirmRecurring?.(item,curM);}} onClick={()=>onConfirmRecurring?.(item,curM)} style={{ width:22, height:22, borderRadius:"50%", background:"rgba(220,228,240,.12)", border:`1px solid ${Cbord}`, color:C, fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}>✓</button>}
                               {isSch && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();setDeleteConfirm(item.id);}} onClick={()=>setDeleteConfirm(item.id)} style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid rgba(255,255,255,.25)", color:"var(--text2)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>}
                             </div>
@@ -1093,8 +1113,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                 {/* Total */}
                 {allItems.length > 1 && (
                   <div style={{ padding:"10px 4px 0", marginTop:8, borderTop:`1px solid var(--border-soft)`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <span style={{ fontSize:".62rem", color:"var(--text2)" }}>Total à venir</span>
-                    <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color:"var(--text)" }}>−{fmt(total)}</span>
+                    <span style={{ fontSize:".62rem", color:"var(--text2)" }}>Total à venir (net)</span>
+                    <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color: total >= 0 ? "var(--success)" : "var(--text)" }}>{total >= 0 ? "+" : ""}{fmt(total)}</span>
                   </div>
                 )}
               </Modal>
@@ -1603,7 +1623,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -1701,10 +1721,22 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     [fixedExpenses, month, startYM]
   );
 
+  // Revenus fixes — même logique que les frais fixes (respecte le startYM
+  // propre à chaque revenu). Pas de pointage pour eux (aucun mécanisme
+  // dédié, comme pour les frais fixes) : affichage informatif uniquement.
+  const monthIncomes = useMemo(() => {
+    const fixedIncomes = data.fixedIncomes || [];
+    return month >= startYM ? fixedIncomes.filter(f => !f.startYM || month >= f.startYM) : [];
+  }, [data.fixedIncomes, month, startYM]);
+
   // Handler local : passe le mois courant pour le pointage par mois
   const handleTogglePointFix = useCallback(id => {
     onTogglePointFix?.(id, month);
   }, [onTogglePointFix, month]);
+
+  const handleTogglePointIncome = useCallback(id => {
+    onTogglePointIncome?.(id, month);
+  }, [onTogglePointIncome, month]);
 
   // Handler édition frais fixe — override pour ce mois uniquement
   const handleOverrideFix = useCallback((id, override) => {
@@ -2329,6 +2361,52 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
           <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
             <span style={{ color: "var(--text3)" }}>Total fixes</span>
             <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+(f.amount||0), 0))}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Section revenus fixes ── */}
+      {viewMode === "list" && monthIncomes.length > 0 && pointFilter !== "pointed" && (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--success)", textTransform: "uppercase", letterSpacing: ".08em" }}>💰 Revenus fixes du mois</div>
+              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils créditent sur ton compte</div>
+            </div>
+            <span style={{ fontSize: ".62rem", color: monthIncomes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
+              {monthIncomes.filter(f => f.pointedMonths?.[month]).length}/{monthIncomes.length}
+            </span>
+          </div>
+          {(pointFilter === "unpointed"
+            ? monthIncomes.filter(f => !f.pointedMonths?.[month])
+            : monthIncomes
+          ).length === 0 && pointFilter === "unpointed"
+            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les revenus fixes sont pointés</div>
+            : (pointFilter === "unpointed"
+                ? monthIncomes.filter(f => !f.pointedMonths?.[month])
+                : monthIncomes
+              ).map(f => {
+            const cat = (data.categories || []).find(c => c.id === f.categoryId);
+            const ov  = f.monthlyOverrides?.[month];
+            return (
+              <PointRow key={f.id}
+                item={{
+                  ...f,
+                  type:        "income",
+                  name:        ov?.name   ?? f.name,
+                  amount:      ov?.amount ?? f.amount,
+                  cat,
+                  date:        null,
+                  pointed:     !!f.pointedMonths?.[month],
+                  isOverridden: !!ov,
+                }}
+                onToggle={handleTogglePointIncome}
+                isFixed={true} />
+            );
+          })}
+          <div style={{ padding: "8px 14px", background: "rgba(104,212,152,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
+            <span style={{ color: "var(--text3)" }}>Total revenus fixes</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)" }}>+{fmt(monthIncomes.reduce((s,f) => s+((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0))}</span>
           </div>
         </div>
       )}

@@ -75,6 +75,7 @@ export const A = /** @type {const} */ ({
   SAVE_MONTH_NOTE:   "SAVE_MONTH_NOTE",
   TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
+  TOGGLE_POINT_INCOME: "TOGGLE_POINT_INCOME",
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
@@ -514,6 +515,17 @@ export function reducer(state, action) {
       return {
         ...state,
         fixedExpenses: state.fixedExpenses.map(f => {
+          if (f.id !== action.id) return f;
+          const pointedMonths = { ...(f.pointedMonths || {}) };
+          pointedMonths[action.ym] = !pointedMonths[action.ym];
+          return { ...f, pointedMonths };
+        }),
+      };
+
+    case A.TOGGLE_POINT_INCOME:
+      return {
+        ...state,
+        fixedIncomes: (state.fixedIncomes || []).map(f => {
           if (f.id !== action.id) return f;
           const pointedMonths = { ...(f.pointedMonths || {}) };
           pointedMonths[action.ym] = !pointedMonths[action.ym];

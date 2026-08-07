@@ -286,6 +286,15 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
         if (f.pointedMonths?.[ym]) ptExp   += a;
         else                       noPtExp += a;
       });
+      // Revenus fixes : désormais pointables au même titre que les frais
+      // fixes, avec leur propre suivi mensuel (pointedMonths).
+      (fixedIncomes || []).forEach(f => {
+        if (f.startYM && ym < f.startYM) return;
+        const ov = f.monthlyOverrides?.[ym];
+        const a  = (ov?.amount ?? f.amount) || 0;
+        if (f.pointedMonths?.[ym]) ptInc   += a;
+        else                       noPtInc += a;
+      });
     });
 
     const pointableTxs = transactions.filter(t => isPointable(t.type));
@@ -294,12 +303,16 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
       n + (fixedExpenses || []).filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
     const totalFix = allMonths.reduce((n, ym) =>
       n + (fixedExpenses || []).filter(f => !f.startYM || ym >= f.startYM).length, 0);
+    const nbPtInc = allMonths.reduce((n, ym) =>
+      n + (fixedIncomes || []).filter(f => (!f.startYM || ym >= f.startYM) && f.pointedMonths?.[ym]).length, 0);
+    const totalInc = allMonths.reduce((n, ym) =>
+      n + (fixedIncomes || []).filter(f => !f.startYM || ym >= f.startYM).length, 0);
 
     return {
       soldePointe:    ptInc  - ptExp,
       soldeAttente:   noPtInc - noPtExp,
-      nbPointed:      nbPtTx + nbPtFix,
-      totalPointable: pointableTxs.length + totalFix,
+      nbPointed:      nbPtTx + nbPtFix + nbPtInc,
+      totalPointable: pointableTxs.length + totalFix + totalInc,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, fixedExpenses, fixedIncomes]);
