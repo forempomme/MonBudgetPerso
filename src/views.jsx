@@ -5,7 +5,7 @@ import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME
 import {
   useBalanceWithRecurring, useMonthStats, useYearMonths, useYearTotals,
   usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy,
-  effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isPointable, isActiveForMonth,
+  effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isPointable, isActiveForMonth, isIncomeDirection,
 } from "./hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -1750,7 +1750,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     let pt = 0, noPt = 0;
     txMonth.forEach(t => {
       const a = parseFloat(t.amount) || 0;
-      const val = isIncome(t.type) ? a : -a;
+      const val = isIncomeDirection(t) ? a : -a;
       if (t.pointed) pt   += val;
       else           noPt += val;
     });
@@ -2051,7 +2051,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
         for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
         const selTxs = calSelectedDay ? (byDay[calSelectedDay] || []) : [];
-        const selNet = selTxs.reduce((s, t) => s + (isIncome(t.type) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
+        const selNet = selTxs.reduce((s, t) => s + (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
 
         return (
           <div>
@@ -2067,7 +2067,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                 {cells.map((day, i) => {
                   if (!day) return <div key={i} />;
                   const txs  = byDay[day] || [];
-                  const net  = txs.reduce((s, t) => s + (isIncome(t.type) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
+                  const net  = txs.reduce((s, t) => s + (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
                   const hasTx = txs.length > 0;
                   const isPos = net >= 0;
                   const isSel = calSelectedDay === day;
@@ -2090,7 +2090,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                       {hasTx && (
                         <div style={{ display: "flex", gap: 1.5, flexWrap: "wrap", justifyContent: "center" }}>
                           {txs.slice(0, 4).map((t, j) => (
-                            <div key={j} style={{ width: 3, height: 3, borderRadius: "50%", background: isIncome(t.type) ? "var(--success)" : "var(--danger)", opacity: .85 }} />
+                            <div key={j} style={{ width: 3, height: 3, borderRadius: "50%", background: isIncomeDirection(t) ? "var(--success)" : "var(--danger)", opacity: .85 }} />
                           ))}
                         </div>
                       )}
@@ -2127,7 +2127,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                 </div>
                 {selTxs.map((t, i) => {
                   const cat = categories.find(c => c.id === t.categoryId);
-                  const inc = isIncome(t.type);
+                  const inc = isIncomeDirection(t);
                   return (
                     <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: i < selTxs.length - 1 ? "1px solid var(--border-soft)" : "none" }}>
                       <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".85rem", flexShrink: 0 }}>
@@ -2168,7 +2168,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
             <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
               {grouped.map(([date, dayTxs]) => {
                 const allPointed = dayTxs.every(t => t.pointed);
-                const dayNet = dayTxs.reduce((s, t) => isIncome(t.type) ? s + (parseFloat(t.amount)||0) : s - (parseFloat(t.amount)||0), 0);
+                const dayNet = dayTxs.reduce((s, t) => isIncomeDirection(t) ? s + (parseFloat(t.amount)||0) : s - (parseFloat(t.amount)||0), 0);
                 return (
                   <div key={date}>
                     <div style={{ padding: "7px 14px", background: "var(--surface2)", fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", display: "flex", justifyContent: "space-between", borderBottom: "1px solid var(--border-soft)" }}>
@@ -2186,7 +2186,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                             onEdit={onEditTrans} onDelete={onDeleteTrans}
                             onTogglePoint={onTogglePointTx}
                             onDuplicate={onDuplicateTrans}
-                            allTags={allTags} />
+                            allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []} />
                         ))
                       : dayTxs.map(t => (
                           <PointRow key={t.id}
@@ -2503,7 +2503,7 @@ function BudgetBar({ exp, inc }) {
 }
 
 // 4. SwipeRow — avec bouton pointage intégré
-function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [] }) {
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [], allSideAmountTypes = [] }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
@@ -2645,11 +2645,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
               return (
                 <>
                   <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
-                  {t.mealVoucherAmount > 0 && (
-                    <span style={{ fontSize: ".5rem", padding: "1px 5px", background: "rgba(200,184,96,.15)", color: "var(--warning)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
-                      🎫 +{fmt(t.mealVoucherAmount)}
-                    </span>
-                  )}
+                  {Object.entries(t.sideAmounts || {}).map(([satId, amt]) => {
+                    if (!(amt > 0)) return null;
+                    const st = allSideAmountTypes.find(s => s.id === satId);
+                    return (
+                      <span key={satId} style={{ fontSize: ".5rem", padding: "1px 5px", background: "rgba(200,184,96,.15)", color: "var(--warning)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                        {st?.icon || "🎫"} +{fmt(amt)}
+                      </span>
+                    );
+                  })}
                   {(t.tagIds || []).map(tid => {
                     const tag = allTags.find(tg => tg.id === tid);
                     if (!tag) return null;
@@ -2668,11 +2672,14 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem" }}>
             {sign}{fmt(t.amount)}
           </div>
-          {t.mealVoucherAmount > 0 && (
-            <div style={{ fontSize: ".52rem", color: "var(--text3)" }}>
-              budget : {fmt((parseFloat(t.amount)||0) + (parseFloat(t.mealVoucherAmount)||0))}
-            </div>
-          )}
+          {(() => {
+            const sideTotal = Object.values(t.sideAmounts || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+            return sideTotal > 0 && (
+              <div style={{ fontSize: ".52rem", color: "var(--text3)" }}>
+                budget : {fmt((parseFloat(t.amount)||0) + sideTotal)}
+              </div>
+            );
+          })()}
         </div>
         <span style={{ color: "var(--text3)", fontSize: ".7rem", marginLeft: 2 }}>‹</span>
       </div>
@@ -2777,6 +2784,11 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const [provName,     setProvName]    = useState("");
   const [provAmt,      setProvAmt]     = useState("");
   const [provErr,      setProvErr]     = useState({});
+  const [pauseFilterOn,setPauseFilterOn]= useState(false);
+  const [pauseTooltipId, setPauseTooltipId] = useState(null);
+  const pausedFixCount = fixedExpenses.filter(f => f.paused).length;
+  const pausedIncCount = fixedIncomes.filter(f => f.paused).length;
+  const pausedCount    = pausedFixCount + pausedIncCount;
   const curYM        = currentYM();
   const totalFixes    = effectiveFixesForMonth(fixedExpenses, curYM);
   const totalIncomes  = effectiveIncomesForMonth(fixedIncomes, curYM);
@@ -2842,6 +2854,19 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
         </div>
       </div>
 
+      {/* ── Badge en pause ── */}
+      {pausedCount > 0 && (
+        <button onClick={() => setPauseFilterOn(v => !v)} style={{
+          display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
+          padding: "6px 12px", borderRadius: 20, cursor: "pointer",
+          background: pauseFilterOn ? "rgba(200,184,96,.18)" : "rgba(200,184,96,.1)",
+          border: `1px solid ${pauseFilterOn ? "var(--warning)" : "rgba(200,184,96,.3)"}`,
+          color: "var(--warning)", fontSize: ".66rem", fontWeight: 800,
+        }}>
+          ⏸️ {pausedCount} en pause {pauseFilterOn ? "· afficher tout" : ""}
+        </button>
+      )}
+
       {/* ── Onglets Charges / Revenus ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
         <button onClick={() => { setActiveSection("depenses"); setSelected(null); }} style={{
@@ -2870,9 +2895,15 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
       {activeSection === "depenses" && (
         fixedExpenses.length === 0
           ? <EmptyIllustration type="fixes" title="Aucune charge fixe" sub="Ajoute tes charges récurrentes pour les déduire automatiquement" cta="+ Ajouter" onCta={onNewFixed} ctaColor="var(--danger)" />
-          : (
+          : (() => {
+            const visibleExp = fixedExpenses
+              .map((f, idx) => ({ f, idx }))
+              .filter(({ f }) => !pauseFilterOn || f.paused);
+            return visibleExp.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)", fontSize:".72rem" }}>Aucune charge en pause</div>
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
-              {fixedExpenses.map((f, idx) => {
+              {visibleExp.map(({ f, idx }) => {
                 const cat    = categories.find(c => c.id === f.categoryId);
                 const selKey = f.id ?? idx;
                 return (
@@ -2925,21 +2956,44 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
                   )}
                   {/* Boutons visibles au tap uniquement */}
                   {selected === selKey && (
-                    <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                    <div style={{ display: "flex", gap: 4, marginTop: 4, position: "relative" }}>
                       <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                         onClick={e => { e.stopPropagation(); onQuickPauseFixed?.(idx); }}
+                        onDoubleClick={e => e.stopPropagation()}
                         title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
+                      {f.paused && (
+                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                          onClick={e => { e.stopPropagation(); setPauseTooltipId(v => v === selKey ? null : selKey); }}
+                          title="Depuis quand ?">ℹ️</button>
+                      )}
                       <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                         onClick={e => { e.stopPropagation(); onEditFixed(idx); }}>✏️</button>
                       <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                         onClick={e => { e.stopPropagation(); onDeleteFixed(idx); }}>✕</button>
+                      {pauseTooltipId === selKey && f.paused && (
+                        <div onClick={e => e.stopPropagation()} style={{
+                          position: "absolute", top: 28, left: 0, zIndex: 20, width: 190,
+                          background: "var(--surface3)", border: "1px solid var(--warning)", borderRadius: 10,
+                          padding: "10px 12px", boxShadow: "0 8px 24px rgba(0,0,0,.5)",
+                        }}>
+                          <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--warning)", marginBottom: 4 }}>
+                            ⏸️ En pause depuis {f.pausedFrom || "?"}
+                          </div>
+                          <div style={{ fontSize: ".58rem", color: "var(--text2)", lineHeight: 1.5 }}>
+                            {f.pausedUntil
+                              ? `Reprend automatiquement après ${f.pausedUntil}.`
+                              : "Aucune reprise programmée — réactive-la toi-même avec ▶️."}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
-          )
+          );
+          })()
       )}
 
       {/* ── Bouton ajouter charge fixe ── */}
@@ -2959,9 +3013,15 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
       {activeSection === "revenus" && (
         fixedIncomes.length === 0
           ? <EmptyIllustration type="fixes" title="Aucun revenu fixe" sub="Ajoute tes revenus récurrents (salaire, loyer perçu…)" cta="+ Ajouter" onCta={onNewFixedIncome} ctaColor="var(--success)" />
-          : (
+          : (() => {
+            const visibleInc = fixedIncomes
+              .map((f, idx) => ({ f, idx }))
+              .filter(({ f }) => !pauseFilterOn || f.paused);
+            return visibleInc.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)", fontSize:".72rem" }}>Aucun revenu en pause</div>
+            ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
-              {fixedIncomes.map((f, idx) => {
+              {visibleInc.map(({ f, idx }) => {
                 const cat    = categories.find(c => c.id === f.categoryId);
                 const selKey = `inc_${f.id ?? idx}`;
                 return (
@@ -2988,21 +3048,43 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
                       </div>
                     )}
                     {selected === selKey && (
-                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                      <div style={{ display: "flex", gap: 4, marginTop: 4, position: "relative" }}>
                         <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                           onClick={e => { e.stopPropagation(); onQuickPauseIncome?.(idx); }}
                           title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
+                        {f.paused && (
+                          <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
+                            onClick={e => { e.stopPropagation(); setPauseTooltipId(v => v === selKey ? null : selKey); }}
+                            title="Depuis quand ?">ℹ️</button>
+                        )}
                         <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                           onClick={e => { e.stopPropagation(); onEditFixedIncome(idx); }}>✏️</button>
                         <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
                           onClick={e => { e.stopPropagation(); onDeleteFixedIncome(idx); }}>✕</button>
+                        {pauseTooltipId === selKey && f.paused && (
+                          <div onClick={e => e.stopPropagation()} style={{
+                            position: "absolute", top: 28, left: 0, zIndex: 20, width: 190,
+                            background: "var(--surface3)", border: "1px solid var(--warning)", borderRadius: 10,
+                            padding: "10px 12px", boxShadow: "0 8px 24px rgba(0,0,0,.5)",
+                          }}>
+                            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--warning)", marginBottom: 4 }}>
+                              ⏸️ En pause depuis {f.pausedFrom || "?"}
+                            </div>
+                            <div style={{ fontSize: ".58rem", color: "var(--text2)", lineHeight: 1.5 }}>
+                              {f.pausedUntil
+                                ? `Reprend automatiquement après ${f.pausedUntil}.`
+                                : "Aucune reprise programmée — réactive-le toi-même avec ▶️."}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
-          )
+            );
+          })()
       )}
 
       {/* ── Bouton ajouter revenu fixe ── */}
@@ -3664,7 +3746,7 @@ function TagsModal({ onClose, tags, transactions, fixedExpenses, categories, onS
                     <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:10, overflow:"hidden" }}>
                       {[...tagTxs].sort((a,b)=>b.date.localeCompare(a.date)).map((t,i)=>{
                         const cat = categories.find(c=>c.id===t.categoryId);
-                        const isInc = isIncome(t.type);
+                        const isInc = isIncomeDirection(t);
                         return (
                           <div key={t.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderBottom:i<tagTxs.length-1?"1px solid var(--border-soft)":"none" }}>
                             <span style={{ fontSize:".85rem" }}>{cat?.icon||"💸"}</span>
@@ -3739,6 +3821,87 @@ function TagsModal({ onClose, tags, transactions, fixedExpenses, categories, onS
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  SideAmountTypesModal — v1.39.32
+//  Gestion des types de "montants à part" (tickets resto, carte
+//  cadeau…) configurables, sur le même principe que les tags.
+// ─────────────────────────────────────────────────────────────────
+const SAT_ICONS = ["🎫","🎁","💳","🪙","🏷️","💰","🎟️","🧾"];
+
+function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, onSaveType, onDeleteType }) {
+  const [editingId, setEditingId] = useState(null);
+  const [newLabel,  setNewLabel]  = useState("");
+  const [newIcon,   setNewIcon]   = useState(SAT_ICONS[0]);
+  const [creating,  setCreating]  = useState(false);
+
+  function startEdit(st) {
+    setEditingId(st.id); setNewLabel(st.label); setNewIcon(st.icon); setCreating(true);
+  }
+  function startCreate() {
+    setEditingId(null); setNewLabel(""); setNewIcon(SAT_ICONS[0]); setCreating(true);
+  }
+  function save() {
+    if (!newLabel.trim()) return;
+    onSaveType?.({ id: editingId || null, label: newLabel.trim(), icon: newIcon });
+    setCreating(false); setEditingId(null); setNewLabel("");
+  }
+
+  return (
+    <div className="modal" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-content">
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div className="modal-title" style={{ marginBottom:0 }}>🎫 Montants à part</div>
+          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"6px 10px", color:"var(--text2)", cursor:"pointer", fontSize:".75rem" }}>✕</button>
+        </div>
+        <div style={{ fontSize:".62rem", color:"var(--text3)", marginBottom:14, lineHeight:1.5 }}>
+          Ces montants (tickets resto, carte cadeau…) sont purement informatifs — jamais comptés dans ton solde. Ils apparaissent comme des boutons lors de la saisie d'une dépense.
+        </div>
+
+        {sideAmountTypes.length > 0 && (
+          <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
+            {sideAmountTypes.map(st => {
+              const count = transactions.filter(t => t.sideAmounts && st.id in t.sideAmounts).length;
+              return (
+                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:"3px solid var(--warning)", borderRadius:10 }}>
+                  <span style={{ fontSize:"1rem" }}>{st.icon}</span>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:".72rem", fontWeight:700 }}>{st.label}</div>
+                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{count} opération{count!==1?"s":""}</div>
+                  </div>
+                  <button onClick={()=>startEdit(st)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text2)", fontSize:".7rem", cursor:"pointer" }}>✏️</button>
+                  <button onClick={()=>onDeleteType?.(st.id)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer" }}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {!creating ? (
+          <button onClick={startCreate} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--warning)", borderRadius:10, padding:"11px", color:"var(--warning)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
+            ＋ Créer un nouveau type
+          </button>
+        ) : (
+          <div style={{ background:"var(--surface)", border:"1.5px solid var(--warning)", borderRadius:12, padding:14 }}>
+            <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--warning)", marginBottom:10 }}>{editingId ? "Modifier le type" : "Nouveau type"}</div>
+            <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Ex: Carte cadeau"
+              style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 12px", color:"var(--text)", fontSize:".8rem", marginBottom:10, boxSizing:"border-box" }} />
+            <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Icône</div>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:12 }}>
+              {SAT_ICONS.map(ic=>(
+                <button key={ic} onClick={()=>setNewIcon(ic)} style={{ width:32, height:32, background:newIcon===ic?"var(--accent-glow)":"transparent", border:`1px solid ${newIcon===ic?"var(--accent)":"var(--border)"}`, borderRadius:7, fontSize:"1rem", cursor:"pointer" }}>{ic}</button>
+              ))}
+            </div>
+            <div style={{ display:"flex", gap:8 }}>
+              <button onClick={()=>{setCreating(false); setEditingId(null);}} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
+              <button onClick={save} style={{ flex:2, background:newLabel.trim()?"var(--warning)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newLabel.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>{editingId ? "Enregistrer" : "Créer"}</button>
+            </div>
           </div>
         )}
       </div>
@@ -3944,7 +4107,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
             <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>Dernières opérations</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: "var(--radius-sm)", overflow: "hidden", border: "1px solid var(--border)" }}>
               {recent.map((t, i) => {
-                const isInc = isIncome(t.type);
+                const isInc = isIncomeDirection(t);
                 return (
                   <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: i < recent.length-1 ? "1px solid var(--border-soft)" : "none", background: "var(--surface)" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -4194,26 +4357,40 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           );
         })()}
 
-        {/* Tickets resto — agrégat annuel, purement informatif */}
+        {/* Montants à part — agrégat annuel, purement informatif */}
         {(() => {
           const yearStr = currentYear.toString();
           const curYM   = currentYM();
           const isCurYear = yearStr === curYM.slice(0, 4);
+          const sideTypes = data.sideAmountTypes || [];
 
-          const voucherTxs = (data.transactions || []).filter(t =>
-            t.date.startsWith(yearStr) && t.type === "expense" && (parseFloat(t.mealVoucherAmount) || 0) > 0
+          const sideTxs = (data.transactions || []).filter(t =>
+            t.date.startsWith(yearStr) && t.type === "expense" &&
+            Object.values(t.sideAmounts || {}).some(v => (parseFloat(v) || 0) > 0)
           );
-          if (voucherTxs.length === 0) return null;
+          if (sideTxs.length === 0) return null;
 
-          const totalVoucher = voucherTxs.reduce((s, t) => s + (parseFloat(t.mealVoucherAmount) || 0), 0);
-          const totalPaid    = voucherTxs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-          const totalBudget  = totalPaid + totalVoucher;
-          const thisMonthVoucher = isCurYear
-            ? voucherTxs.filter(t => t.date.startsWith(curYM)).reduce((s, t) => s + (parseFloat(t.mealVoucherAmount) || 0), 0)
+          const txSideTotal = t => Object.values(t.sideAmounts || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+
+          const totalSide  = sideTxs.reduce((s, t) => s + txSideTotal(t), 0);
+          const totalPaid  = sideTxs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+          const totalBudget = totalPaid + totalSide;
+          const thisMonthSide = isCurYear
+            ? sideTxs.filter(t => t.date.startsWith(curYM)).reduce((s, t) => s + txSideTotal(t), 0)
             : null;
 
+          // Répartition par type de montant à part (TR, carte cadeau…)
+          const byType = {};
+          sideTxs.forEach(t => Object.entries(t.sideAmounts || {}).forEach(([satId, amt]) => {
+            byType[satId] = (byType[satId] || 0) + (parseFloat(amt) || 0);
+          }));
+          const typeRows = Object.entries(byType)
+            .sort((a, b) => b[1] - a[1])
+            .map(([satId, amt]) => ({ st: sideTypes.find(s => s.id === satId), amt }));
+
+          // Répartition par catégorie (toutes types de montant à part confondus)
           const byCat = {};
-          voucherTxs.forEach(t => { byCat[t.categoryId] = (byCat[t.categoryId] || 0) + (parseFloat(t.mealVoucherAmount) || 0); });
+          sideTxs.forEach(t => { byCat[t.categoryId] = (byCat[t.categoryId] || 0) + txSideTotal(t); });
           const catRows = Object.entries(byCat)
             .sort((a, b) => b[1] - a[1])
             .map(([catId, amt]) => ({ cat: data.categories.find(c => c.id === catId), amt }));
@@ -4224,12 +4401,12 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
               borderRadius: 16, padding: 16, marginBottom: 12,
             }}>
               <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>
-                🎫 Tickets resto — {currentYear}
+                🎫 Montants à part — {currentYear}
               </div>
-              <div style={{ fontSize: "1.7rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalVoucher)}</div>
+              <div style={{ fontSize: "1.7rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalSide)}</div>
               <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.5)", marginTop: 4 }}>
-                Sur {voucherTxs.length} opération{voucherTxs.length > 1 ? "s" : ""} cette année
-                {thisMonthVoucher != null && thisMonthVoucher > 0 && ` · dont ${fmt(thisMonthVoucher)} ce mois-ci`}
+                Sur {sideTxs.length} opération{sideTxs.length > 1 ? "s" : ""} cette année
+                {thisMonthSide != null && thisMonthSide > 0 && ` · dont ${fmt(thisMonthSide)} ce mois-ci`}
               </div>
 
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -4238,14 +4415,26 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
                   <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--danger)" }}>{fmt(totalPaid)}</div>
                 </div>
                 <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Tickets resto</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalVoucher)}</div>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Montants à part</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalSide)}</div>
                 </div>
                 <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
                   <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Budget réel</div>
                   <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "#fff" }}>{fmt(totalBudget)}</div>
                 </div>
               </div>
+
+              {typeRows.length > 1 && (
+                <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
+                  {typeRows.map(({ st, amt }) => (
+                    <div key={st?.id || "—"} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}>
+                      <span style={{ fontSize: ".68rem" }}>{st?.icon || "🎫"}</span>
+                      <span style={{ fontSize: ".62rem", color: "rgba(255,255,255,.7)" }}>{st?.label || "—"}</span>
+                      <span style={{ fontSize: ".64rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {catRows.length > 0 && (
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.1)" }}>
@@ -4259,7 +4448,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
               )}
 
               <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 10, lineHeight: 1.5 }}>
-                "Budget réel" = ce qui est sorti de ton compte + tickets resto. N'affecte jamais ton solde.
+                "Budget réel" = ce qui est sorti de ton compte + montants à part. N'affecte jamais ton solde.
               </div>
             </div>
           );
@@ -4749,8 +4938,9 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType }) {
   const [catFilter,     setCatFilter]     = useState("all");
+  const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
   const [roundOn,       setRoundOn]       = useState(roundingEnabled);
@@ -4853,6 +5043,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const linkedCount = data.categories.filter(c=>c.linkedToId).length;
   const recurCount  = (data.recurringTemplates||[]).length;
   const quickTplCount = (data.quickTemplates||[]).length;
+  const sideAmountTypesCount = (data.sideAmountTypes||[]).length;
   const last        = (data.backupHistory||[])[0];
 
   const GROUPS = [
@@ -4902,6 +5093,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: quickTplCount > 0,
           hint: "Aucun template rapide créé",
           action: onOpenQuickTemplates },
+        { id:"sideAmountTypes", icon:"🎫", label:"Montants à part",
+          badge: sideAmountTypesCount > 0 ? `${sideAmountTypesCount} type${sideAmountTypesCount>1?"s":""}` : "Aucun",
+          configured: sideAmountTypesCount > 0,
+          hint: "Aucun type de montant à part créé",
+          action: () => setShowSideAmountTypesModal(true) },
       ]
     },
     {
@@ -5398,6 +5594,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           </div>
         )}
       </Sheet>
+      {showSideAmountTypesModal && (
+        <SideAmountTypesModal
+          onClose={() => setShowSideAmountTypesModal(false)}
+          sideAmountTypes={data.sideAmountTypes || []}
+          transactions={data.transactions || []}
+          onSaveType={onSaveSideAmountType}
+          onDeleteType={onDeleteSideAmountType}
+        />
+      )}
     </div>
   );
 }

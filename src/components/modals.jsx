@@ -218,7 +218,7 @@ function NumPad({ value, onChange, type, onTypeChange }) {
 //  Transaction modal — redessiné v1.28.0
 // ─────────────────────────────────────────────────────────────────
 export function TransModal({
-  transactions, categories, cagnottes, tags = [],
+  transactions, categories, cagnottes, tags = [], sideAmountTypes = [],
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
   editingId, defaultType = "expense",
   onSave, onSaveRecurring, onClose,
@@ -236,8 +236,12 @@ export function TransModal({
   const [frequency,   setFrequency]   = useState("monthly");
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
-  const [mealVoucher, setMealVoucher] = useState(tx?.mealVoucherAmount != null ? String(tx.mealVoucherAmount) : "");
-  const [voucherOpen, setVoucherOpen] = useState(tx?.mealVoucherAmount != null);
+  const [mealVoucher, setMealVoucher] = useState(() => {
+    const init = {};
+    if (tx?.sideAmounts) Object.entries(tx.sideAmounts).forEach(([k, v]) => { init[k] = String(v); });
+    return init;
+  });
+  const [voucherOpen, setVoucherOpen] = useState(() => new Set(tx?.sideAmounts ? Object.keys(tx.sideAmounts) : []));
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
@@ -301,7 +305,17 @@ export function TransModal({
     // relier la toute première opération à ce modèle — sinon elle ne compte pas
     // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, mealVoucherAmount: (type === "expense" && mealVoucher) ? parseAmt(mealVoucher) : undefined });
+    const sideAmounts = {};
+    if (type === "expense") {
+      voucherOpen.forEach(k => {
+        const raw = mealVoucher[k];
+        if (raw) {
+          const v = parseAmt(raw);
+          if (!isNaN(v) && v > 0) sideAmounts[k] = v;
+        }
+      });
+    }
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts: Object.keys(sideAmounts).length > 0 ? sideAmounts : undefined });
     if (recurringId) {
       onSaveRecurring?.({
         id: recurringId,
@@ -641,34 +655,51 @@ export function TransModal({
           style={{ width: "100%", boxSizing: "border-box" }}
         />
 
-        {/* Tickets resto — purement informatif, jamais compté dans le solde */}
-        {type === "expense" && (
+        {/* Montants à part — purement informatifs, jamais comptés dans le solde */}
+        {type === "expense" && sideAmountTypes.length > 0 && (
           <div style={{ marginTop: 8 }}>
-            {!voucherOpen ? (
-              <button type="button" onClick={() => setVoucherOpen(true)} style={{
-                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
-                borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
-                color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
-              }}>
-                TR 🎫
-              </button>
-            ) : (
-              <>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12 }}>
-                  <span style={{ fontSize: ".85rem" }}>🎫</span>
-                  <input type="text" inputMode="decimal" placeholder="Montant en tickets resto" autoFocus
-                    value={mealVoucher}
-                    onChange={e => setMealVoucher(e.target.value.replace(/[^0-9,.]/g, ""))}
+            {sideAmountTypes.filter(st => !voucherOpen.has(st.id)).length > 0 && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {sideAmountTypes.filter(st => !voucherOpen.has(st.id)).map(st => (
+                  <button key={st.id} type="button"
+                    onClick={() => setVoucherOpen(prev => new Set(prev).add(st.id))}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
+                      borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
+                      color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
+                    }}>
+                    {st.icon} {st.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {[...voucherOpen].map(k => {
+              const st = sideAmountTypes.find(s => s.id === k);
+              if (!st) return null;
+              return (
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
+                  <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
+                  <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
+                    value={mealVoucher[k] || ""}
+                    onChange={e => {
+                      const v = e.target.value.replace(/[^0-9,.]/g, "");
+                      setMealVoucher(prev => ({ ...prev, [k]: v }));
+                    }}
                     style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }}
                   />
-                  <button type="button" onClick={() => { setMealVoucher(""); setVoucherOpen(false); }} style={{
-                    background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0,
-                  }}>✕</button>
+                  <button type="button" onClick={() => {
+                    setMealVoucher(prev => { const n = { ...prev }; delete n[k]; return n; });
+                    setVoucherOpen(prev => { const n = new Set(prev); n.delete(k); return n; });
+                  }} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
                 </div>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-                  Juste une indication de ton budget courses réel — n'affecte pas ton solde.
-                </div>
-              </>
+              );
+            })}
+
+            {voucherOpen.size > 0 && (
+              <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+                Juste une indication de ton budget réel — n'affecte pas ton solde.
+              </div>
             )}
           </div>
         )}

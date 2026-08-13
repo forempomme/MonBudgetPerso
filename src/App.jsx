@@ -144,6 +144,8 @@ export default function App() {
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
   const deleteTag              = useCallback(id   => dispatch({ type: A.DELETE_TAG,  id   }), []);
+  const saveSideAmountType     = useCallback(sat  => dispatch({ type: A.SAVE_SIDE_AMOUNT_TYPE,   sat }), []);
+  const deleteSideAmountType   = useCallback(id   => dispatch({ type: A.DELETE_SIDE_AMOUNT_TYPE, id  }), []);
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
@@ -665,6 +667,8 @@ export default function App() {
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
         onOpenQuickTemplates={() => setQuickManagerOpen(true)}
+        onSaveSideAmountType={saveSideAmountType}
+        onDeleteSideAmountType={deleteSideAmountType}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
@@ -887,6 +891,7 @@ export default function App() {
           categories={data.categories}
           cagnottes={data.cagnottes}
           tags={data.tags || []}
+          sideAmountTypes={data.sideAmountTypes || []}
           roundingEnabled={data.roundingEnabled}
           roundingCagnotteId={data.roundingCagnotteId}
           roundingRule={data.roundingRule || "ceil"}

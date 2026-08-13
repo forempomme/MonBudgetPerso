@@ -179,29 +179,6 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
 // ─────────────────────────────────────────────────────────────────
 //  Sparkline: last 6 months net values
 // ─────────────────────────────────────────────────────────────────
-export function useSpark(transactions, fixedExpenses) {
-  const curYM = currentYM();
-
-  return useMemo(() => {
-    const now = new Date();
-    return Array.from({ length: 6 }, (_, i) => {
-      const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      let inc = 0, exp = 0;
-      transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
-        const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))          inc += a;
-        else if (t.type === "expense") exp += a;
-      });
-      if (ym === curYM) {
-        exp += effectiveFixesForMonth(fixedExpenses, ym);
-        inc += effectiveIncomesForMonth(fixedIncomes, ym);
-      }
-      return inc - exp;
-    });
-  }, [transactions, fixedExpenses, curYM]);
-}
-
 // ─────────────────────────────────────────────────────────────────
 //  Year totals
 // ─────────────────────────────────────────────────────────────────
@@ -282,16 +259,24 @@ export function isPointable(type) {
   return type !== "decagnottage" && type !== "transfer";
 }
 
+// ─────────────────────────────────────────────────────────────────
+//  isIncomeDirection — comme isIncome(t.type), mais respecte le sens
+//  choisi (adjSign) pour une opération d'équilibre, qui peut ajouter OU
+//  soustraire. Source unique pour ne plus jamais coder en dur "une
+//  opération d'équilibre va toujours dans le sens dépense".
+// ─────────────────────────────────────────────────────────────────
+export function isIncomeDirection(t) {
+  if (t.type === "balance_adjustment") return t.adjSign === "+";
+  return isIncome(t.type);
+}
+
 export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
   return useMemo(() => {
     let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
 
     transactions.filter(t => isPointable(t.type)).forEach(t => {
       const a = parseFloat(t.amount) || 0;
-      // Une opération d'équilibre (⚖️) peut ajouter OU soustraire du solde
-      // pointé selon le sens choisi (adjSign) — les anciennes opérations
-      // sans ce champ gardent leur comportement d'origine (soustraction).
-      const isInc = t.type === "balance_adjustment" ? t.adjSign === "+" : isIncome(t.type);
+      const isInc = isIncomeDirection(t);
       if (t.pointed) { if (isInc) ptInc += a; else ptExp += a; }
       else           { if (isInc) noPtInc += a; else noPtExp += a; }
     });

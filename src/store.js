@@ -92,6 +92,8 @@ export const A = /** @type {const} */ ({
   SAVE_NOTIF_SETTINGS:      "SAVE_NOTIF_SETTINGS",
   SAVE_TAG:                 "SAVE_TAG",
   DELETE_TAG:               "DELETE_TAG",
+  SAVE_SIDE_AMOUNT_TYPE:    "SAVE_SIDE_AMOUNT_TYPE",
+  DELETE_SIDE_AMOUNT_TYPE:  "DELETE_SIDE_AMOUNT_TYPE",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
   IMPORT_DATA:              "IMPORT_DATA",
   CLEAR_WARNING:            "CLEAR_WARNING",
@@ -145,6 +147,11 @@ export const DEFAULT_DATA = {
   // Déclenchés par un appui long sur le bouton +. Le montant et la date
   // restent à saisir à chaque fois (jamais mémorisés).
   quickTemplates:            [],
+  // Types de "montants à part" (v1.39.32) — [{ id, label, icon }]. Purement
+  // informatif : jamais compté dans aucun calcul de solde. "Tickets resto"
+  // préconfiguré comme premier type, d'autres peuvent être ajoutés depuis
+  // Options (ex: carte cadeau, remboursement attendu…).
+  sideAmountTypes:           [{ id: "tr", label: "Tickets resto", icon: "🎫" }],
   notifSettings: {
     enabled:    false,
     recurring:  true,
@@ -598,6 +605,27 @@ export function reducer(state, action) {
         transactions: state.transactions.map(t => ({
           ...t, tagIds: (t.tagIds || []).filter(tid => tid !== action.id)
         })),
+      };
+
+    case A.SAVE_SIDE_AMOUNT_TYPE: {
+      const { sat } = action;
+      const list = state.sideAmountTypes || [];
+      if (sat.id) {
+        return { ...state, sideAmountTypes: list.map(s => s.id === sat.id ? { ...s, ...sat } : s) };
+      }
+      return { ...state, sideAmountTypes: [...list, { ...sat, id: uid("sat") }] };
+    }
+
+    case A.DELETE_SIDE_AMOUNT_TYPE:
+      return {
+        ...state,
+        sideAmountTypes: (state.sideAmountTypes || []).filter(s => s.id !== action.id),
+        transactions: state.transactions.map(t => {
+          if (!t.sideAmounts || !(action.id in t.sideAmounts)) return t;
+          const sideAmounts = { ...t.sideAmounts };
+          delete sideAmounts[action.id];
+          return { ...t, sideAmounts };
+        }),
       };
 
     case A.SAVE_SCHEDULED: {
