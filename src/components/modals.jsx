@@ -236,6 +236,8 @@ export function TransModal({
   const [frequency,   setFrequency]   = useState("monthly");
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
+  const [mealVoucher, setMealVoucher] = useState(tx?.mealVoucherAmount != null ? String(tx.mealVoucherAmount) : "");
+  const [voucherOpen, setVoucherOpen] = useState(tx?.mealVoucherAmount != null);
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
@@ -299,7 +301,7 @@ export function TransModal({
     // relier la toute première opération à ce modèle — sinon elle ne compte pas
     // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined });
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, mealVoucherAmount: (type === "expense" && mealVoucher) ? parseAmt(mealVoucher) : undefined });
     if (recurringId) {
       onSaveRecurring?.({
         id: recurringId,
@@ -638,6 +640,38 @@ export function TransModal({
           onChange={e => setNote(e.target.value)}
           style={{ width: "100%", boxSizing: "border-box" }}
         />
+
+        {/* Tickets resto — purement informatif, jamais compté dans le solde */}
+        {type === "expense" && (
+          <div style={{ marginTop: 8 }}>
+            {!voucherOpen ? (
+              <button type="button" onClick={() => setVoucherOpen(true)} style={{
+                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
+                borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
+                color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
+              }}>
+                TR 🎫
+              </button>
+            ) : (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12 }}>
+                  <span style={{ fontSize: ".85rem" }}>🎫</span>
+                  <input type="text" inputMode="decimal" placeholder="Montant en tickets resto" autoFocus
+                    value={mealVoucher}
+                    onChange={e => setMealVoucher(e.target.value.replace(/[^0-9,.]/g, ""))}
+                    style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }}
+                  />
+                  <button type="button" onClick={() => { setMealVoucher(""); setVoucherOpen(false); }} style={{
+                    background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0,
+                  }}>✕</button>
+                </div>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+                  Juste une indication de ton budget courses réel — n'affecte pas ton solde.
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Tags */}
         {tags.length > 0 && !isCag && (

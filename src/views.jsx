@@ -2645,6 +2645,11 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
               return (
                 <>
                   <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
+                  {t.mealVoucherAmount > 0 && (
+                    <span style={{ fontSize: ".5rem", padding: "1px 5px", background: "rgba(200,184,96,.15)", color: "var(--warning)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                      🎫 +{fmt(t.mealVoucherAmount)}
+                    </span>
+                  )}
                   {(t.tagIds || []).map(tid => {
                     const tag = allTags.find(tg => tg.id === tid);
                     if (!tag) return null;
@@ -2659,8 +2664,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
             })()}
           </div>
         </div>
-        <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", flexShrink: 0 }}>
-          {sign}{fmt(t.amount)}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
+          <div className={`item-amount ${cls}`} style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem" }}>
+            {sign}{fmt(t.amount)}
+          </div>
+          {t.mealVoucherAmount > 0 && (
+            <div style={{ fontSize: ".52rem", color: "var(--text3)" }}>
+              budget : {fmt((parseFloat(t.amount)||0) + (parseFloat(t.mealVoucherAmount)||0))}
+            </div>
+          )}
         </div>
         <span style={{ color: "var(--text3)", fontSize: ".7rem", marginLeft: 2 }}>‹</span>
       </div>
@@ -4179,6 +4191,77 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
                 />
               )}
             </>
+          );
+        })()}
+
+        {/* Tickets resto — agrégat annuel, purement informatif */}
+        {(() => {
+          const yearStr = currentYear.toString();
+          const curYM   = currentYM();
+          const isCurYear = yearStr === curYM.slice(0, 4);
+
+          const voucherTxs = (data.transactions || []).filter(t =>
+            t.date.startsWith(yearStr) && t.type === "expense" && (parseFloat(t.mealVoucherAmount) || 0) > 0
+          );
+          if (voucherTxs.length === 0) return null;
+
+          const totalVoucher = voucherTxs.reduce((s, t) => s + (parseFloat(t.mealVoucherAmount) || 0), 0);
+          const totalPaid    = voucherTxs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+          const totalBudget  = totalPaid + totalVoucher;
+          const thisMonthVoucher = isCurYear
+            ? voucherTxs.filter(t => t.date.startsWith(curYM)).reduce((s, t) => s + (parseFloat(t.mealVoucherAmount) || 0), 0)
+            : null;
+
+          const byCat = {};
+          voucherTxs.forEach(t => { byCat[t.categoryId] = (byCat[t.categoryId] || 0) + (parseFloat(t.mealVoucherAmount) || 0); });
+          const catRows = Object.entries(byCat)
+            .sort((a, b) => b[1] - a[1])
+            .map(([catId, amt]) => ({ cat: data.categories.find(c => c.id === catId), amt }));
+
+          return (
+            <div style={{
+              background: "linear-gradient(135deg,#1a1508,#241c0a)", border: "1px solid rgba(200,184,96,.25)",
+              borderRadius: 16, padding: 16, marginBottom: 12,
+            }}>
+              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>
+                🎫 Tickets resto — {currentYear}
+              </div>
+              <div style={{ fontSize: "1.7rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalVoucher)}</div>
+              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.5)", marginTop: 4 }}>
+                Sur {voucherTxs.length} opération{voucherTxs.length > 1 ? "s" : ""} cette année
+                {thisMonthVoucher != null && thisMonthVoucher > 0 && ` · dont ${fmt(thisMonthVoucher)} ce mois-ci`}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Payé (banque)</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--danger)" }}>{fmt(totalPaid)}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Tickets resto</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalVoucher)}</div>
+                </div>
+                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Budget réel</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "#fff" }}>{fmt(totalBudget)}</div>
+                </div>
+              </div>
+
+              {catRows.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.1)" }}>
+                  {catRows.map(({ cat, amt }) => (
+                    <div key={cat?.id || "—"} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: ".64rem", color: "rgba(255,255,255,.75)" }}>
+                      <span>{cat?.icon || "🎫"} {cat?.name || "Sans catégorie"}</span>
+                      <span style={{ fontWeight: 800, color: "var(--warning)" }}>{fmt(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 10, lineHeight: 1.5 }}>
+                "Budget réel" = ce qui est sorti de ton compte + tickets resto. N'affecte jamais ton solde.
+              </div>
+            </div>
           );
         })()}
 
