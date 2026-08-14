@@ -915,6 +915,7 @@ export default function App() {
         <QuickTemplateSheet
           template={quickEditTpl}
           categories={data.categories}
+          sideAmountTypes={data.sideAmountTypes || []}
           onSave={tx => { saveTransaction(tx); setQuickEditTpl(null); }}
           onClose={() => setQuickEditTpl(null)}
         />

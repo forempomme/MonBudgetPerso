@@ -1734,10 +1734,12 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
 //  Réutilise le vrai NumPad (mêmes touches, mêmes couleurs) : le montant
 //  et la date restent à saisir à chaque fois, rien n'est pré-rempli.
 // ─────────────────────────────────────────────────────────────────
-export function QuickTemplateSheet({ template, categories, onSave, onClose }) {
+export function QuickTemplateSheet({ template, categories, sideAmountTypes = [], onSave, onClose }) {
   const [type, setType]   = useState(template.type || "expense");
   const [amount, setAmount] = useState("");
   const [date, setDate]   = useState(todayISO());
+  const [sideVals, setSideVals]   = useState({});
+  const [sideOpen, setSideOpen]   = useState(new Set());
   const [showNative, setShowNative] = useState(false);
   const [err, setErr]     = useState(null);
   const toast = useToast();
@@ -1752,7 +1754,12 @@ export function QuickTemplateSheet({ template, categories, onSave, onClose }) {
   function handleSave() {
     const amt = parseAmt(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Montant requis"); return; }
-    onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name });
+    const sideAmounts = {};
+    [...sideOpen].forEach(k => {
+      const v = parseAmt(sideVals[k]);
+      if (!isNaN(v) && v > 0) sideAmounts[k] = v;
+    });
+    onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name, sideAmounts: Object.keys(sideAmounts).length > 0 ? sideAmounts : undefined });
     toast?.(`${template.icon} ${template.name} enregistré`, "success");
     onClose();
   }
@@ -1768,6 +1775,49 @@ export function QuickTemplateSheet({ template, categories, onSave, onClose }) {
           <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>{cat?.name || "Sans catégorie"}</div>
         </div>
       </div>
+
+      {/* Montants à part — uniquement ceux configurés dans Options, purement informatifs */}
+      {type === "expense" && sideAmountTypes.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {sideAmountTypes.filter(st => !sideOpen.has(st.id)).length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {sideAmountTypes.filter(st => !sideOpen.has(st.id)).map(st => (
+                <button key={st.id} type="button"
+                  onClick={() => setSideOpen(prev => new Set(prev).add(st.id))}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px",
+                    borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
+                    color: "var(--warning)", fontSize: ".68rem", fontWeight: 800, cursor: "pointer",
+                  }}>
+                  {st.icon} {st.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {[...sideOpen].map(k => {
+            const st = sideAmountTypes.find(s => s.id === k);
+            if (!st) return null;
+            return (
+              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
+                <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
+                <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
+                  value={sideVals[k] || ""}
+                  onChange={e => {
+                    const v = e.target.value.replace(/[^0-9,.]/g, "");
+                    setSideVals(prev => ({ ...prev, [k]: v }));
+                  }}
+                  style={{ flex: 1, boxSizing: "border-box", fontSize: ".72rem", background: "var(--surface3)" }}
+                />
+                <button type="button" onClick={() => {
+                  setSideVals(prev => { const n = { ...prev }; delete n[k]; return n; });
+                  setSideOpen(prev => { const n = new Set(prev); n.delete(k); return n; });
+                }} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".68rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Raccourcis date — identiques à la saisie normale */}
       <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
