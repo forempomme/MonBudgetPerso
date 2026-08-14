@@ -178,7 +178,34 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
 
 // ─────────────────────────────────────────────────────────────────
 //  Sparkline: last 6 months net values
+//  Utilisée par components/index.jsx (Sparkline). Note : l'appelant ne
+//  passe que transactions/fixedExpenses (pas fixedIncomes) — la version
+//  d'origine référençait une variable fixedIncomes jamais définie ici,
+//  ce qui aurait fait planter le calcul dès qu'il atteignait le mois en
+//  cours. Corrigé pour ne dépendre que de ce qui est réellement fourni.
 // ─────────────────────────────────────────────────────────────────
+export function useSpark(transactions, fixedExpenses) {
+  const curYM = currentYM();
+
+  return useMemo(() => {
+    const now = new Date();
+    return Array.from({ length: 6 }, (_, i) => {
+      const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      let inc = 0, exp = 0;
+      transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
+        const a = parseFloat(t.amount) || 0;
+        if (isIncome(t.type))          inc += a;
+        else if (t.type === "expense") exp += a;
+      });
+      if (ym === curYM) {
+        exp += effectiveFixesForMonth(fixedExpenses, ym);
+      }
+      return inc - exp;
+    });
+  }, [transactions, fixedExpenses, curYM]);
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  Year totals
 // ─────────────────────────────────────────────────────────────────
