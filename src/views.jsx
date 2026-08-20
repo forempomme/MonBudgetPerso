@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
 import { Delta, Sparkline, Modal } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign, todayISO } from "./utils.js";
@@ -5178,15 +5178,16 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             </div>
             <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
               {group.items.map((item, i) => (
-                <div key={item.id}
+                <Fragment key={item.id}>
+                <div
                   onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
                   onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
                   onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); if (item.action) item.action(); else setOpenSheet(item.id); }}
                   onClick={()=> item.action ? item.action() : setOpenSheet(item.id)}
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
-                    borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
-                    cursor:"pointer", touchAction:"manipulation", position:"relative",
+                    borderBottom: (i<group.items.length-1 && infoOpenId!==item.id) ? "1px solid var(--border-soft)" : "none",
+                    cursor:"pointer", touchAction:"manipulation",
                   }}>
                   <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>{item.icon}</span>
                   <span style={{ display:"flex", alignItems:"center", gap:5, flex:1, minWidth:0 }}>
@@ -5196,8 +5197,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                         onClick={e=>{ e.stopPropagation(); setInfoOpenId(id => id===item.id ? null : item.id); }}
                         onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); setInfoOpenId(id => id===item.id ? null : item.id); }}
                         style={{
-                          width:15, height:15, borderRadius:"50%", background:"var(--surface2)", border:"1px solid var(--border)",
-                          color:"var(--text2)", fontSize:".52rem", fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center",
+                          width:15, height:15, borderRadius:"50%",
+                          background: infoOpenId===item.id ? "var(--accent-glow)" : "var(--surface2)",
+                          border: `1px solid ${infoOpenId===item.id ? "var(--accent)" : "var(--border)"}`,
+                          color: infoOpenId===item.id ? "var(--accent)" : "var(--text2)",
+                          fontSize:".52rem", fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center",
                           flexShrink:0, cursor:"pointer",
                         }}>ⓘ</span>
                     )}
@@ -5206,20 +5210,24 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     {item.badge}
                   </span>
                   <span style={{ color:"var(--text3)", fontSize:".8rem", flexShrink:0 }}>›</span>
-                  {infoOpenId === item.id && (
-                    <div
-                      onClick={e=>e.stopPropagation()}
-                      onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); }}
-                      style={{
-                        position:"absolute", top:"100%", left:14, right:14, zIndex:15, marginTop:4,
-                        background:"var(--surface3)", border:"1px solid var(--accent)", borderRadius:10,
-                        padding:"9px 12px", fontSize:".62rem", color:"var(--text2)", lineHeight:1.5,
-                        boxShadow:"0 8px 24px rgba(0,0,0,.5)",
-                      }}>
+                </div>
+                {infoOpenId === item.id && (
+                  <div
+                    onClick={e=>e.stopPropagation()}
+                    onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); }}
+                    style={{
+                      padding:"2px 16px 12px", background:"var(--surface)",
+                      borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
+                    }}>
+                    <div style={{
+                      background:"var(--surface3)", border:"1px solid var(--accent)", borderRadius:10,
+                      padding:"9px 12px", fontSize:".62rem", color:"var(--text2)", lineHeight:1.5,
+                    }}>
                       {item.desc}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
+                </Fragment>
               ))}
             </div>
           </div>
