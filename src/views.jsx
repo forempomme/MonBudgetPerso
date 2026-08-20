@@ -4967,6 +4967,7 @@ function LinkForm({ categories, onLink }) {
 
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag }) {
   const [catFilter,     setCatFilter]     = useState("all");
+  const [infoOpenId,    setInfoOpenId]    = useState(null);
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
@@ -5082,7 +5083,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         { id:"security", icon:"🔒", label:"PIN & biométrie",
           badge: pinOn?"PIN actif":"Désactivé",
           configured: pinOn,
-          hint: "PIN et biométrie non configurés" },
+          hint: "PIN et biométrie non configurés",
+          desc: "Protège l'ouverture de l'app par code ou empreinte/FaceID." },
       ]
     },
     {
@@ -5091,15 +5093,18 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         { id:"autoSavings", icon:"🎯", label:"Versements automatiques",
           badge: autoCount > 0 ? `${autoCount} plan${autoCount>1?"s":""}` : "Inactif",
           configured: autoCount > 0,
-          hint: "Aucun versement automatique actif" },
+          hint: "Aucun versement automatique actif",
+          desc: "Vire un montant fixe chaque mois vers une cagnotte, sans y penser." },
         { id:"rounding", icon:"🐷", label:"Arrondi automatique",
           badge: roundOn && roundCag ? roundCag.name : "Désactivé",
           configured: roundOn && !!roundCag,
-          hint: "Arrondi automatique désactivé" },
+          hint: "Arrondi automatique désactivé",
+          desc: "Arrondit chaque dépense et met la différence de côté dans une cagnotte." },
         { id:"alert", icon:"🔔", label:"Alerte solde bas",
           badge: alertOn ? `${thresh} €` : "Désactivé",
           configured: alertOn,
-          hint: "Aucune alerte de solde définie" },
+          hint: "Aucune alerte de solde définie",
+          desc: "Prévient sur l'accueil quand ton solde estimé passe sous un seuil choisi." },
       ]
     },
     {
@@ -5108,29 +5113,35 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         { id:"categories", icon:"🏷️", label:"Gestion catégories",
           badge: `${data.categories.length} cat.`,
           configured: true,
-          hint: "" },
+          hint: "",
+          desc: "Crée, modifie ou supprime les catégories utilisées pour classer tes opérations." },
         { id:"links", icon:"🔗", label:"Liaisons",
           badge: linkedCount > 0 ? `${linkedCount} lien${linkedCount>1?"s":""}` : "Aucune",
           configured: linkedCount > 0,
-          hint: "Aucune liaison de catégorie créée" },
+          hint: "Aucune liaison de catégorie créée",
+          desc: "Relie deux catégories pour les compter ensemble dans les statistiques." },
         { id:"recurring", icon:"🔄", label:"Récurrentes",
           badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
           configured: recurCount > 0,
-          hint: "Aucune transaction récurrente définie" },
+          hint: "Aucune transaction récurrente définie",
+          desc: "Liste les dépenses/revenus qui reviennent chaque mois ou chaque année." },
         { id:"quickTemplates", icon:"⚡", label:"Templates rapides",
           badge: quickTplCount > 0 ? `${quickTplCount} template${quickTplCount>1?"s":""}` : "Aucun",
           configured: quickTplCount > 0,
           hint: "Aucun template rapide créé",
+          desc: "Enregistre une dépense fréquente en 2 taps, via un appui long sur le bouton +.",
           action: onOpenQuickTemplates },
         { id:"sideAmountTypes", icon:"🎫", label:"Montants à part",
           badge: sideAmountTypesCount > 0 ? `${sideAmountTypesCount} type${sideAmountTypesCount>1?"s":""}` : "Aucun",
           configured: sideAmountTypesCount > 0,
           hint: "Aucun type de montant à part créé",
+          desc: "Note un montant payé autrement (tickets resto…), sans toucher ton solde.",
           action: () => setShowSideAmountTypesModal(true) },
         { id:"tags", icon:"🏷️", label:"Tags",
           badge: tagsCount > 0 ? `${tagsCount} tag${tagsCount>1?"s":""}` : "Aucun",
           configured: tagsCount > 0,
           hint: "Aucun tag créé",
+          desc: "Étiquette tes opérations pour les retrouver facilement (vacances, pro…).",
           action: () => setShowTagsModalOpt(true) },
       ]
     },
@@ -5140,7 +5151,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         { id:"notif", icon:"🔔", label:"Notifications locales",
           badge: notifOn ? "Actif" : "Désactivé",
           configured: notifOn,
-          hint: "Notifications locales désactivées" },
+          hint: "Notifications locales désactivées",
+          desc: "Reçois un rappel sur ton téléphone pour certains événements de l'app." },
       ]
     },
     {
@@ -5149,7 +5161,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         { id:"backup", icon:"💾", label:"Sauvegarde",
           badge: last ? `il y a ${daysSinceBackup}j` : "Jamais",
           configured: !!last,
-          hint: "Aucune sauvegarde effectuée" },
+          hint: "Aucune sauvegarde effectuée",
+          desc: "Exporte toutes tes données dans un fichier à conserver en lieu sûr." },
       ]
     },
   ];
@@ -5173,14 +5186,39 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
                     borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
-                    cursor:"pointer", touchAction:"manipulation",
+                    cursor:"pointer", touchAction:"manipulation", position:"relative",
                   }}>
                   <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>{item.icon}</span>
-                  <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>{item.label}</span>
+                  <span style={{ display:"flex", alignItems:"center", gap:5, flex:1, minWidth:0 }}>
+                    <span style={{ fontSize:".76rem", fontWeight:600 }}>{item.label}</span>
+                    {item.desc && (
+                      <span
+                        onClick={e=>{ e.stopPropagation(); setInfoOpenId(id => id===item.id ? null : item.id); }}
+                        onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); setInfoOpenId(id => id===item.id ? null : item.id); }}
+                        style={{
+                          width:15, height:15, borderRadius:"50%", background:"var(--surface2)", border:"1px solid var(--border)",
+                          color:"var(--text2)", fontSize:".52rem", fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center",
+                          flexShrink:0, cursor:"pointer",
+                        }}>ⓘ</span>
+                    )}
+                  </span>
                   <span style={{ fontSize:".58rem", fontWeight:700, color: item.configured ? "var(--success)" : "var(--warning)", padding:"2px 8px", background: item.configured ? "#1a3a2a" : "#3a2500", borderRadius:10, flexShrink:0 }}>
                     {item.badge}
                   </span>
                   <span style={{ color:"var(--text3)", fontSize:".8rem", flexShrink:0 }}>›</span>
+                  {infoOpenId === item.id && (
+                    <div
+                      onClick={e=>e.stopPropagation()}
+                      onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); }}
+                      style={{
+                        position:"absolute", top:"100%", left:14, right:14, zIndex:15, marginTop:4,
+                        background:"var(--surface3)", border:"1px solid var(--accent)", borderRadius:10,
+                        padding:"9px 12px", fontSize:".62rem", color:"var(--text2)", lineHeight:1.5,
+                        boxShadow:"0 8px 24px rgba(0,0,0,.5)",
+                      }}>
+                      {item.desc}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
