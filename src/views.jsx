@@ -1636,6 +1636,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [calSelectedDay, setCalSelectedDay] = useState(null);
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
+  const [tagFilter, setTagFilter] = useState("");
   const [showAmtFilter, setShowAmtFilter] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
 
@@ -1791,13 +1792,14 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(t => parseFloat(t.amount) <= parseFloat(maxAmt));
+    if (tagFilter) list = list.filter(t => (t.tagIds || []).includes(tagFilter));
     if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
     if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
     if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
     return list;
-  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter, globalSearch]);
+  }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter, tagFilter, globalSearch]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
@@ -1888,12 +1890,13 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
         {/* ── Filtres compacts ── */}
         {(() => {
           const activeCount = [
-            filter !== "all", pointFilter !== "all",
+            filter !== "all", pointFilter !== "all", tagFilter !== "",
             sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "list",
           ].filter(Boolean).length;
           const activePills = [
             filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
             pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
+            tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
             sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
             (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
             viewMode !== "list"    && { label: "📊 Catégories", clear: () => setViewMode("list") },
@@ -1973,6 +1976,30 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                       ))}
                     </div>
                   </div>
+                  {/* Tags */}
+                  {(data.tags || []).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Tags</div>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                        <button onClick={() => setTagFilter("")} style={{
+                          background: !tagFilter ? "var(--accent-glow)" : "transparent",
+                          border: `1px solid ${!tagFilter ? "var(--accent)" : "var(--border)"}`,
+                          borderRadius: 6, padding: "5px 10px",
+                          color: !tagFilter ? "var(--accent)" : "var(--text2)",
+                          fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                        }}>Tous</button>
+                        {(data.tags || []).map(tag => (
+                          <button key={tag.id} onClick={() => setTagFilter(v => v === tag.id ? "" : tag.id)} style={{
+                            background: tagFilter===tag.id ? `${tag.color}22` : "transparent",
+                            border: `1px solid ${tagFilter===tag.id ? tag.color : "var(--border)"}`,
+                            borderRadius: 6, padding: "5px 10px",
+                            color: tagFilter===tag.id ? tag.color : "var(--text2)",
+                            fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                          }}>{tag.icon} {tag.name}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {/* Tri + Montant */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                     <div>
@@ -4938,9 +4965,10 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
+  const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
   const [thresh,        setThresh]        = useState(String(alertThreshold));
   const [roundOn,       setRoundOn]       = useState(roundingEnabled);
@@ -5044,6 +5072,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const recurCount  = (data.recurringTemplates||[]).length;
   const quickTplCount = (data.quickTemplates||[]).length;
   const sideAmountTypesCount = (data.sideAmountTypes||[]).length;
+  const tagsCount = (data.tags||[]).length;
   const last        = (data.backupHistory||[])[0];
 
   const GROUPS = [
@@ -5098,6 +5127,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: sideAmountTypesCount > 0,
           hint: "Aucun type de montant à part créé",
           action: () => setShowSideAmountTypesModal(true) },
+        { id:"tags", icon:"🏷️", label:"Tags",
+          badge: tagsCount > 0 ? `${tagsCount} tag${tagsCount>1?"s":""}` : "Aucun",
+          configured: tagsCount > 0,
+          hint: "Aucun tag créé",
+          action: () => setShowTagsModalOpt(true) },
       ]
     },
     {
@@ -5601,6 +5635,17 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           transactions={data.transactions || []}
           onSaveType={onSaveSideAmountType}
           onDeleteType={onDeleteSideAmountType}
+        />
+      )}
+      {showTagsModalOpt && (
+        <TagsModal
+          onClose={() => setShowTagsModalOpt(false)}
+          tags={data.tags || []}
+          transactions={data.transactions || []}
+          fixedExpenses={data.fixedExpenses || []}
+          categories={data.categories || []}
+          onSaveTag={onSaveTag}
+          onDeleteTag={onDeleteTag}
         />
       )}
     </div>

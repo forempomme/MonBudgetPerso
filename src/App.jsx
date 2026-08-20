@@ -669,6 +669,8 @@ export default function App() {
         onOpenQuickTemplates={() => setQuickManagerOpen(true)}
         onSaveSideAmountType={saveSideAmountType}
         onDeleteSideAmountType={deleteSideAmountType}
+        onSaveTag={saveTag}
+        onDeleteTag={deleteTag}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
