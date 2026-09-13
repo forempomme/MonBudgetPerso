@@ -4909,9 +4909,16 @@ function AnalysteLocal({ data, currentYear, months }) {
 //  Bottom Sheet générique
 // ─────────────────────────────────────────────────────────────────
 function Sheet({ open, onClose, title, children }) {
+  const scrollRef = useRef(null);
+  // Sur certains WebView Android, un élément position:fixed inséré dans une
+  // page déjà scrollée peut hériter visuellement de ce scroll un instant —
+  // on force explicitement le retour en haut à chaque ouverture.
+  useEffect(() => {
+    if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [open]);
   if (!open) return null;
   return (
-    <div
+    <div ref={scrollRef}
       style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, overflowY:"auto", WebkitOverflowScrolling:"touch" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background:"var(--bg)", width:"100%", maxWidth:560, margin:"0 auto", minHeight:"100%", padding:"20px 16px 48px" }}>

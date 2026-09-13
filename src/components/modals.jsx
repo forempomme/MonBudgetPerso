@@ -474,8 +474,8 @@ export function TransModal({
                 style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
                 onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
                 onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
-                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
-                onClick={() => setCatOpen(false)}
+                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                onClick={() => { document.activeElement?.blur(); setCatOpen(false); }}
               />
 
               {/* Grille centrée */}
@@ -505,8 +505,8 @@ export function TransModal({
                   </span>
                   <button
                     onTouchStart={e => e.stopPropagation()}
-                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(false); }}
-                    onClick={() => { if (!('ontouchstart' in window)) setCatOpen(false); }}
+                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatOpen(false); } }}
                     style={{
                       width: 24, height: 24, borderRadius: 6,
                       background: "var(--surface2)", border: "1px solid var(--border)",
@@ -532,9 +532,9 @@ export function TransModal({
                     }}
                     onTouchEnd={e => {
                       e.stopPropagation(); e.preventDefault();
-                      if (!catTouchRef.current.moved) { setCatId(""); setCatOpen(false); }
+                      if (!catTouchRef.current.moved) { document.activeElement?.blur(); setCatId(""); setCatOpen(false); }
                     }}
-                    onClick={() => { if (!('ontouchstart' in window)) { setCatId(""); setCatOpen(false); } }}
+                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatId(""); setCatOpen(false); } }}
                     style={{
                       gridColumn: "1 / -1", padding: "7px 10px", borderRadius: 9,
                       border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
@@ -556,9 +556,9 @@ export function TransModal({
                       }}
                       onTouchEnd={e => {
                         e.stopPropagation(); e.preventDefault();
-                        if (!catTouchRef.current.moved) { setCatId(c.id); setCatOpen(false); }
+                        if (!catTouchRef.current.moved) { document.activeElement?.blur(); setCatId(c.id); setCatOpen(false); }
                       }}
-                      onClick={() => { if (!('ontouchstart' in window)) { setCatId(c.id); setCatOpen(false); } }}
+                      onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatId(c.id); setCatOpen(false); } }}
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
                         padding: "8px 4px", gap: 4, borderRadius: 10,

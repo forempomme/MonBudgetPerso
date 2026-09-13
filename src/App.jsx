@@ -2,6 +2,7 @@ import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A } from "./store.js";
 import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM } from "./utils.js";
+import { useBalanceWithRecurring } from "./hooks.js";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
@@ -57,6 +58,12 @@ function loadState() {
 export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
+  // Nécessaire pour l'alerte "solde bas" des notifications — même formule
+  // que le solde estimé affiché sur l'accueil (voir hooks.js)
+  const currentBalance = useBalanceWithRecurring(
+    data.transactions, data.fixedExpenses, data.fixedIncomes || [],
+    data.recurringTemplates || [], data.scheduledTransactions || []
+  );
 
   const [tabHistory, setTabHistory] = useState(["accueil"]);
   const tab = tabHistory[tabHistory.length - 1];
@@ -112,6 +119,19 @@ export default function App() {
       if (!LN) return;
       const perm = await LN.requestPermissions();
       if (perm.display !== "granted") return;
+      // Sur Android 8+ (API 26+), un canal de notification est obligatoire —
+      // sans lui, une notification programmée avec un channelId inconnu ne
+      // s'affiche jamais, silencieusement (aucune erreur levée). C'était la
+      // cause probable des notifications qui ne se déclenchaient jamais.
+      if (LN.createChannel) {
+        try {
+          await LN.createChannel({
+            id: "budget", name: "Gestion du Budget",
+            description: "Rappels : récurrentes, versements automatiques, dépenses prévues, sauvegarde",
+            importance: 4, visibility: 1, vibration: true,
+          });
+        } catch (e) { console.warn("createChannel:", e); }
+      }
       await LN.cancel({ notifications: Array.from({length:30},(_,i)=>({id:i+1})) });
       const pending = [];
       const now = new Date();
@@ -137,9 +157,15 @@ export default function App() {
         const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
         if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
       }
+      // Alerte solde bas — contrairement aux autres, ce n'est pas un événement
+      // futur connu à l'avance : on vérifie le solde ACTUEL, et si déjà sous
+      // le seuil, on programme une notification quasi immédiate.
+      if (ns.alertSolde && data.alertEnabled && currentBalance < (data.alertThreshold ?? 500)) {
+        pending.push({ id:6, title:"🔔 Solde bas", body:`Ton solde estimé est de ${fmtAmt(currentBalance)}, sous ton seuil de ${fmtAmt(data.alertThreshold ?? 500)}`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
+      }
       if (pending.length > 0) await LN.schedule({ notifications:pending });
     } catch(e) { console.warn("LocalNotifications:", e); }
-  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes]);
+  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold]);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
