@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
+import { createPortal } from "react-dom";
 import { Delta, Sparkline, Modal } from "./components/index.jsx";
 import { ChartSVG, PatrimoineSVG } from "./components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, MONTHS_SHORT, APP_NAME, APP_VERSION, txLabel, txTypeClass, txSign, todayISO } from "./utils.js";
@@ -4910,14 +4911,17 @@ function AnalysteLocal({ data, currentYear, months }) {
 // ─────────────────────────────────────────────────────────────────
 function Sheet({ open, onClose, title, children }) {
   const scrollRef = useRef(null);
-  // Sur certains WebView Android, un élément position:fixed inséré dans une
-  // page déjà scrollée peut hériter visuellement de ce scroll un instant —
-  // on force explicitement le retour en haut à chaque ouverture.
+  // Sur ce WebView Android, un position:fixed niché à l'intérieur de
+  // .container (la zone qui défile) hérite visuellement de son scroll au
+  // lieu de rester fixe par rapport à l'écran — confirmé en reproduisant :
+  // plus on défile avant d'ouvrir le Sheet, plus il s'ouvre "monté". Un
+  // portail vers document.body fait sortir le Sheet de cette zone
+  // défilante, pour qu'il ne puisse plus jamais en hériter.
   useEffect(() => {
     if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [open]);
   if (!open) return null;
-  return (
+  return createPortal(
     <div ref={scrollRef}
       style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, overflowY:"auto", WebkitOverflowScrolling:"touch" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
@@ -4928,7 +4932,8 @@ function Sheet({ open, onClose, title, children }) {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
