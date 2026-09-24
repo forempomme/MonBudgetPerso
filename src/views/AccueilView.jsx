@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT } from "../utils.js";
-import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth } from "../hooks.js";
+import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -747,6 +747,26 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       </Sec>
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
+      {/* Alerte budgets par tag (v1.41.0) — dès 80 % consommés ; tap → Rapport */}
+      {(() => {
+        const alerts = computeTagBudgets(data.tags, transactions, curM).filter(b => b.level !== "ok");
+        if (alerts.length === 0) return null;
+        return (
+          <div onClick={() => onSwitchTab?.("rapport")} style={{
+            marginBottom: 12, padding: "10px 14px", borderRadius: 14, cursor: "pointer",
+            background: "rgba(200,184,96,.07)", border: "1px solid rgba(200,184,96,.28)",
+          }}>
+            {alerts.map(({ tag, spent, budget, pct, level }) => (
+              <div key={tag.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".68rem", padding: "2px 0" }}>
+                <span>{level === "over" ? "🔴" : "⚠️"}</span>
+                <span style={{ flex: 1 }}>Budget <b>{tag.icon} {tag.name}</b> {level === "over" ? "dépassé" : `à ${Math.round(pct)} %`}</span>
+                <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: level === "over" ? "var(--danger)" : "var(--warning)" }}>{fmt(spent)} / {fmt(budget)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {(unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
         const C = "#e8f2ff", Cbord = "rgba(210,225,245,.22)";
         const fixItems   = unpointedFixes.map(f  => ({ ...f, _type:"fix"       }));
