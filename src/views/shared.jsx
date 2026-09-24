@@ -149,6 +149,9 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
   const [newIcon,  setNewIcon]   = useState("🏷️");
   const [newColor, setNewColor]  = useState(TAG_COLORS[0]);
   const [creating, setCreating]  = useState(false);
+  const [editingId, setEditingId] = useState(null);   // v1.41.0 : édition d'un tag existant
+  const [newBudget, setNewBudget] = useState("");
+  const [newPeriod, setNewPeriod] = useState("month");
   const [tab,      setTab]       = useState(tags.length > 0 ? "view" : "manage");
 
   const selTag = tags.find(t => t.id === selTagId);
@@ -156,10 +159,25 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
   const totalExp = tagTxs.filter(t => t.type === "expense").reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const totalInc = tagTxs.filter(t => isIncome(t.type)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
 
+  function resetForm() {
+    setNewName(""); setNewIcon("🏷️"); setNewColor(TAG_COLORS[0]);
+    setNewBudget(""); setNewPeriod("month"); setEditingId(null); setCreating(false);
+  }
+  function startEdit(tag) {
+    setEditingId(tag.id); setNewName(tag.name); setNewIcon(tag.icon); setNewColor(tag.color);
+    setNewBudget(tag.budget ? String(tag.budget).replace(".", ",") : "");
+    setNewPeriod(tag.budgetPeriod === "total" ? "total" : "month");
+    setCreating(true);
+  }
   function createTag() {
     if (!newName.trim()) return;
-    onSaveTag?.({ name: newName.trim(), icon: newIcon, color: newColor });
-    setNewName(""); setCreating(false);
+    const b = parseFloat(String(newBudget).replace(",", "."));
+    onSaveTag?.({
+      ...(editingId ? { id: editingId } : {}),
+      name: newName.trim(), icon: newIcon, color: newColor,
+      budget: b > 0 ? b : null, budgetPeriod: newPeriod,
+    });
+    resetForm();
   }
 
   return (
@@ -273,8 +291,13 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
                       <span style={{ fontSize:"1rem" }}>{tag.icon}</span>
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:".72rem", fontWeight:700 }}>{tag.name}</div>
-                        <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{count} transaction{count!==1?"s":""}</div>
+                        <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>
+                          {count} transaction{count!==1?"s":""}
+                          {tag.budget > 0 && ` · budget ${fmt(tag.budget)} ${tag.budgetPeriod === "total" ? "(total)" : "/ mois"}`}
+                        </div>
                       </div>
+                      <button onClick={()=>startEdit(tag)}
+                        style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text2)", fontSize:".7rem", cursor:"pointer", minHeight:30, touchAction:"manipulation" }}>✏️</button>
                       <button
                         onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteTag?.(tag.id);}}
                         onClick={()=>onDeleteTag?.(tag.id)}
@@ -287,12 +310,12 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
 
             {/* Créer nouveau */}
             {!creating ? (
-              <button onClick={()=>setCreating(true)} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--purple)", borderRadius:10, padding:"11px", color:"var(--purple)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
+              <button onClick={()=>{ resetForm(); setCreating(true); }} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--purple)", borderRadius:10, padding:"11px", color:"var(--purple)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
                 ＋ Créer un nouveau tag
               </button>
             ) : (
               <div style={{ background:"var(--surface)", border:"1.5px solid var(--purple)", borderRadius:12, padding:14 }}>
-                <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>Nouveau tag</div>
+                <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--purple)", marginBottom:10 }}>{editingId ? "Modifier le tag" : "Nouveau tag"}</div>
                 <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="Nom du tag…"
                   style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 12px", color:"var(--text)", fontSize:".8rem", marginBottom:10, boxSizing:"border-box" }} />
                 <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Icône</div>
@@ -307,14 +330,68 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
                     <div key={col} onClick={()=>setNewColor(col)} style={{ width:26, height:26, borderRadius:"50%", background:col, border:`2.5px solid ${newColor===col?"#fff":"transparent"}`, cursor:"pointer" }} />
                   ))}
                 </div>
+                <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Budget (optionnel)</div>
+                <input value={newBudget} inputMode="decimal" placeholder="Ex : 1500"
+                  onChange={e=>setNewBudget(e.target.value.replace(/[^0-9,.]/g, ""))}
+                  style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:8, padding:"9px 12px", color:"var(--text)", fontSize:".8rem", marginBottom:8, boxSizing:"border-box" }} />
+                {parseFloat(String(newBudget).replace(",", ".")) > 0 && (
+                  <>
+                    <div style={{ display:"flex", gap:6, marginBottom:6 }}>
+                      {[["month","Par mois"],["total","Total (projet)"]].map(([k,l]) => (
+                        <button key={k} onClick={()=>setNewPeriod(k)} style={{
+                          flex:1, padding:"7px", borderRadius:9, fontSize:".66rem", fontWeight:700, cursor:"pointer",
+                          background: newPeriod===k ? `${newColor}22` : "transparent",
+                          border: `1px solid ${newPeriod===k ? newColor : "var(--border)"}`,
+                          color: newPeriod===k ? newColor : "var(--text2)",
+                        }}>{l}</button>
+                      ))}
+                    </div>
+                    <div style={{ fontSize:".58rem", color:"var(--text3)", lineHeight:1.5, marginBottom:12 }}>
+                      {newPeriod === "month"
+                        ? "Remis à zéro chaque mois (ex : Pro 200 €/mois)."
+                        : "Plafond global, idéal pour un voyage ou un projet ponctuel."}
+                    </div>
+                  </>
+                )}
                 <div style={{ display:"flex", gap:8 }}>
-                  <button onClick={()=>setCreating(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
-                  <button onClick={createTag} style={{ flex:2, background:newName.trim()?"var(--purple)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newName.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>Créer</button>
+                  <button onClick={resetForm} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
+                  <button onClick={createTag} style={{ flex:2, background:newName.trim()?"var(--purple)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newName.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>{editingId ? "Enregistrer" : "Créer"}</button>
                 </div>
               </div>
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  TagBudgetBars — v1.41.0 : barres de suivi des budgets par tag
+//  (Rapport). Vert < 80 %, orange 80–100 %, rouge si dépassé.
+// ─────────────────────────────────────────────────────────────────
+export function TagBudgetBars({ items, monthLabel }) {
+  if (!items || items.length === 0) return null;
+  const col = { ok: "var(--success)", warn: "var(--warning)", over: "var(--danger)" };
+  return (
+    <div className="card" style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: ".68rem", fontWeight: 800, color: "var(--text2)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 12 }}>🏷️ Budgets par tag</div>
+      {items.map(({ tag, period, spent, budget, pct, remaining, level }, i) => (
+        <div key={tag.id} style={{ marginBottom: i < items.length - 1 ? 14 : 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".72rem", marginBottom: 6 }}>
+            <span>{tag.icon} {tag.name} <span style={{ color: "var(--text3)", fontSize: ".6rem" }}>· {period === "total" ? "total" : monthLabel}</span></span>
+            <span><b style={{ color: col[level] }}>{fmt(spent)}</b> <span style={{ color: "var(--text3)" }}>/ {fmt(budget)}</span></span>
+          </div>
+          <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.min(100, pct)}%`, background: col[level], borderRadius: 5 }} />
+          </div>
+          <div style={{ fontSize: ".6rem", marginTop: 5, color: level === "over" ? "var(--danger)" : "var(--text2)" }}>
+            {level === "over" ? `Dépassé de ${fmt(-remaining)}` : `Reste ${fmt(remaining)} · ${Math.round(pct)} % utilisé`}
+          </div>
+        </div>
+      ))}
+      <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>
+        Dépenses taguées débitées en banque. Informatif : n'impacte pas le solde.
       </div>
     </div>
   );
