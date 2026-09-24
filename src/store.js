@@ -187,6 +187,44 @@ function computeRoundAmount(state, amount) {
  * @param {{ type: string, [key: string]: any }} action
  * @returns {AppData}
  */
+// ─────────────────────────────────────────────────────────────────
+//  normalizeData — v1.40.0
+//  Source unique pour transformer des données brutes (localStorage OU
+//  fichier de sauvegarde importé) en state valide. Avant, le chargement
+//  et l'import avaient chacun leur propre fusion, et l'import pouvait
+//  écraser les sous-réglages de notifications avec un objet incomplet.
+// ─────────────────────────────────────────────────────────────────
+export function normalizeData(saved) {
+  const src = saved && typeof saved === "object" ? saved : {};
+  const data = {
+    ...DEFAULT_DATA,
+    ...src,
+    notifSettings: { ...DEFAULT_DATA.notifSettings, ...(src.notifSettings || {}) },
+    fixedIncomes:  src.fixedIncomes || DEFAULT_DATA.fixedIncomes,
+    sideAmountTypes: src.sideAmountTypes || DEFAULT_DATA.sideAmountTypes,
+  };
+
+  // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
+  // champ unique `mealVoucherAmount` n'étaient plus affichés depuis le
+  // passage aux montants à part génériques (`sideAmounts`). On les
+  // rapatrie dans sideAmounts.tr — sans jamais écraser une valeur existante.
+  let migrated = false;
+  data.transactions = (data.transactions || []).map(t => {
+    if (!(parseFloat(t.mealVoucherAmount) > 0)) return t;
+    migrated = true;
+    const { mealVoucherAmount, ...rest } = t;
+    const sideAmounts = { ...(t.sideAmounts || {}) };
+    if (sideAmounts.tr == null) sideAmounts.tr = parseFloat(mealVoucherAmount);
+    return { ...rest, sideAmounts };
+  });
+  // Si le type "Tickets resto" avait été supprimé, on le recrée pour que
+  // les montants migrés restent lisibles (icône + libellé).
+  if (migrated && !data.sideAmountTypes.some(st => st.id === "tr")) {
+    data.sideAmountTypes = [...data.sideAmountTypes, { id: "tr", label: "Tickets resto", icon: "🎫" }];
+  }
+  return data;
+}
+
 export function reducer(state, action) {
   switch (action.type) {
 
@@ -714,7 +752,7 @@ export function reducer(state, action) {
     }
 
     case A.IMPORT_DATA:
-      return { ...DEFAULT_DATA, ...action.data };
+      return normalizeData(action.data);
 
     case A.CLEAR_WARNING:
       return { ...state, warning: null };
