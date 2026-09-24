@@ -592,3 +592,26 @@ export function useProjectionAccuracy(transactions, fixedExpenses, fixedIncomes,
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, fixedExpenses, fixedIncomes, projectionSnapshots]);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Budgets par tag (v1.41.0) — source unique pour Rapport ET Accueil.
+//  budgetPeriod "month" : dépenses du mois ym ; "total" : depuis toujours.
+//  Ne compte que les dépenses (type "expense"), montant débité en banque
+//  (hors montants à part). Purement informatif : n'impacte aucun solde.
+// ─────────────────────────────────────────────────────────────────
+export function computeTagBudgets(tags, transactions, ym) {
+  return (tags || [])
+    .filter(tag => (parseFloat(tag.budget) || 0) > 0)
+    .map(tag => {
+      const period = tag.budgetPeriod === "total" ? "total" : "month";
+      const spent = (transactions || [])
+        .filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id)
+          && (period === "total" || (t.date || "").startsWith(ym)))
+        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+      const budget = parseFloat(tag.budget);
+      const pct = spent / budget * 100;
+      return { tag, period, spent, budget, pct, remaining: budget - spent,
+        level: pct > 100 ? "over" : pct >= 80 ? "warn" : "ok" };
+    })
+    .sort((a, b) => b.pct - a.pct);
+}
