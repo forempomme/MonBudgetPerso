@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { MONTHS_MINI, polar, fmt } from "../utils.js";
+import { MONTHS_MINI, fmt } from "../utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Monthly bar + trend line chart
