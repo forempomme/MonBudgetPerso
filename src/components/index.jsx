@@ -1,4 +1,3 @@
-import { useSpark } from "../hooks.js";
 import { fmt, txLabel, txTypeClass, txSign, deltaInfo } from "../utils.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -53,33 +52,6 @@ export function ItemRow({ t, categories, cagnottes, onEdit, onDelete }) {
         )}
       </div>
     </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Sparkline — last 6 months net
-// ─────────────────────────────────────────────────────────────────
-export function Sparkline({ transactions, fixedExpenses }) {
-  const spark = useSpark(transactions, fixedExpenses);
-  const sMax  = Math.max(...spark.map(Math.abs), 1);
-  const W = 90, H = 28;
-  const points = spark.map((v, i) => {
-    const x = i * (W / 5);
-    const y = H / 2 - (v / sMax) * (H / 2 - 3);
-    return `${x.toFixed(1)},${y.toFixed(1)}`;
-  }).join(" ");
-  const color = spark[5] >= 0 ? "#34d399" : "#f87171";
-
-  return (
-    <svg viewBox="0 0 90 28" width="90" height="28" style={{ overflow: "visible" }}>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5"
-        strokeLinecap="round" strokeLinejoin="round" />
-      {spark.map((v, i) => {
-        const x = (i * (W / 5)).toFixed(1);
-        const y = (H / 2 - (v / sMax) * (H / 2 - 3)).toFixed(1);
-        return <circle key={i} cx={x} cy={y} r="1.8" fill={color} />;
-      })}
-    </svg>
   );
 }
 
