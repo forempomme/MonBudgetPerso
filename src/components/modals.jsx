@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
@@ -217,6 +217,79 @@ function NumPad({ value, onChange, type, onTypeChange }) {
 // ─────────────────────────────────────────────────────────────────
 //  Transaction modal — redessiné v1.28.0
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  Montants à part (tickets resto…) — source unique partagée par
+//  TransModal ET QuickTemplateSheet (v1.40.0). Purement informatif,
+//  jamais compté dans le solde.
+// ─────────────────────────────────────────────────────────────────
+function useSideAmounts(initial) {
+  const [vals, setVals] = useState(() => {
+    const init = {};
+    if (initial) Object.entries(initial).forEach(([k, v]) => { init[k] = String(v); });
+    return init;
+  });
+  const [open, setOpen] = useState(() => new Set(initial ? Object.keys(initial) : []));
+  return {
+    vals, open,
+    openType:  id => setOpen(prev => new Set(prev).add(id)),
+    setVal:    (id, v) => setVals(prev => ({ ...prev, [id]: v.replace(/[^0-9,.]/g, "") })),
+    closeType: id => {
+      setVals(prev => { const n = { ...prev }; delete n[id]; return n; });
+      setOpen(prev => { const n = new Set(prev); n.delete(id); return n; });
+    },
+    /** Objet { [typeId]: montant } prêt à enregistrer, ou undefined si vide */
+    toPayload: () => {
+      const out = {};
+      open.forEach(k => { const v = parseAmt(vals[k]); if (!isNaN(v) && v > 0) out[k] = v; });
+      return Object.keys(out).length > 0 ? out : undefined;
+    },
+  };
+}
+
+function SideAmountsPicker({ types, side, showHint = true }) {
+  if (types.length === 0) return null;
+  const closed = types.filter(st => !side.open.has(st.id));
+  return (
+    <div>
+      {closed.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {closed.map(st => (
+            <button key={st.id} type="button" onClick={() => side.openType(st.id)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
+                borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
+                color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
+              }}>
+              {st.icon} {st.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {[...side.open].map(k => {
+        const st = types.find(s => s.id === k);
+        if (!st) return null;
+        return (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
+            <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
+            <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
+              value={side.vals[k] || ""}
+              onChange={e => side.setVal(k, e.target.value)}
+              style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }}
+            />
+            <button type="button" onClick={() => side.closeType(k)}
+              style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+          </div>
+        );
+      })}
+      {showHint && side.open.size > 0 && (
+        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
+          Juste une indication de ton budget réel — n'affecte pas ton solde.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TransModal({
   transactions, categories, cagnottes, tags = [], sideAmountTypes = [],
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
@@ -236,12 +309,7 @@ export function TransModal({
   const [frequency,   setFrequency]   = useState("monthly");
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
-  const [mealVoucher, setMealVoucher] = useState(() => {
-    const init = {};
-    if (tx?.sideAmounts) Object.entries(tx.sideAmounts).forEach(([k, v]) => { init[k] = String(v); });
-    return init;
-  });
-  const [voucherOpen, setVoucherOpen] = useState(() => new Set(tx?.sideAmounts ? Object.keys(tx.sideAmounts) : []));
+  const side = useSideAmounts(tx?.sideAmounts);
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
@@ -259,8 +327,8 @@ export function TransModal({
 
   // Raccourcis date
   const todayStr     = todayISO();
-  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
-  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const yesterdayStr = daysAgoISO(1);
+  const beforeStr    = daysAgoISO(2);
   const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
 
   function findDuplicate(amt, catId, txDate, txType) {
@@ -305,17 +373,8 @@ export function TransModal({
     // relier la toute première opération à ce modèle — sinon elle ne compte pas
     // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
-    const sideAmounts = {};
-    if (type === "expense") {
-      voucherOpen.forEach(k => {
-        const raw = mealVoucher[k];
-        if (raw) {
-          const v = parseAmt(raw);
-          if (!isNaN(v) && v > 0) sideAmounts[k] = v;
-        }
-      });
-    }
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts: Object.keys(sideAmounts).length > 0 ? sideAmounts : undefined });
+    const sideAmounts = type === "expense" ? side.toPayload() : undefined;
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts });
     if (recurringId) {
       onSaveRecurring?.({
         id: recurringId,
@@ -405,7 +464,7 @@ export function TransModal({
         <div style={{ marginBottom: 10, padding: "9px 12px", background: "rgba(88,192,144,.08)", border: "1px solid rgba(88,192,144,.2)", borderRadius: 10 }}>
           <div style={{ fontSize: ".68rem", color: "var(--sapin)", fontWeight: 700, marginBottom: 2 }}>⚖️ Opération d'équilibre</div>
           <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginBottom: 9 }}>
-            Ajuste le solde pointé sans impacter le solde estimé. Utile pour corriger un écart bancaire.
+            Corrige un écart avec ton relevé bancaire. Ajuste le solde pointé, et donc aussi le solde estimé.
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => setAdjSign("+")} style={{
@@ -656,51 +715,9 @@ export function TransModal({
         />
 
         {/* Montants à part — purement informatifs, jamais comptés dans le solde */}
-        {type === "expense" && sideAmountTypes.length > 0 && (
+        {type === "expense" && (
           <div style={{ marginTop: 8 }}>
-            {sideAmountTypes.filter(st => !voucherOpen.has(st.id)).length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {sideAmountTypes.filter(st => !voucherOpen.has(st.id)).map(st => (
-                  <button key={st.id} type="button"
-                    onClick={() => setVoucherOpen(prev => new Set(prev).add(st.id))}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
-                      borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
-                      color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
-                    }}>
-                    {st.icon} {st.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {[...voucherOpen].map(k => {
-              const st = sideAmountTypes.find(s => s.id === k);
-              if (!st) return null;
-              return (
-                <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
-                  <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
-                  <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
-                    value={mealVoucher[k] || ""}
-                    onChange={e => {
-                      const v = e.target.value.replace(/[^0-9,.]/g, "");
-                      setMealVoucher(prev => ({ ...prev, [k]: v }));
-                    }}
-                    style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }}
-                  />
-                  <button type="button" onClick={() => {
-                    setMealVoucher(prev => { const n = { ...prev }; delete n[k]; return n; });
-                    setVoucherOpen(prev => { const n = new Set(prev); n.delete(k); return n; });
-                  }} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
-                </div>
-              );
-            })}
-
-            {voucherOpen.size > 0 && (
-              <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-                Juste une indication de ton budget réel — n'affecte pas ton solde.
-              </div>
-            )}
+            <SideAmountsPicker types={sideAmountTypes} side={side} />
           </div>
         )}
 
@@ -1738,15 +1755,14 @@ export function QuickTemplateSheet({ template, categories, sideAmountTypes = [],
   const [type, setType]   = useState(template.type || "expense");
   const [amount, setAmount] = useState("");
   const [date, setDate]   = useState(todayISO());
-  const [sideVals, setSideVals]   = useState({});
-  const [sideOpen, setSideOpen]   = useState(new Set());
+  const side = useSideAmounts(null);
   const [showNative, setShowNative] = useState(false);
   const [err, setErr]     = useState(null);
   const toast = useToast();
 
   const todayStr     = todayISO();
-  const yesterdayStr = (() => { const d = new Date(); d.setDate(d.getDate()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
-  const beforeStr    = (() => { const d = new Date(); d.setDate(d.getDate()-2); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+  const yesterdayStr = daysAgoISO(1);
+  const beforeStr    = daysAgoISO(2);
   const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
 
   const cat = categories.find(c => c.id === template.categoryId);
@@ -1754,12 +1770,8 @@ export function QuickTemplateSheet({ template, categories, sideAmountTypes = [],
   function handleSave() {
     const amt = parseAmt(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Montant requis"); return; }
-    const sideAmounts = {};
-    [...sideOpen].forEach(k => {
-      const v = parseAmt(sideVals[k]);
-      if (!isNaN(v) && v > 0) sideAmounts[k] = v;
-    });
-    onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name, sideAmounts: Object.keys(sideAmounts).length > 0 ? sideAmounts : undefined });
+    const sideAmounts = type === "expense" ? side.toPayload() : undefined;
+    onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name, sideAmounts });
     toast?.(`${template.icon} ${template.name} enregistré`, "success");
     onClose();
   }
@@ -1776,46 +1788,10 @@ export function QuickTemplateSheet({ template, categories, sideAmountTypes = [],
         </div>
       </div>
 
-      {/* Montants à part — uniquement ceux configurés dans Options, purement informatifs */}
+      {/* Montants à part — uniquement ceux configurés dans Options */}
       {type === "expense" && sideAmountTypes.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          {sideAmountTypes.filter(st => !sideOpen.has(st.id)).length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {sideAmountTypes.filter(st => !sideOpen.has(st.id)).map(st => (
-                <button key={st.id} type="button"
-                  onClick={() => setSideOpen(prev => new Set(prev).add(st.id))}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 12px",
-                    borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
-                    color: "var(--warning)", fontSize: ".68rem", fontWeight: 800, cursor: "pointer",
-                  }}>
-                  {st.icon} {st.label}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {[...sideOpen].map(k => {
-            const st = sideAmountTypes.find(s => s.id === k);
-            if (!st) return null;
-            return (
-              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
-                <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
-                <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
-                  value={sideVals[k] || ""}
-                  onChange={e => {
-                    const v = e.target.value.replace(/[^0-9,.]/g, "");
-                    setSideVals(prev => ({ ...prev, [k]: v }));
-                  }}
-                  style={{ flex: 1, boxSizing: "border-box", fontSize: ".72rem", background: "var(--surface3)" }}
-                />
-                <button type="button" onClick={() => {
-                  setSideVals(prev => { const n = { ...prev }; delete n[k]; return n; });
-                  setSideOpen(prev => { const n = new Set(prev); n.delete(k); return n; });
-                }} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".68rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
-              </div>
-            );
-          })}
+          <SideAmountsPicker types={sideAmountTypes} side={side} showHint={false} />
         </div>
       )}
 
