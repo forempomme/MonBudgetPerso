@@ -26,8 +26,16 @@ jobs:
           java-version: "17"
 
       # ── 4. Android SDK ───────────────────────────────────────────
+      # Par défaut, cette action installe les paquets "tools platform-tools".
+      # Le paquet "tools" (obsolète) n'existe plus dans le dépôt de Google
+      # → "Failed to find package 'tools'" → échec du build.
+      # On n'installe donc que platform-tools, et on masque le texte
+      # intégral des licences qui noyait le log.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+          log-accepted-android-sdk-licenses: false
 
       # ── 5. Dépendances ───────────────────────────────────────────
       - name: Install dependencies
