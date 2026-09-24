@@ -1,34 +1,39 @@
-/** @type {import('@capacitor/cli').CapacitorConfig} */
-const config = {
-  appId: "com.budgetpro.app",
-  appName: "Budget Pro 2026",
-  webDir: "dist",
-  server: {
-    androidScheme: "https",
+{
+  "name": "gestion-du-budget",
+  "private": true,
+  "version": "1.40.0",
+  "description": "Gestionnaire de budget personnel",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "android": "npm run build && npx cap sync android && npx cap open android",
+    "android:build": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
+    "android:debug": "npm run build && npx cap sync android && cd android && ./gradlew assembleDebug",
+    "icons": "python3 generate_icons.py",
+    "cap:init": "npx cap init 'Gestion du budget' com.gestionbudget.app --web-dir dist",
+    "cap:add": "npx cap add android",
+    "cap:sync": "npx cap sync",
+    "setup": "npm install && npm run icons && npm run build && npx cap add android && npx cap sync"
   },
-  android: {
-    allowMixedContent: false,
-    captureInput: true,
-    webContentsDebuggingEnabled: false,
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/share": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0",
+    "@capacitor/keyboard": "^6.0.0",
+    "@aparajita/capacitor-biometric-auth": "^8.0.0",
+    "@capacitor/local-notifications": "^6.0.0"
   },
-  plugins: {
-    SplashScreen: {
-      launchShowDuration: 1200,
-      launchAutoHide: true,
-      backgroundColor: "#080c12",
-      androidSplashResourceName: "splash",
-      showSpinner: false,
-    },
-    StatusBar: {
-      style: "Dark",
-      backgroundColor: "#080c12",
-    },
-    Keyboard: {
-      resize: "body",
-      style: "dark",
-      resizeOnFullScreen: true,
-    },
-  },
-};
-
-module.exports = config;
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "@capacitor/cli": "^6.0.0",
+    "vite": "^5.4.0"
+  }
+}
