@@ -2,8 +2,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
 import { fmt, currentYM, isIncome, PALETTE } from "../utils.js";
-import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection } from "../hooks.js";
-import { SectionTitle, TagsModal } from "./shared.jsx";
+import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets } from "../hooks.js";
+import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT — Comparaison de deux périodes
@@ -908,6 +908,14 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
               )}
             </>
           );
+        })()}
+
+        {/* Budgets par tag (v1.41.0) — mois en cours pour les budgets mensuels */}
+        {(() => {
+          const ym = currentYM();
+          return <TagBudgetBars
+            items={computeTagBudgets(data.tags, data.transactions, ym)}
+            monthLabel={MONTHS_FR[parseInt(ym.slice(5, 7), 10) - 1].toLowerCase()} />;
         })()}
 
         {/* Montants à part — agrégat annuel, purement informatif */}
