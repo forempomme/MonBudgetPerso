@@ -84,12 +84,6 @@ body {
 .card { background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 
-.section-title {
-  font-family: var(--display); font-size: .65rem; color: var(--text3);
-  text-transform: uppercase; letter-spacing: .12em; margin: 22px 0 10px;
-  font-weight: 700; display: flex; align-items: center; gap: 8px;
-}
-.section-title::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
 
 /* ── Hero card ──────────────────────────────────────────────── */
 .hero-card {
@@ -103,10 +97,6 @@ body {
 }
 .hero-label { font-size: .65rem; color: var(--text2); text-transform: uppercase; letter-spacing: .12em; font-weight: 600; }
 .hero-value { font-family: var(--mono); font-size: 2.2rem; font-weight: 800; color: var(--accent); margin-top: 6px; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.hero-indicator {
-  position: absolute; top: 22px; right: 22px; width: 8px; height: 8px; border-radius: 50%;
-  background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite;
-}
 @keyframes tab-slide-right {
   from { opacity: 0; transform: translateX(32px); }
   to   { opacity: 1; transform: translateX(0); }
@@ -157,7 +147,6 @@ body {
 .stat-mini:active, .cag-card:active { transform: scale(.97); }
 
 /* Entrée animée des sections */
-.section-enter { animation: fade-in .35s ease both; }
 
 /* ── Stat mini cards ────────────────────────────────────────── */
 .stat-mini {
@@ -175,14 +164,12 @@ body {
 .dash-revenu::before    { background: var(--success-glow);    opacity: 1; border-left: 3px solid var(--success); }
 .dash-depense::before   { background: var(--danger-glow);     opacity: 1; border-left: 3px solid var(--danger);  }
 .dash-dep-var::before   { background: var(--warning-glow);    opacity: 1; border-left: 3px solid var(--warning); }
-.dash-decag::before     { background: var(--sapin-glow);      opacity: 1; border-left: 3px solid var(--sapin);   }
 /* v1.32.0 */
 .dash-cagnotte2::before { background: rgba(160,120,224,.12);  opacity: 1; border-left: 3px solid var(--purple); }
 .dash-fixe2::before     { background: rgba(232,148,74,.11);   opacity: 1; border-left: 3px solid #e8944a;       }
 .dash-cagnotte2 .stat-label { color: rgba(176,144,224,.8); }
 .dash-fixe2     .stat-label { color: rgba(232,148,74,.8);  }
 /* v1.39.0 */
-.dash-balance::before   { background: var(--sapin-glow);      opacity: 1; border-left: 3px solid var(--sapin);  }
 .dash-cagnotte2 .stat-val   { color: var(--purple); }
 .dash-fixe2     .stat-val   { color: #e8944a; }
 
@@ -289,8 +276,6 @@ body {
 .fab:hover { transform: scale(1.08); box-shadow: 0 6px 25px rgba(77,159,255,.5); }
 
 /* ── Filters / chips ────────────────────────────────────────── */
-.filter-row { display: flex; gap: 6px; margin-bottom: 12px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
-.filter-row::-webkit-scrollbar { display: none; }
 .filter-chip { padding: 6px 14px; background: var(--surface2); border: 1px solid var(--border-soft); border-radius: 20px; font-size: .68rem; font-weight: 600; color: var(--text2); white-space: nowrap; cursor: pointer; transition: all .2s; }
 .filter-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 /* Base commune : sort-chip, chart-filter-chip et donut-filter-chip partageaient
@@ -308,7 +293,6 @@ body {
 .btn { padding: 12px 16px; border-radius: var(--radius-sm); border: none; font-family: var(--ui); font-weight: 600; font-size: .85rem; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: opacity .2s, transform .15s; }
 .btn:active { transform: scale(.97); }
 .btn-primary      { background: var(--accent);   color: #fff; }
-.btn-success      { background: var(--success);  color: #fff; }
 .btn-outline      { background: transparent; border: 1px solid var(--border); color: var(--text); }
 .btn-danger-outline { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
 
@@ -336,26 +320,8 @@ input.error, select.error { border-color: var(--danger); }
 .modal-title { font-family: var(--display); font-size: 1.05rem; font-weight: 700; margin-bottom: 18px; }
 
 /* ── Fixed expenses ─────────────────────────────────────────── */
-.fixed-row {
-  background: var(--surface); border: 1px solid var(--border-soft); border-left: 3px solid var(--accent2);
-  border-radius: var(--radius-sm); display: flex; justify-content: space-between; align-items: center;
-  padding: 12px 15px; margin-bottom: 8px;
-}
-.fixed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.fixed-card {
-  background: var(--surface2); border: 1px solid var(--border-soft); border-top: 3px solid var(--accent2);
-  border-radius: var(--radius-sm); padding: 12px 6px 10px;
-  text-align: center; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  transition: border-color .2s, transform .15s;
-}
-.fixed-card:hover { border-color: var(--accent2); transform: translateY(-1px); }
-.fixed-card-icon { font-size: 1.2rem; line-height: 1; }
-.fixed-card-name { font-size: .65rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; padding: 0 2px; }
-.fixed-card-amt  { font-family: var(--mono); font-weight: 700; color: var(--accent2); font-size: .75rem; font-variant-numeric: tabular-nums; }
-.fixed-card-actions { display: flex; gap: 2px; margin-top: 4px; }
 
 /* ── Charts ─────────────────────────────────────────────────── */
-.savings-bar-bg  { background: var(--surface3); height: 8px; border-radius: 4px; overflow: hidden; margin-top: 8px; }
 .savings-bar-fill { background: linear-gradient(90deg, var(--khaki), var(--success)); height: 100%; border-radius: 4px; transition: width .6s cubic-bezier(.34,1.56,.64,1); }
 .top3-item { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border-soft); }
 .top3-item:last-child { border-bottom: none; }
