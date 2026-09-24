@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.39.38";
+export const APP_VERSION = "1.40.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -56,6 +56,17 @@ export function todayISO() {
 }
 
 /**
+ * Date locale "YYYY-MM-DD" décalée de N jours par rapport à aujourd'hui
+ * (ex : daysAgoISO(1) = hier). Source unique pour les raccourcis
+ * Hier / Avant-hier des formulaires de saisie.
+ */
+export function daysAgoISO(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
  * Returns the current year-month as "YYYY-MM" in LOCAL time.
  * ⚠ Correction : remplace toISOString() (UTC) par heure locale pour éviter
  *   que le mois courant soit incorrect entre minuit et 1-2h du matin en UTC+.
@@ -83,7 +94,8 @@ export function deltaInfo(cur, prev) {
 /** True for types that add to income */
 export function isIncome(type) {
   return type === "income" || type === "dissolution_cagnotte";
-  // balance_adjustment intentionnellement exclu — n'impacte pas le solde estimé
+  // balance_adjustment exclu ici : son sens (+/−) dépend de adjSign.
+  // Pour tout calcul de signe, utiliser isIncomeDirection(t) (hooks.js).
 }
 
 /** Human-readable label for a transaction */
