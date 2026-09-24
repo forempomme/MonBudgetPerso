@@ -1,6 +1,6 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
-import { reducer, DEFAULT_DATA, A } from "./store.js";
+import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
 import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM } from "./utils.js";
 import { useBalanceWithRecurring } from "./hooks.js";
 import { ToastCtx } from "./context.js";
@@ -39,14 +39,8 @@ function loadState() {
   try {
     const s = localStorage.getItem(LS_KEY);
     if (!s) return DEFAULT_DATA;
-    const saved = JSON.parse(s);
-    // Merge profond pour les objets imbriqués — évite qu'une MAJ écrase un sous-objet entier
-    return {
-      ...DEFAULT_DATA,
-      ...saved,
-      notifSettings: { ...DEFAULT_DATA.notifSettings, ...(saved.notifSettings || {}) },
-      fixedIncomes: saved.fixedIncomes || DEFAULT_DATA.fixedIncomes,
-    };
+    // Même normalisation que l'import d'une sauvegarde (store.js)
+    return normalizeData(JSON.parse(s));
   } catch {
     return DEFAULT_DATA;
   }
@@ -113,58 +107,96 @@ export default function App() {
 
   // Planification des notifs — appelée UNIQUEMENT depuis Options (action utilisateur explicite)
   // Jamais au démarrage pour éviter l'écran noir post-biométrie
-  const scheduleNotifications = useCallback(async (ns) => {
+  // ── Notifications locales (v1.40.0) ────────────────────────────
+  // opts.silent  : replanification automatique au démarrage — pas de popup
+  //                de permission, pas de toast (voir useEffect plus bas).
+  // opts.test    : ajoute une notification de test dans 5 s (bouton Options).
+  const scheduleNotifications = useCallback(async (ns, opts = {}) => {
+    const { silent = false, test = false } = opts;
+    const say = (msg, type) => { if (!silent) addToast(msg, type); };
     try {
-      const LN = window?.Capacitor?.Plugins?.LocalNotifications;
-      if (!LN) return;
-      const perm = await LN.requestPermissions();
-      if (perm.display !== "granted") return;
-      // Sur Android 8+ (API 26+), un canal de notification est obligatoire —
-      // sans lui, une notification programmée avec un channelId inconnu ne
-      // s'affiche jamais, silencieusement (aucune erreur levée). C'était la
-      // cause probable des notifications qui ne se déclenchaient jamais.
-      if (LN.createChannel) {
-        try {
-          await LN.createChannel({
-            id: "budget", name: "Gestion du Budget",
-            description: "Rappels : récurrentes, versements automatiques, dépenses prévues, sauvegarde",
-            importance: 4, visibility: 1, vibration: true,
-          });
-        } catch (e) { console.warn("createChannel:", e); }
+      let LN = null;
+      try { LN = (await import("@capacitor/local-notifications")).LocalNotifications; } catch { /* navigateur */ }
+      if (!LN || !window?.Capacitor?.isNativePlatform?.()) {
+        say("Notifications indisponibles hors de l'app Android", "error");
+        return;
       }
-      await LN.cancel({ notifications: Array.from({length:30},(_,i)=>({id:i+1})) });
+      // Au démarrage on ne fait QUE vérifier (jamais de popup système, cause
+      // de l'écran noir post-biométrie en 1.39.1) ; la demande n'a lieu que
+      // sur une action explicite dans Options.
+      const perm = silent ? await LN.checkPermissions() : await LN.requestPermissions();
+      if (perm.display !== "granted") {
+        say("Notifications refusées — autorise-les dans les réglages Android de l'app", "error");
+        return;
+      }
+      // Canal obligatoire sur Android 8+ : sans lui, rien ne s'affiche.
+      try {
+        await LN.createChannel({
+          id: "budget", name: "Gestion du Budget",
+          description: "Rappels : récurrentes, versements automatiques, dépenses prévues, sauvegarde, solde bas",
+          importance: 4, visibility: 1, vibration: true,
+        });
+      } catch (e) { console.warn("createChannel:", e); }
+
+      // On annule TOUT ce qui est en attente (et plus seulement les ids 1→30,
+      // qui laissaient des doublons au-delà de 10 dépenses programmées).
+      const { notifications: already = [] } = await LN.getPending();
+      if (already.length) await LN.cancel({ notifications: already.map(n => ({ id: n.id })) });
+      if (!ns?.enabled) { say("Notifications désactivées", "info"); return; }
+
       const pending = [];
       const now = new Date();
       const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
+      const at9 = (y, m, d) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()), 9, 0, 0);
+      const tomorrowAt = h => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d; };
+      const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget" });
+
       if (ns.recurring && (data.recurringTemplates||[]).length > 0) {
-        const d = new Date(now.getFullYear(), now.getMonth()+1, 1, 9, 0, 0);
-        pending.push({ id:1, title:"🔄 Récurrentes à confirmer", body:`${(data.recurringTemplates||[]).length} modèle(s) à confirmer ce mois`, schedule:{at:d}, channelId:"budget" });
+        push(1, "🔄 Récurrentes à confirmer", `${data.recurringTemplates.length} modèle(s) à confirmer ce mois`,
+          at9(now.getFullYear(), now.getMonth() + 1, 1));
       }
-      (data.autoSavings||[]).filter(p=>p.enabled && ns.autoSaving).forEach((p,i) => {
-        const d = new Date(now.getFullYear(), now.getMonth(), p.dayOfMonth, 9, 0, 0);
-        if (d > now) {
-          const cag = data.cagnottes.find(c=>c.id===p.cagnotteId);
-          pending.push({ id:10+i, title:"🐷 Versement automatique", body:`${fmtAmt(p.amount)} → ${cag?.name||"cagnotte"}`, schedule:{at:d}, channelId:"budget" });
-        }
-      });
-      if (ns.scheduled) {
-        (data.scheduledTransactions||[]).filter(s=>!s.confirmed).forEach((s,i) => {
-          const veille = new Date(new Date(s.date+"T09:00:00").getTime()-86400000);
-          if (veille > now) pending.push({ id:20+i, title:"📅 Dépense prévue demain", body:`${fmtAmt(s.amount)}${s.note?" — "+s.note:""}`, schedule:{at:veille}, channelId:"budget" });
+      // Prochaine occurrence : ce mois-ci si le jour n'est pas passé, sinon le
+      // mois suivant (avant : rien n'était programmé si le jour était passé).
+      if (ns.autoSaving) {
+        (data.autoSavings||[]).filter(p => p.enabled).forEach((p, i) => {
+          let d = at9(now.getFullYear(), now.getMonth(), p.dayOfMonth);
+          if (d <= now) d = at9(now.getFullYear(), now.getMonth() + 1, p.dayOfMonth);
+          const cag = data.cagnottes.find(c => c.id === p.cagnotteId);
+          push(100 + i, "🐷 Versement automatique", `${fmtAmt(p.amount)} → ${cag?.name || "cagnotte"}`, d);
         });
       }
-      if (ns.backup && data.lastBackupDate) {
-        const days = Math.floor((Date.now()-new Date(data.lastBackupDate))/86400000);
-        if (days >= 7) pending.push({ id:5, title:"💾 Sauvegarde recommandée", body:`Dernière sauvegarde il y a ${days} jours`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
+      if (ns.scheduled) {
+        (data.scheduledTransactions||[]).filter(s => !s.confirmed).forEach((s, i) => {
+          const veille = new Date(new Date(s.date + "T09:00:00").getTime() - 86400000);
+          if (veille > now) push(200 + i, "📅 Dépense prévue demain", `${fmtAmt(s.amount)}${s.note ? " — " + s.note : ""}`, veille);
+        });
       }
-      // Alerte solde bas — contrairement aux autres, ce n'est pas un événement
-      // futur connu à l'avance : on vérifie le solde ACTUEL, et si déjà sous
-      // le seuil, on programme une notification quasi immédiate.
+      // Sauvegarde : aussi quand il n'y en a JAMAIS eu (avant : aucun rappel).
+      if (ns.backup) {
+        const days = data.lastBackupDate ? Math.floor((Date.now() - new Date(data.lastBackupDate)) / 86400000) : null;
+        if (days == null || days >= 7) {
+          push(5, "💾 Sauvegarde recommandée",
+            days == null ? "Tu n'as encore jamais sauvegardé tes données" : `Dernière sauvegarde il y a ${days} jours`,
+            tomorrowAt(19));
+        }
+      }
+      // Solde bas : rappel le lendemain matin (replanifié à chaque ouverture,
+      // donc pas de notification à chaque lancement de l'app).
       if (ns.alertSolde && data.alertEnabled && currentBalance < (data.alertThreshold ?? 500)) {
-        pending.push({ id:6, title:"🔔 Solde bas", body:`Ton solde estimé est de ${fmtAmt(currentBalance)}, sous ton seuil de ${fmtAmt(data.alertThreshold ?? 500)}`, schedule:{at:new Date(Date.now()+30000)}, channelId:"budget" });
+        push(6, "🔔 Solde bas", `Ton solde estimé est de ${fmtAmt(currentBalance)}, sous ton seuil de ${fmtAmt(data.alertThreshold ?? 500)}`,
+          tomorrowAt(9));
       }
-      if (pending.length > 0) await LN.schedule({ notifications:pending });
-    } catch(e) { console.warn("LocalNotifications:", e); }
+      if (test) push(9, "✅ Notifications actives", "Tes rappels Gestion du Budget fonctionnent.", new Date(Date.now() + 5000));
+
+      if (pending.length > 0) await LN.schedule({ notifications: pending });
+      say(test ? `Notification de test dans 5 s · ${pending.length - 1} rappel(s) programmé(s)` : `${pending.length} rappel(s) programmé(s)`, "success");
+    } catch (e) {
+      console.warn("LocalNotifications:", e);
+      say("Erreur lors de la programmation des notifications", "error");
+    }
+  // addToast est défini plus bas mais stable (useCallback sans dépendance) :
+  // il est lu au moment de l'appel, jamais au rendu — pas dans les deps.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold]);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
@@ -723,6 +755,19 @@ export default function App() {
   }
 
   // ── Écran de verrou ──────────────────────────────────────────
+  // Replanification automatique des rappels à chaque ouverture (v1.40.0) :
+  // sans ça, chaque notification ne partait qu'une fois. Uniquement APRÈS
+  // déverrouillage, différée de 4 s, sans popup de permission (silent) —
+  // pour ne pas reproduire l'écran noir post-biométrie de la 1.39.1.
+  const notifReplannedRef = useRef(false);
+  useEffect(() => {
+    if (locked || notifReplannedRef.current || !data.notifSettings?.enabled) return;
+    notifReplannedRef.current = true;
+    const t = setTimeout(() => scheduleNotifications(data.notifSettings, { silent: true }), 4000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
+
   if (locked) {
     return (
       <LockScreen
