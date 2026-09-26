@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
 import { fmt, currentYM, isIncome, PALETTE } from "../utils.js";
-import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets } from "../hooks.js";
+import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory } from "../hooks.js";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -741,6 +741,9 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onPushBack, onPopBack }) {
   const { transactions, categories, fixedExpenses } = data;
+  // Carte « Payé hors banque par catégorie » (v1.42.0)
+  const [sideCatType,   setSideCatType]   = useState("tr");
+  const [sideCatPeriod, setSideCatPeriod] = useState("year");
   const months  = useYearMonths(transactions, fixedExpenses, currentYear);
   const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
   const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1);
@@ -918,98 +921,113 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             monthLabel={MONTHS_FR[parseInt(ym.slice(5, 7), 10) - 1].toLowerCase()} />;
         })()}
 
-        {/* Montants à part — agrégat annuel, purement informatif */}
+        {/* Montants à part — agrégat annuel (v1.42.0 : inclut les dépenses 100 % hors compte) */}
         {(() => {
           const yearStr = currentYear.toString();
           const curYM   = currentYM();
           const isCurYear = yearStr === curYM.slice(0, 4);
           const sideTypes = data.sideAmountTypes || [];
-
-          const sideTxs = (data.transactions || []).filter(t =>
-            t.date.startsWith(yearStr) && t.type === "expense" &&
-            Object.values(t.sideAmounts || {}).some(v => (parseFloat(v) || 0) > 0)
-          );
-          if (sideTxs.length === 0) return null;
-
           const txSideTotal = t => Object.values(t.sideAmounts || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
 
-          const totalSide  = sideTxs.reduce((s, t) => s + txSideTotal(t), 0);
+          const sideTxs = (data.transactions || []).filter(t =>
+            t.date.startsWith(yearStr) && t.type === "expense" && txSideTotal(t) > 0);
+          const offExp  = (data.offAccountEntries || []).filter(x => x.kind === "expense" && (x.date || "").startsWith(yearStr));
+          if (sideTxs.length === 0 && offExp.length === 0) return null;
+
+          const totalOff   = offExp.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+          const totalSide  = sideTxs.reduce((s, t) => s + txSideTotal(t), 0) + totalOff;
           const totalPaid  = sideTxs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-          const totalBudget = totalPaid + totalSide;
           const thisMonthSide = isCurYear
             ? sideTxs.filter(t => t.date.startsWith(curYM)).reduce((s, t) => s + txSideTotal(t), 0)
+              + offExp.filter(x => x.date.startsWith(curYM)).reduce((s, x) => s + (parseFloat(x.amount) || 0), 0)
             : null;
 
-          // Répartition par type de montant à part (TR, carte cadeau…)
           const byType = {};
-          sideTxs.forEach(t => Object.entries(t.sideAmounts || {}).forEach(([satId, amt]) => {
-            byType[satId] = (byType[satId] || 0) + (parseFloat(amt) || 0);
-          }));
-          const typeRows = Object.entries(byType)
-            .sort((a, b) => b[1] - a[1])
-            .map(([satId, amt]) => ({ st: sideTypes.find(s => s.id === satId), amt }));
+          sideTxs.forEach(t => Object.entries(t.sideAmounts || {}).forEach(([k, v]) => { byType[k] = (byType[k] || 0) + (parseFloat(v) || 0); }));
+          offExp.forEach(x => { byType[x.satId] = (byType[x.satId] || 0) + (parseFloat(x.amount) || 0); });
+          const typeRows = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, amt]) => ({ st: sideTypes.find(s => s.id === k), amt }));
 
-          // Répartition par catégorie (toutes types de montant à part confondus)
-          const byCat = {};
-          sideTxs.forEach(t => { byCat[t.categoryId] = (byCat[t.categoryId] || 0) + txSideTotal(t); });
-          const catRows = Object.entries(byCat)
-            .sort((a, b) => b[1] - a[1])
-            .map(([catId, amt]) => ({ cat: data.categories.find(c => c.id === catId), amt }));
-
+          const box = { flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" };
+          const lab = { fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 };
           return (
-            <div style={{
-              background: "linear-gradient(135deg,#1a1508,#241c0a)", border: "1px solid rgba(200,184,96,.25)",
-              borderRadius: 16, padding: 16, marginBottom: 12,
-            }}>
-              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>
-                🎫 Montants à part — {currentYear}
+            <div className="tr-metal-box" style={{ borderRadius: 16, padding: 16, marginBottom: 12, "--tr-fill": "#1c1710" }}>
+              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>🎫 Montants à part — {currentYear}</div>
+              <div className="tr-metal-text" style={{ fontSize: "1.7rem", fontWeight: 800 }}>{fmt(totalSide)}</div>
+              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.5)", marginTop: 4, lineHeight: 1.5 }}>
+                {totalOff > 0 && <>dont {fmt(totalOff)} de dépenses 100 % hors compte<br/></>}
+                {thisMonthSide != null && thisMonthSide > 0 && `dont ${fmt(thisMonthSide)} ce mois-ci`}
               </div>
-              <div style={{ fontSize: "1.7rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalSide)}</div>
-              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.5)", marginTop: 4 }}>
-                Sur {sideTxs.length} opération{sideTxs.length > 1 ? "s" : ""} cette année
-                {thisMonthSide != null && thisMonthSide > 0 && ` · dont ${fmt(thisMonthSide)} ce mois-ci`}
-              </div>
-
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Payé (banque)</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--danger)" }}>{fmt(totalPaid)}</div>
-                </div>
-                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Montants à part</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(totalSide)}</div>
-                </div>
-                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>Budget réel</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "#fff" }}>{fmt(totalBudget)}</div>
-                </div>
+                <div style={box}><div style={lab}>Payé banque</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--danger)" }}>{fmt(totalPaid)}</div></div>
+                <div style={box}><div style={lab}>Hors banque</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--tr)" }}>{fmt(totalSide)}</div></div>
+                <div style={box}><div style={lab}>Budget réel</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "#fff" }}>{fmt(totalPaid + totalSide)}</div></div>
               </div>
-
               {typeRows.length > 1 && (
                 <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
                   {typeRows.map(({ st, amt }) => (
                     <div key={st?.id || "—"} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}>
                       <span style={{ fontSize: ".68rem" }}>{st?.icon || "🎫"}</span>
                       <span style={{ fontSize: ".62rem", color: "rgba(255,255,255,.7)" }}>{st?.label || "—"}</span>
-                      <span style={{ fontSize: ".64rem", fontWeight: 800, color: "var(--warning)" }}>{fmt(amt)}</span>
+                      <span style={{ fontSize: ".64rem", fontWeight: 800, color: "var(--tr)" }}>{fmt(amt)}</span>
                     </div>
                   ))}
                 </div>
               )}
-
-              {catRows.length > 0 && (
-                <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.1)" }}>
-                  {catRows.map(({ cat, amt }) => (
-                    <div key={cat?.id || "—"} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: ".64rem", color: "rgba(255,255,255,.75)" }}>
-                      <span>{cat?.icon || "🎫"} {cat?.name || "Sans catégorie"}</span>
-                      <span style={{ fontWeight: 800, color: "var(--warning)" }}>{fmt(amt)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 10, lineHeight: 1.5 }}>
-                "Budget réel" = ce qui est sorti de ton compte + montants à part. N'affecte jamais ton solde.
+                « Budget réel » = payé par la banque + hors banque (TR…). N'affecte jamais ton solde.
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Payé hors banque par catégorie (v1.42.0) — filtres type + période */}
+        {(() => {
+          const sideTypes = data.sideAmountTypes || [];
+          const curYM = currentYM();
+          const isCurYear = currentYear.toString() === curYM.slice(0, 4);
+          const typeSel = sideCatType === "all" || sideTypes.some(t => t.id === sideCatType) ? sideCatType : "all";
+          const period  = sideCatPeriod === "month" && isCurYear ? curYM : currentYear.toString();
+          const rows = computeSidePaidByCategory(data.transactions, data.offAccountEntries, typeSel, period);
+          const anyAtAll = computeSidePaidByCategory(data.transactions, data.offAccountEntries, "all", currentYear.toString()).length > 0;
+          if (!anyAtAll) return null;
+          const seg = on => ({ flex: 1, textAlign: "center", padding: "6px 4px", borderRadius: 9, fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
+            border: `1px solid ${on ? "var(--tr)" : "rgba(255,255,255,.15)"}`, color: on ? "var(--tr)" : "rgba(255,255,255,.55)", background: on ? "var(--tr-glow)" : "transparent" });
+          const selLabel = typeSel === "all" ? "hors banque" : `en ${(sideTypes.find(t => t.id === typeSel)?.label || "").toLowerCase()}`;
+          return (
+            <div className="tr-metal-box" style={{ borderRadius: 16, padding: 16, marginBottom: 12, "--tr-fill": "#1c1710" }}>
+              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>🎫 Payé hors banque par catégorie</div>
+              {sideTypes.length > 1 && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  {sideTypes.map(t => <div key={t.id} onClick={() => setSideCatType(t.id)} style={seg(typeSel === t.id)}>{t.icon} {t.label}</div>)}
+                  <div onClick={() => setSideCatType("all")} style={seg(typeSel === "all")}>Tous</div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {isCurYear && <div onClick={() => setSideCatPeriod("month")} style={seg(sideCatPeriod === "month")}>Ce mois</div>}
+                <div onClick={() => setSideCatPeriod("year")} style={seg(sideCatPeriod !== "month" || !isCurYear)}>{currentYear}</div>
+              </div>
+              {rows.length === 0 && <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.5)", textAlign: "center", padding: 6 }}>Rien de payé {selLabel} sur cette période.</div>}
+              {rows.map(r => {
+                const cat = (data.categories || []).find(c => c.id === r.categoryId);
+                return (
+                  <div key={r.categoryId || "none"} style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".7rem", marginBottom: 5 }}>
+                      <span>{cat?.icon || "🎫"} {cat?.name || "Sans catégorie"}</span>
+                      <span><b style={{ color: "var(--tr)" }}>{fmt(r.side)}</b> <span style={{ color: "rgba(255,255,255,.45)" }}>/ {fmt(r.total)}</span></span>
+                    </div>
+                    <div style={{ height: 7, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", display: "flex" }}>
+                      <div style={{ width: `${r.pct}%`, background: "var(--tr)" }} />
+                      <div style={{ width: `${100 - r.pct}%`, background: "var(--danger)", opacity: .55 }} />
+                    </div>
+                    <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", marginTop: 4 }}>
+                      {Math.round(r.pct)} % payé {selLabel} · {fmt(r.bank)} par la banque
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ display: "flex", gap: 12, fontSize: ".56rem", color: "rgba(255,255,255,.5)" }}>
+                <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--tr)" }} /> Hors banque</span>
+                <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--danger)", opacity: .55 }} /> Banque</span>
               </div>
             </div>
           );

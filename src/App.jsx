@@ -9,7 +9,7 @@ import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
-  QuickTemplateSheet, QuickTemplateManagerModal,
+  QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal,
 } from "./components/modals.jsx";
 import {
   AccueilView, CagnottesView, HistoriqueView,
@@ -381,6 +381,8 @@ export default function App() {
   const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
   const [quickFanOpen,   setQuickFanOpen]   = useState(false);   // éventail de templates (appui long sur +)
+  // Dépenses hors compte / rechargements (v1.42.0) : null | { mode, entry?, satId? }
+  const [offModal,       setOffModal]       = useState(null);
   const [quickEditTpl,   setQuickEditTpl]   = useState(null);    // template en cours de saisie (sheet montant/date)
   const [quickManagerOpen, setQuickManagerOpen] = useState(false); // gestion des templates (⚙️ dans l'éventail)
   const [fixedModal,       setFixedModal]       = useState(null);
@@ -624,6 +626,7 @@ export default function App() {
   switch (tab) {
   case "accueil": return (
       <AccueilView data={data}
+        onOpenOffAccount={(mode, satId, entry) => setOffModal({ mode, satId, entry })}
         onShowDetail={(type, period) => setDetailModal({ type, period })}
         onSwitchTab={navigateTo}
         onSaveProvisional={saveProvisional}
@@ -653,6 +656,7 @@ export default function App() {
   );
   case "historique": return (
       <HistoriqueView data={{...data, autoSavings: data.autoSavings||[]}}
+        onEditOffAccount={entry => setOffModal({ mode: entry.kind, entry })}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
         onDuplicateTrans={duplicateTransaction}
@@ -893,6 +897,7 @@ export default function App() {
             { type:"balance_adjustment", icon:"⚖️", label:"Équilibre",  color:"var(--sapin)"   },
             { type:"scheduled",          icon:"📅", label:"Programmée", color:"var(--warning)" },
             { type:"epargne",            icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
+            { type:"offAccount",         icon:"🎫", label:"Hors compte", color:"var(--tr)"     },
             { type:"income",             icon:"💰", label:"Revenu",     color:"var(--success)" },
             { type:"expense",            icon:"💸", label:"Dépense",    color:"var(--danger)"  },
           ].map((item, i) => (
@@ -900,6 +905,7 @@ export default function App() {
               onClick={() => {
                 setFabOpen(false);
                 if (item.type === "scheduled") setScheduledModal(true);
+                else if (item.type === "offAccount") setOffModal({ mode: "expense" });
                 else setTransModal({ editingId: null, defaultType: item.type });
               }}
               style={{
@@ -982,6 +988,18 @@ export default function App() {
           editingIdx={fixedModal.editingIdx}
           onSave={payload => { saveFixed(payload); setFixedModal(null); }}
           onClose={() => setFixedModal(null)}
+        />
+      )}
+      {offModal && (
+        <OffAccountModal
+          mode={offModal.mode}
+          entry={offModal.entry || null}
+          defaultSatId={offModal.satId}
+          sideAmountTypes={data.sideAmountTypes || []}
+          categories={data.categories}
+          onSave={entry => dispatch({ type: A.SAVE_OFF_ACCOUNT, entry })}
+          onDelete={id => dispatch({ type: A.DELETE_OFF_ACCOUNT, id })}
+          onClose={() => setOffModal(null)}
         />
       )}
       {quickEditTpl && (

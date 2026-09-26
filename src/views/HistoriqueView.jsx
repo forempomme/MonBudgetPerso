@@ -183,7 +183,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -196,6 +196,7 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  const [hideOff,   setHideOff]   = useState(false);   // v1.42.0 : masquer les dépenses hors compte
   const [showAmtFilter, setShowAmtFilter] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
 
@@ -360,6 +361,24 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
     return list;
   }, [transactions, categories, month, filter, catId, search, sort, minAmt, maxAmt, pointFilter, tagFilter, globalSearch]);
 
+  // Dépenses 100 % hors compte (v1.42.0) — liste séparée, affichée entre
+  // les opérations du même jour mais JAMAIS comptée dans les totaux,
+  // le pointage ou le rapprochement. Masquées dès qu'un filtre bancaire
+  // (revenus, cagnottes, pointage, tag) est actif.
+  const filteredOff = useMemo(() => {
+    if (hideOff || tagFilter || pointFilter !== "all" || (filter !== "all" && filter !== "expense")) return [];
+    let list = (data.offAccountEntries || []).filter(e => e.kind === "expense");
+    list = (globalSearch && search.trim()) ? list : list.filter(e => (e.date || "").startsWith(month));
+    if (catId) list = list.filter(e => e.categoryId === catId);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(e => (e.note || "").toLowerCase().includes(q) || (categories.find(c => c.id === e.categoryId)?.name || "").toLowerCase().includes(q));
+    }
+    if (minAmt) list = list.filter(e => parseFloat(e.amount) >= parseFloat(minAmt));
+    if (maxAmt) list = list.filter(e => parseFloat(e.amount) <= parseFloat(maxAmt));
+    return list;
+  }, [data.offAccountEntries, hideOff, tagFilter, pointFilter, filter, globalSearch, search, month, catId, categories, minAmt, maxAmt]);
+
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
   return (
@@ -449,12 +468,13 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
         {/* ── Filtres compacts ── */}
         {(() => {
           const activeCount = [
-            filter !== "all", pointFilter !== "all", tagFilter !== "",
+            filter !== "all", pointFilter !== "all", tagFilter !== "", hideOff,
             sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "list",
           ].filter(Boolean).length;
           const activePills = [
             filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
             pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
+            hideOff                && { label: "🎫 Hors compte masqué", clear: () => setHideOff(false) },
             tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
             sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
             (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
@@ -535,6 +555,22 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                       ))}
                     </div>
                   </div>
+                  {/* Hors compte (v1.42.0) */}
+                  {(data.offAccountEntries || []).some(e => e.kind === "expense") && (
+                    <div>
+                      <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Hors compte</div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        {[[false, "🎫 Afficher"], [true, "Masquer"]].map(([v, l]) => (
+                          <button key={l} onClick={() => setHideOff(v)} style={{
+                            background: hideOff === v ? "var(--tr-glow)" : "transparent",
+                            border: `1px solid ${hideOff === v ? "var(--tr)" : "var(--border)"}`,
+                            borderRadius: 6, padding: "5px 10px", color: hideOff === v ? "var(--tr)" : "var(--text2)",
+                            fontSize: ".58rem", fontWeight: 700, cursor: "pointer",
+                          }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {/* Tags */}
                   {(data.tags || []).length > 0 && (
                     <div>
@@ -748,12 +784,21 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
 
       {/* ── Liste avec pointage ── */}
       {viewMode === "list" && (
-        filtered.length === 0
+        filtered.length === 0 && filteredOff.length === 0
           ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
           : (
             <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
-              {grouped.map(([date, dayTxs]) => {
-                const allPointed = dayTxs.every(t => t.pointed);
+              {(() => {
+                // Jours des opérations bancaires + jours n'ayant que du hors compte
+                const offByDate = {};
+                filteredOff.forEach(e => (offByDate[e.date] = offByDate[e.date] || []).push(e));
+                const bankDates = new Set(grouped.map(([d]) => d));
+                const merged = [...grouped, ...Object.keys(offByDate).filter(d => !bankDates.has(d)).map(d => [d, []])];
+                if (sort === "date") merged.sort((a, b) => b[0].localeCompare(a[0]));
+                return merged;
+              })().map(([date, dayTxs]) => {
+                const dayOff = filteredOff.filter(e => e.date === date);
+                const allPointed = dayTxs.length > 0 && dayTxs.every(t => t.pointed);
                 const dayNet = dayTxs.reduce((s, t) => isIncomeDirection(t) ? s + (parseFloat(t.amount)||0) : s - (parseFloat(t.amount)||0), 0);
                 return (
                   <div key={date}>
@@ -761,9 +806,11 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                       <span>{dateLabel(date)}</span>
                       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         {allPointed && <span style={{ color: "var(--success)" }}>✓</span>}
+                        {dayTxs.length > 0 && (
                         <span style={{ color: dayNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>
                           {dayNet >= 0 ? "+" : ""}{fmt(dayNet)}
                         </span>
+                        )}
                       </div>
                     </div>
                     {pointFilter === "all"
@@ -782,6 +829,27 @@ export function HistoriqueView({ data, onEditTrans, onDeleteTrans, onDuplicateTr
                             onDelete={id => onDeleteTrans(id)} />
                         ))
                     }
+                    {dayOff.map(e => {
+                      const cat = categories.find(c => c.id === e.categoryId);
+                      const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
+                      return (
+                        <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer",
+                          borderBottom: "1px solid var(--border-soft)", background: "var(--tr-glow)",
+                          borderLeft: "2px dashed var(--tr-border)",
+                        }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{cat?.icon || st?.icon || "🎫"}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: ".76rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
+                            <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 2 }}>
+                              <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>{cat?.name ?? "—"} · {e.date.slice(8)}/{e.date.slice(5, 7)}</span>
+                              <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 8, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)", border: "1px solid var(--tr-border)" }}>{st?.icon || "🎫"} Hors compte</span>
+                            </div>
+                          </div>
+                          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</div>
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
@@ -1233,7 +1301,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
                     if (!(amt > 0)) return null;
                     const st = allSideAmountTypes.find(s => s.id === satId);
                     return (
-                      <span key={satId} style={{ fontSize: ".5rem", padding: "1px 5px", background: "rgba(200,184,96,.15)", color: "var(--warning)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                      <span key={satId} style={{ fontSize: ".5rem", padding: "1px 5px", background: "var(--tr-glow)", color: "var(--tr)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
                         {st?.icon || "🎫"} +{fmt(amt)}
                       </span>
                     );

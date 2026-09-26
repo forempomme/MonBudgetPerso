@@ -99,6 +99,8 @@ export const A = /** @type {const} */ ({
   CLEAR_WARNING:            "CLEAR_WARNING",
   SAVE_PROJECTION_SNAPSHOT: "SAVE_PROJECTION_SNAPSHOT",
   SAVE_QUICK_TEMPLATE:      "SAVE_QUICK_TEMPLATE",
+  SAVE_OFF_ACCOUNT:         "SAVE_OFF_ACCOUNT",
+  DELETE_OFF_ACCOUNT:       "DELETE_OFF_ACCOUNT",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
@@ -151,7 +153,12 @@ export const DEFAULT_DATA = {
   // informatif : jamais compté dans aucun calcul de solde. "Tickets resto"
   // préconfiguré comme premier type, d'autres peuvent être ajoutés depuis
   // Options (ex: carte cadeau, remboursement attendu…).
-  sideAmountTypes:           [{ id: "tr", label: "Tickets resto", icon: "🎫" }],
+  sideAmountTypes:           [{ id: "tr", label: "Tickets resto", icon: "🎫", trackBalance: true }],
+  // Dépenses payées 100 % hors compte (tickets resto…) et rechargements
+  // (v1.42.0) — liste SÉPARÉE des transactions : aucun calcul de solde,
+  // rapprochement, fixe ou projection ne la lit. Jamais.
+  // { id, kind: "expense"|"recharge", satId, amount, date, categoryId?, note? }
+  offAccountEntries:         [],
   notifSettings: {
     enabled:    false,
     recurring:  true,
@@ -201,7 +208,10 @@ export function normalizeData(saved) {
     ...src,
     notifSettings: { ...DEFAULT_DATA.notifSettings, ...(src.notifSettings || {}) },
     fixedIncomes:  src.fixedIncomes || DEFAULT_DATA.fixedIncomes,
-    sideAmountTypes: src.sideAmountTypes || DEFAULT_DATA.sideAmountTypes,
+    sideAmountTypes: (src.sideAmountTypes || DEFAULT_DATA.sideAmountTypes)
+      // Le type TR historique suit son solde par défaut (porte-monnaie)
+      .map(st => st.id === "tr" && st.trackBalance === undefined ? { ...st, trackBalance: true } : st),
+    offAccountEntries: src.offAccountEntries || [],
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -658,6 +668,7 @@ export function reducer(state, action) {
       return {
         ...state,
         sideAmountTypes: (state.sideAmountTypes || []).filter(s => s.id !== action.id),
+        offAccountEntries: (state.offAccountEntries || []).filter(e => e.satId !== action.id),
         transactions: state.transactions.map(t => {
           if (!t.sideAmounts || !(action.id in t.sideAmounts)) return t;
           const sideAmounts = { ...t.sideAmounts };
@@ -786,6 +797,18 @@ export function reducer(state, action) {
         quickTemplates: [...(state.quickTemplates || []), { ...tpl, id: tpl.id || uid("qt") }],
       };
     }
+
+    case A.SAVE_OFF_ACCOUNT: {
+      const e = action.entry;
+      const list = state.offAccountEntries || [];
+      if (e.id && list.some(x => x.id === e.id)) {
+        return { ...state, offAccountEntries: list.map(x => x.id === e.id ? { ...x, ...e } : x) };
+      }
+      return { ...state, offAccountEntries: [...list, { ...e, id: uid("off") }] };
+    }
+
+    case A.DELETE_OFF_ACCOUNT:
+      return { ...state, offAccountEntries: (state.offAccountEntries || []).filter(x => x.id !== action.id) };
 
     case A.DELETE_QUICK_TEMPLATE:
       return { ...state, quickTemplates: (state.quickTemplates || []).filter(t => t.id !== action.id) };

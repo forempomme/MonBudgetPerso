@@ -11,21 +11,23 @@ import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
 // ─────────────────────────────────────────────────────────────────
 const SAT_ICONS = ["🎫","🎁","💳","🪙","🏷️","💰","🎟️","🧾"];
 
-function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, onSaveType, onDeleteType }) {
+function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, offAccountEntries = [], onSaveType, onDeleteType }) {
   const [editingId, setEditingId] = useState(null);
   const [newLabel,  setNewLabel]  = useState("");
   const [newIcon,   setNewIcon]   = useState(SAT_ICONS[0]);
   const [creating,  setCreating]  = useState(false);
+  const [newTrack,  setNewTrack]  = useState(false);   // v1.42.0 : « Suivre le solde » (porte-monnaie)
+  const [confirmId, setConfirmId] = useState(null);
 
   function startEdit(st) {
-    setEditingId(st.id); setNewLabel(st.label); setNewIcon(st.icon); setCreating(true);
+    setEditingId(st.id); setNewLabel(st.label); setNewIcon(st.icon); setNewTrack(!!st.trackBalance); setCreating(true);
   }
   function startCreate() {
-    setEditingId(null); setNewLabel(""); setNewIcon(SAT_ICONS[0]); setCreating(true);
+    setEditingId(null); setNewLabel(""); setNewIcon(SAT_ICONS[0]); setNewTrack(false); setCreating(true);
   }
   function save() {
     if (!newLabel.trim()) return;
-    onSaveType?.({ id: editingId || null, label: newLabel.trim(), icon: newIcon });
+    onSaveType?.({ id: editingId || null, label: newLabel.trim(), icon: newIcon, trackBalance: newTrack });
     setCreating(false); setEditingId(null); setNewLabel("");
   }
 
@@ -43,16 +45,17 @@ function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, onSaveTy
         {sideAmountTypes.length > 0 && (
           <div style={{ display:"flex", flexDirection:"column", gap:6, marginBottom:12 }}>
             {sideAmountTypes.map(st => {
-              const count = transactions.filter(t => t.sideAmounts && st.id in t.sideAmounts).length;
+              const count = transactions.filter(t => t.sideAmounts && st.id in t.sideAmounts).length
+                + offAccountEntries.filter(e => e.satId === st.id).length;
               return (
-                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:"3px solid var(--warning)", borderRadius:10 }}>
+                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:"3px solid var(--tr)", borderRadius:10 }}>
                   <span style={{ fontSize:"1rem" }}>{st.icon}</span>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:".72rem", fontWeight:700 }}>{st.label}</div>
-                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{count} opération{count!==1?"s":""}</div>
+                    <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{count} opération{count!==1?"s":""}{st.trackBalance ? " · 👛 solde suivi" : ""}</div>
                   </div>
                   <button onClick={()=>startEdit(st)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text2)", fontSize:".7rem", cursor:"pointer" }}>✏️</button>
-                  <button onClick={()=>onDeleteType?.(st.id)} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer" }}>✕</button>
+                  <button onClick={()=>{ if (count > 0 && confirmId !== st.id) { setConfirmId(st.id); return; } setConfirmId(null); onDeleteType?.(st.id); }} style={{ border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color: confirmId===st.id ? "#fff" : "var(--text3)", background: confirmId===st.id ? "var(--danger)" : "transparent", fontSize:".72rem", cursor:"pointer" }}>{confirmId===st.id ? `Supprimer ${count} op. ?` : "✕"}</button>
                 </div>
               );
             })}
@@ -60,12 +63,12 @@ function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, onSaveTy
         )}
 
         {!creating ? (
-          <button onClick={startCreate} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--warning)", borderRadius:10, padding:"11px", color:"var(--warning)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
+          <button onClick={startCreate} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--tr)", borderRadius:10, padding:"11px", color:"var(--tr)", fontWeight:700, fontSize:".75rem", cursor:"pointer" }}>
             ＋ Créer un nouveau type
           </button>
         ) : (
-          <div style={{ background:"var(--surface)", border:"1.5px solid var(--warning)", borderRadius:12, padding:14 }}>
-            <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--warning)", marginBottom:10 }}>{editingId ? "Modifier le type" : "Nouveau type"}</div>
+          <div style={{ background:"var(--surface)", border:"1.5px solid var(--tr)", borderRadius:12, padding:14 }}>
+            <div style={{ fontSize:".65rem", fontWeight:800, color:"var(--tr)", marginBottom:10 }}>{editingId ? "Modifier le type" : "Nouveau type"}</div>
             <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Ex: Carte cadeau"
               style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 12px", color:"var(--text)", fontSize:".8rem", marginBottom:10, boxSizing:"border-box" }} />
             <div style={{ fontSize:".6rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Icône</div>
@@ -74,9 +77,18 @@ function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, onSaveTy
                 <button key={ic} onClick={()=>setNewIcon(ic)} style={{ width:32, height:32, background:newIcon===ic?"var(--accent-glow)":"transparent", border:`1px solid ${newIcon===ic?"var(--accent)":"var(--border)"}`, borderRadius:7, fontSize:"1rem", cursor:"pointer" }}>{ic}</button>
               ))}
             </div>
+            <div onClick={()=>setNewTrack(v=>!v)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"9px 11px", borderRadius:10, border:"1px solid var(--border)", marginBottom:12, cursor:"pointer" }}>
+              <div>
+                <div style={{ fontSize:".7rem", fontWeight:700 }}>👛 Suivre le solde</div>
+                <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:2, lineHeight:1.4 }}>Porte-monnaie sur l'accueil : rechargements − dépenses. À activer pour une carte TR ou cadeau.</div>
+              </div>
+              <span style={{ width:38, height:21, borderRadius:20, flexShrink:0, position:"relative", background: newTrack ? "var(--tr)" : "var(--surface3)", transition:"background .15s" }}>
+                <span style={{ position:"absolute", top:2, left: newTrack ? 19 : 2, width:17, height:17, borderRadius:"50%", background:"#fff", transition:"left .15s" }} />
+              </span>
+            </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={()=>{setCreating(false); setEditingId(null);}} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
-              <button onClick={save} style={{ flex:2, background:newLabel.trim()?"var(--warning)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newLabel.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>{editingId ? "Enregistrer" : "Créer"}</button>
+              <button onClick={save} style={{ flex:2, background:newLabel.trim()?"var(--tr)":"var(--surface2)", border:"none", borderRadius:9, padding:"9px", color:newLabel.trim()?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer" }}>{editingId ? "Enregistrer" : "Créer"}</button>
             </div>
           </div>
         )}
@@ -874,6 +886,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           onClose={() => setShowSideAmountTypesModal(false)}
           sideAmountTypes={data.sideAmountTypes || []}
           transactions={data.transactions || []}
+          offAccountEntries={data.offAccountEntries || []}
           onSaveType={onSaveSideAmountType}
           onDeleteType={onDeleteSideAmountType}
         />

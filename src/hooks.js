@@ -585,3 +585,59 @@ export function computeTagBudgets(tags, transactions, ym) {
     })
     .sort((a, b) => b.pct - a.pct);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Porte-monnaie hors compte (v1.42.0) — un par type de montant à part
+//  dont « Suivre le solde » est activé.
+//  Solde = rechargements − dépenses 100 % hors compte − montants à part
+//  utilisés en complément d'une dépense bancaire (même carte, même argent).
+//  Purement informatif : ne lit ni n'influence aucun solde bancaire.
+// ─────────────────────────────────────────────────────────────────
+export function computeWallets(sideAmountTypes, offEntries, transactions, ym) {
+  return (sideAmountTypes || []).filter(st => st.trackBalance).map(st => {
+    const moves = [];
+    (offEntries || []).filter(e => e.satId === st.id).forEach(e => {
+      const a = parseFloat(e.amount) || 0;
+      moves.push({ id: e.id, date: e.date, amount: e.kind === "recharge" ? a : -a,
+        kind: e.kind, note: e.note, categoryId: e.categoryId, entry: e });
+    });
+    (transactions || []).forEach(t => {
+      const a = parseFloat(t.sideAmounts?.[st.id]) || 0;
+      if (a > 0) moves.push({ id: "tx_" + t.id, date: t.date, amount: -a, kind: "complement",
+        note: t.note, categoryId: t.categoryId });
+    });
+    moves.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+    const inMonth = m => (m.date || "").startsWith(ym);
+    return {
+      st,
+      balance:        moves.reduce((s, m) => s + m.amount, 0),
+      // Les corrections (rechargement négatif) modifient le solde mais ne sont
+      // ni un rechargement ni une dépense du mois.
+      rechargedMonth: moves.filter(m => inMonth(m) && m.kind === "recharge" && m.amount > 0).reduce((s, m) => s + m.amount, 0),
+      spentMonth:     -moves.filter(m => inMonth(m) && m.kind !== "recharge").reduce((s, m) => s + m.amount, 0),
+      moves,
+    };
+  });
+}
+
+// Payé hors banque (montants à part + dépenses 100 % hors compte) par
+// catégorie, face au budget réel de la catégorie (banque + hors banque).
+// satFilter : id d'un type ou "all" ; periodPrefix : "2026-09" ou "2026".
+export function computeSidePaidByCategory(transactions, offEntries, satFilter, periodPrefix) {
+  const inP = d => (d || "").startsWith(periodPrefix);
+  const match = id => satFilter === "all" || id === satFilter;
+  const map = {};
+  const row = c => (map[c] = map[c] || { categoryId: c, side: 0, bank: 0 });
+  (transactions || []).filter(t => t.type === "expense" && inP(t.date)).forEach(t => {
+    const r = row(t.categoryId);
+    r.bank += parseFloat(t.amount) || 0;
+    Object.entries(t.sideAmounts || {}).forEach(([k, v]) => { if (match(k)) r.side += parseFloat(v) || 0; });
+  });
+  (offEntries || []).filter(e => e.kind === "expense" && inP(e.date) && match(e.satId)).forEach(e => {
+    row(e.categoryId).side += parseFloat(e.amount) || 0;
+  });
+  return Object.values(map)
+    .filter(r => r.side > 0)
+    .map(r => ({ ...r, total: r.bank + r.side, pct: r.side / (r.bank + r.side) * 100 }))
+    .sort((a, b) => b.side - a.side);
+}

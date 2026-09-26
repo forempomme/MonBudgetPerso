@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT } from "../utils.js";
-import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets } from "../hooks.js";
+import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
+export function AccueilView({ data, onOpenOffAccount, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -215,6 +215,8 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
 
   // ── Récap cagnotte par période ────────────────────────────────
   const [cagSheet, setCagSheet] = useState(null); // null | "month" | "year"
+  // Porte-monnaie hors compte (v1.42.0) — purement informatif
+  const [walletOpen, setWalletOpen] = useState(false);
 
   const cagBreakdown = useMemo(() => {
     const prefix = cagSheet === "month" ? curM : cagSheet === "year" ? curY : null;
@@ -550,8 +552,9 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
           {/* ── Séparateur ── */}
           <div style={{ height: 1, background: "rgba(255,255,255,.1)", margin: "12px 0" }} />
 
-          {/* ── Rapprochement bancaire ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+          {/* ── Rapprochement bancaire (+ porte-monnaie TR en 3ᵉ mini-carte, v1.42.0) ── */}
+          {(() => { const w = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM)[0]; return (
+          <div style={{ display: "grid", gridTemplateColumns: w ? "1fr 1fr 1fr" : "1fr 1fr", gap: w ? 6 : 8, marginBottom: 10 }}>
             {[
               { label: "✓ Solde pointé",  value: soldePointe,  color: "var(--success)", bg: "rgba(104,212,152,.12)", bord: "rgba(104,212,152,.25)", filter: "pointed",   sub: `${nbPointed} op. confirmées` },
               { label: "⏳ En attente",   value: soldeAttente, color: "var(--warning)",  bg: "rgba(200,184,96,.08)",  bord: "rgba(200,184,96,.25)",  filter: "unpointed", sub: `${totalPointable - nbPointed} op. restantes` },
@@ -572,7 +575,20 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
                 <div style={{ fontSize: ".52rem", color: "rgba(255,255,255,.35)", marginTop: 2 }}>{s.sub}</div>
               </div>
             ))}
+            {w && (
+              <div onClick={() => setWalletOpen(true)} className="tr-metal-box"
+                style={{ borderRadius: 9, padding: "8px 8px", cursor: "pointer", "--tr-fill": "rgba(30,40,58,.9)" }}>
+                <div style={{ fontSize: ".55rem", color: "var(--tr)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {w.st.icon} {w.st.label.length > 8 ? (w.st.id === "tr" ? "TR" : w.st.label.slice(0, 8)) : w.st.label} ›
+                </div>
+                <div className="tr-metal-text" style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>
+                  {fmt(w.balance)}
+                </div>
+                <div style={{ fontSize: ".52rem", color: "rgba(255,255,255,.35)", marginTop: 2 }}>restant</div>
+              </div>
+            )}
           </div>
+          ); })()}
 
           {/* ── Barre de progression rapprochement ── */}
           {totalPointable > 0 && (
@@ -747,6 +763,58 @@ export function AccueilView({ data, onShowDetail, onSwitchTab, onSaveProvisional
       </Sec>
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
+      {/* Panneau porte-monnaie (v1.42.0) — ouvert depuis la 3ᵉ mini-carte */}
+      {walletOpen && (() => {
+        const wallets = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM);
+        const cats = data.categories || [];
+        return (
+          <Modal onClose={() => setWalletOpen(false)} title="">
+            {wallets.map((w, wi) => (
+              <div key={w.st.id} style={{ marginBottom: wi < wallets.length - 1 ? 18 : 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 800, fontSize: ".8rem" }}>{w.st.icon} {w.st.label}</div>
+                  {wi === 0 && <button onClick={() => setWalletOpen(false)} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", cursor: "pointer" }}>✕</button>}
+                </div>
+                <div className="tr-metal-text" style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--mono)", marginTop: 4 }}>{fmt(w.balance)}</div>
+                <div style={{ fontSize: ".6rem", color: "var(--text2)" }}>restant sur la carte</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
+                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Rechargé ce mois</div>
+                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--success)", marginTop: 3 }}>+{fmt(w.rechargedMonth)}</div>
+                  </div>
+                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
+                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Dépensé ce mois</div>
+                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--tr)", marginTop: 3 }}>−{fmt(w.spentMonth)}</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, maxHeight: "34vh", overflowY: "auto" }}>
+                  {w.moves.length === 0 && <div style={{ fontSize: ".64rem", color: "var(--text3)", textAlign: "center", padding: 10 }}>Aucun mouvement — commence par un rechargement.</div>}
+                  {w.moves.slice(0, 30).map(m => {
+                    const cat = cats.find(c => c.id === m.categoryId);
+                    const label = m.kind === "recharge" ? (m.note || (m.amount < 0 ? "Correction" : "Rechargement"))
+                      : `${m.note || cat?.name || "Dépense"}${m.kind === "complement" ? " (complément)" : ""}`;
+                    const icon = m.kind === "recharge" ? "💳" : (cat?.icon || w.st.icon);
+                    const editable = m.kind !== "complement";
+                    return (
+                      <div key={m.id} onClick={() => editable && onOpenOffAccount?.(m.kind, w.st.id, m.entry)}
+                        style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".66rem", padding: "8px 0", borderBottom: "1px solid var(--border-soft)", cursor: editable ? "pointer" : "default" }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{icon} {label} · {m.date.slice(8)}/{m.date.slice(5, 7)}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontWeight: 800, flexShrink: 0, color: m.amount >= 0 ? "var(--success)" : "var(--tr)" }}>{m.amount >= 0 ? "+" : "−"}{fmt(Math.abs(m.amount))}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("recharge", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--success)", color: "var(--success)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>＋ Rechargement</button>
+                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("expense", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--tr)", color: "var(--tr)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>− Dépense</button>
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>Informatif : n'impacte ni ton solde bancaire ni le rapprochement. Tape une ligne pour la modifier.</div>
+          </Modal>
+        );
+      })()}
+
       {/* Alerte budgets par tag (v1.41.0) — dès 80 % consommés ; tap → Rapport */}
       {(() => {
         const alerts = computeTagBudgets(data.tags, transactions, curM).filter(b => b.level !== "ok");

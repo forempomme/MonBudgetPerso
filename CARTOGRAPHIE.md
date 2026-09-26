@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.41.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.42.0**.
 
 ---
 
@@ -85,7 +85,8 @@ Aucun contexte React global autre que `ToastCtx` : tout redescend explicitement 
 | `scheduledTransactions[]` | Transactions programmées (date future) |
 | `autoSavings[]` | Versements automatiques mensuels |
 | `tags[]` | `{ id, name, icon, color, budget?, budgetPeriod? }` — `budgetPeriod` : `"month"` (défaut) ou `"total"` |
-| `sideAmountTypes[]` | Types de "montants à part" configurables (ex: `{ id:"tr", icon:"🎫", label:"Tickets resto" }`) |
+| `sideAmountTypes[]` | Types de "montants à part" configurables (ex: `{ id:"tr", icon:"🎫", label:"Tickets resto", trackBalance:true }`). `trackBalance` = porte-monnaie affiché sur l'accueil |
+| `offAccountEntries[]` | Dépenses 100 % hors compte et rechargements : `{ id, kind:"expense"|"recharge", satId, amount, date, categoryId?, note? }`. **Liste séparée des transactions : aucun calcul bancaire ne doit jamais la lire** |
 | `quickTemplates[]` | Templates de saisie rapide (`{ id, icon, name, categoryId, type }`) |
 | `categoryThresholds{}` | Seuils d'alerte budget par catégorie |
 | `notifSettings{}` | Config notifications locales |
@@ -111,6 +112,8 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | `isPointable(type)` | `true` sauf `decagnottage`/`transfer` (mouvements internes, absents d'un relevé) | Rapprochement bancaire, filtres Historique |
 | `useReconciliation(txs, fixedExpenses, fixedIncomes)` | LA seule source pour `soldePointe`/`soldeAttente`/`nbPointed`/`totalPointable`. Inclut les frais ET revenus fixes avec leur propre `pointedMonths` | Accueil (rapprochement + base du solde estimé) |
 | `useBalanceWithRecurring(...)` | Solde estimé = `soldePointe + soldeAttente` moins les récurrentes/programmées pas encore confirmées. **Ne recompte jamais un frais fixe non pointé une 2e fois** (déjà dans `soldeAttente`) | Le gros chiffre "Solde bancaire estimé" |
+| `computeWallets(types, offEntries, txs, ym)` | Porte-monnaie par type suivi : solde = rechargements − dépenses hors compte − montants à part en complément ; rechargé/dépensé du mois (corrections exclues) ; mouvements | Mini-carte hero + panneau porte-monnaie (Accueil) |
+| `computeSidePaidByCategory(txs, offEntries, type, période)` | Payé hors banque vs budget réel par catégorie | Rapport |
 | `computeTagBudgets(tags, txs, ym)` | Budgets par tag : dépensé / budget / % / niveau (`ok`/`warn`/`over`). Dépenses uniquement, montant banque | Rapport (`TagBudgetBars`) ET alerte Accueil |
 | `effectiveFixesForMonth` / `effectiveIncomesForMonth` | Montant effectif d'un frais/revenu fixe pour un mois donné (respecte `isActiveForMonth` + `monthlyOverrides`) | Tout total mensuel de frais/revenus fixes |
 
@@ -171,6 +174,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 ---
 
 - **Notifications** : plugin `@capacitor/local-notifications`, canal `budget`, replanifiées à chaque ouverture (après déverrouillage, +4 s, sans popup de permission). Ne jamais demander une permission au démarrage (écran noir 1.39.1).
+- **Hors compte** : couleur dédiée `--tr` (or/cuivre) + classes `.tr-metal-box` / `.tr-metal-text` (dégradé) dans `styles.css`. Le jaune `--warning` reste réservé à « En attente » et aux alertes.
 - **Données entrantes** : tout passe par `normalizeData()` (chargement ET import de sauvegarde). Toute future migration de champ s'ajoute là.
 
 ## 9. Ce que ce document ne couvre pas

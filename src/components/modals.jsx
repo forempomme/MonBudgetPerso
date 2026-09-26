@@ -76,7 +76,7 @@ function SectionLabel({ children }) {
 // ─────────────────────────────────────────────────────────────────
 //  NumPad — clavier numérique custom (touches réduites à 43px)
 // ─────────────────────────────────────────────────────────────────
-function NumPad({ value, onChange, type, onTypeChange }) {
+function NumPad({ value, onChange, type, onTypeChange, variant }) {
   const OPERATORS = ["+", "-"];
   const isAdj = type === "balance_adjustment";
   const isSimpleType = (type === "expense" || type === "income") && !isAdj;
@@ -131,7 +131,10 @@ function NumPad({ value, onChange, type, onTypeChange }) {
   })() : null;
 
   const isExpense   = type === "expense";
-  const accentColor = isExpense ? "var(--danger)" : "var(--success)";
+  // variant "tr" (v1.42.0) : dépense hors compte — couleur métal, sans signe
+  const isTr        = variant === "tr";
+  const accentColor = isTr ? "var(--tr)" : isExpense ? "var(--danger)" : "var(--success)";
+  const sign        = isTr ? "" : isExpense ? "−" : "+";
 
   // ── Disposition touches : ⌫ en haut à droite, opérateurs à droite ──
   const KEYS = [
@@ -145,8 +148,8 @@ function NumPad({ value, onChange, type, onTypeChange }) {
     <div>
       {/* Affichage montant + bascule type */}
       <div style={{
-        background: isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
-        border: `1px solid ${isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
+        background: isTr ? "var(--tr-glow)" : isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
+        border: `1px solid ${isTr ? "var(--tr-border)" : isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
         borderRadius: 12, padding: "8px 12px", marginBottom: 8,
         display: "flex", alignItems: "center", gap: 10,
       }}>
@@ -157,15 +160,15 @@ function NumPad({ value, onChange, type, onTypeChange }) {
             </div>
           )}
           <div style={{ fontFamily: "var(--mono)", fontSize: "1.8rem", fontWeight: 800, color: accentColor, lineHeight: 1 }}>
-            {isExpense ? "−" : "+"}{displayVal} €
+            {sign}{displayVal} €
           </div>
           {preview && (
             <div style={{ fontSize: ".62rem", color: "var(--text3)", marginTop: 3 }}>
-              = {isExpense ? "−" : "+"}{preview}
+              = {sign}{preview}
             </div>
           )}
         </div>
-        {isSimpleType && (
+        {isSimpleType && onTypeChange && !variant && (
           <button onClick={() => onTypeChange(isExpense ? "income" : "expense")} style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
             background: isExpense ? "rgba(104,212,152,.1)" : "rgba(200,112,112,.1)",
@@ -257,8 +260,8 @@ function SideAmountsPicker({ types, side, showHint = true }) {
             <button key={st.id} type="button" onClick={() => side.openType(st.id)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
-                borderRadius: 20, background: "rgba(200,184,96,.1)", border: "1.5px dashed rgba(200,184,96,.4)",
-                color: "var(--warning)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
+                borderRadius: 20, background: "var(--tr-glow)", border: "1.5px dashed var(--tr-border)",
+                color: "var(--tr)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
               }}>
               {st.icon} {st.label}
             </button>
@@ -269,7 +272,7 @@ function SideAmountsPicker({ types, side, showHint = true }) {
         const st = types.find(s => s.id === k);
         if (!st) return null;
         return (
-          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "rgba(200,184,96,.06)", border: "1px solid rgba(200,184,96,.2)", borderRadius: 12, marginTop: 6 }}>
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "var(--tr-glow)", border: "1px solid var(--tr-border)", borderRadius: 12, marginTop: 6 }}>
             <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
             <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
               value={side.vals[k] || ""}
@@ -1935,6 +1938,137 @@ function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
       }}>
         Enregistrer le template
       </button>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  OffAccountModal — v1.42.0
+//  Dépense payée 100 % hors compte (tickets resto…) ou rechargement
+//  d'un porte-monnaie. Enregistrée dans offAccountEntries, liste séparée
+//  des transactions : n'impacte AUCUN calcul bancaire.
+// ─────────────────────────────────────────────────────────────────
+function evalAmount(str) {
+  const tokens = String(str || "").replace(/,/g, ".").match(/(\d+\.?\d*|\+|-)/g);
+  if (!tokens) return NaN;
+  let r = parseFloat(tokens[0]);
+  for (let i = 1; i < tokens.length; i += 2) {
+    const n = parseFloat(tokens[i + 1]); if (isNaN(n)) break;
+    r = tokens[i] === "+" ? r + n : r - n;
+  }
+  return r;
+}
+
+export function OffAccountModal({ mode = "expense", entry = null, defaultSatId, sideAmountTypes = [], categories = [], onSave, onDelete, onClose }) {
+  const isRecharge = (entry?.kind || mode) === "recharge";
+  const types = isRecharge ? sideAmountTypes.filter(st => st.trackBalance) : sideAmountTypes;
+  const [satId,  setSatId]  = useState(entry?.satId || defaultSatId || types[0]?.id || "");
+  const [amount, setAmount] = useState(entry ? String(Math.abs(entry.amount)).replace(".", ",") : "");
+  const [date,   setDate]   = useState(entry?.date || todayISO());
+  const [catId,  setCatId]  = useState(entry?.categoryId || "");
+  const [note,   setNote]   = useState(entry?.note || "");
+  const [showCal, setShowCal] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  // Rechargement négatif = correction de solde (le clavier n'accepte pas de « − » initial)
+  const [neg,    setNeg]    = useState(entry?.kind === "recharge" && entry.amount < 0);
+  const [err,    setErr]    = useState(null);
+  const toast = useToast();
+
+  const expCats = categories.filter(c => c.type === "expense" || !c.type);
+  const shortcuts = [["Aujourd'hui", todayISO()], ["Hier", daysAgoISO(1)], ["Avant-hier", daysAgoISO(2)]];
+  const isShortcut = shortcuts.some(([, v]) => v === date);
+  const st = sideAmountTypes.find(s => s.id === satId);
+
+  function handleSave() {
+    const raw = evalAmount(amount);
+    if (!satId) { setErr("Crée d'abord un type dans Options → Montants à part"); return; }
+    if (isNaN(raw) || raw <= 0) { setErr("Montant requis"); return; }
+    const a = isRecharge && neg ? -raw : raw;
+    if (!isRecharge && !catId) { setErr("Choisis une catégorie"); return; }
+    onSave({
+      ...(entry ? { id: entry.id } : {}),
+      kind: isRecharge ? "recharge" : "expense",
+      satId, amount: Math.round(a * 100) / 100, date,
+      categoryId: isRecharge ? null : catId,
+      note: note.trim(),
+    });
+    toast?.(isRecharge ? `${st?.icon || "💳"} Rechargement enregistré` : `${st?.icon || "🎫"} Dépense hors compte enregistrée`, "success");
+    onClose();
+  }
+
+  const chip = (on, color = "var(--tr)") => ({
+    padding: "6px 11px", borderRadius: 18, fontSize: ".64rem", fontWeight: 700, cursor: "pointer",
+    border: `1px solid ${on ? color : "var(--border)"}`, color: on ? color : "var(--text2)",
+    background: on ? "var(--tr-glow)" : "transparent", touchAction: "manipulation",
+  });
+  const lbl = { fontSize: ".58rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", margin: "10px 0 5px" };
+
+  return (
+    <Modal onClose={onClose} title={isRecharge ? `💳 Rechargement ${st?.label || ""}` : "🎫 Dépense hors compte"}>
+      {types.length > 1 && (
+        <>
+          <div style={{ ...lbl, marginTop: 0 }}>{isRecharge ? "Porte-monnaie" : "Payé avec"}</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {types.map(t => <button key={t.id} type="button" onClick={() => setSatId(t.id)} style={chip(satId === t.id)}>{t.icon} {t.label}</button>)}
+          </div>
+        </>
+      )}
+      {types.length === 0 && (
+        <div style={{ fontSize: ".66rem", color: "var(--danger)", marginBottom: 8 }}>
+          {isRecharge ? "Active « Suivre le solde » sur un type dans Options → Montants à part." : "Crée d'abord un type dans Options → Montants à part."}
+        </div>
+      )}
+
+      {!isRecharge && (
+        <>
+          <div style={lbl}>Catégorie</div>
+          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
+            {expCats.map(c => <button key={c.id} type="button" onClick={() => setCatId(c.id)} style={{ ...chip(catId === c.id), flexShrink: 0 }}>{c.icon} {c.name}</button>)}
+          </div>
+        </>
+      )}
+
+      <div style={lbl}>Note</div>
+      <input type="text" value={note} onChange={e => setNote(e.target.value)}
+        placeholder={isRecharge ? "Ex : septembre — 23 jours × 8 €" : "Ex : déjeuner boulangerie"}
+        style={{ width: "100%", boxSizing: "border-box", fontSize: ".75rem" }} />
+
+      <div style={lbl}>Date</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: showCal || !isShortcut ? 6 : 0 }}>
+        {shortcuts.map(([l, v]) => <button key={v} type="button" onClick={() => { setDate(v); setShowCal(false); }} style={{ ...chip(date === v && !showCal), flex: 1 }}>{l}</button>)}
+        <button type="button" onClick={() => setShowCal(v => !v)} style={chip(showCal || !isShortcut)}>📅</button>
+      </div>
+      {(showCal || !isShortcut) && (
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginBottom: 4 }} />
+      )}
+
+      <div style={{ marginTop: 10 }}>
+        <NumPad value={amount} onChange={setAmount} type={isRecharge ? "income" : "expense"} variant={isRecharge ? "recharge" : "tr"} />
+      </div>
+      {isRecharge && (
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <button type="button" onClick={() => setNeg(false)} style={{ ...chip(!neg, "var(--success)"), flex: 1 }}>＋ Rechargement</button>
+          <button type="button" onClick={() => setNeg(true)}  style={{ ...chip(neg, "var(--danger)"), flex: 1 }}>－ Correction</button>
+        </div>
+      )}
+      {isRecharge && neg && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.5 }}>Retire ce montant du solde — utile s'il ne correspond plus à ta carte.</div>}
+      {err && <div style={{ color: "var(--danger)", fontSize: ".65rem", marginTop: 8 }}>{err}</div>}
+
+      <button type="button" onClick={handleSave} style={{
+        width: "100%", marginTop: 12, padding: 13, borderRadius: 12, border: "none", cursor: "pointer",
+        background: isRecharge ? "var(--success)" : "var(--tr)", color: "#1a1405", fontWeight: 800, fontSize: ".78rem",
+      }}>{isRecharge ? "💳 Enregistrer le rechargement" : "🎫 Enregistrer"}</button>
+
+      {entry && onDelete && (
+        confirmDel ? (
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button type="button" onClick={() => setConfirmDel(false)} style={{ flex: 1, padding: 10, borderRadius: 10, background: "transparent", border: "1px solid var(--border)", color: "var(--text2)", fontWeight: 700, cursor: "pointer" }}>Annuler</button>
+            <button type="button" onClick={() => { onDelete(entry.id); onClose(); }} style={{ flex: 1, padding: 10, borderRadius: 10, background: "var(--danger)", border: "none", color: "#fff", fontWeight: 800, cursor: "pointer" }}>Supprimer</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmDel(true)} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, background: "transparent", border: "1px solid rgba(200,112,112,.35)", color: "var(--danger)", fontWeight: 700, cursor: "pointer" }}>🗑 Supprimer</button>
+        )
+      )}
     </Modal>
   );
 }
