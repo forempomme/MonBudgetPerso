@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.42.0";
+export const APP_VERSION = "1.43.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -134,4 +134,28 @@ export function txSign(type) {
   if (type === "income" || type === "dissolution_cagnotte" || type === "balance_adjustment") return "+";
   if (type === "decagnottage" || type === "transfer")       return "";
   return "−";
+}
+
+// ─── Chèques (v1.43.0) ───────────────────────────────────────────
+/**
+ * Date de référence d'une opération pour savoir quel mois elle « confirme »
+ * (récurrentes). Un chèque encaissé est déplacé à sa date d'encaissement :
+ * sans ça, le loyer de septembre payé par chèque encaissé en octobre
+ * compterait comme le loyer d'octobre. On garde donc la date d'émission.
+ */
+export function recurringRefDate(t) {
+  return t.issuedDate || t.date;
+}
+
+/** Date limite d'encaissement d'un chèque en France : émission + 1 an et 8 jours. */
+export function chequeExpiryISO(issuedISO) {
+  const [y, m, d] = issuedISO.split("-").map(Number);
+  const e = new Date(y + 1, m - 1, d + 8);
+  return `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, "0")}-${String(e.getDate()).padStart(2, "0")}`;
+}
+
+/** Nombre de jours entiers entre deux dates locales "YYYY-MM-DD". */
+export function daysBetweenISO(fromISO, toISO) {
+  const a = new Date(fromISO + "T12:00:00"), b = new Date(toISO + "T12:00:00");
+  return Math.round((b - a) / 86400000);
 }

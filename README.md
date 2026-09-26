@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.42.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.43.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.42.0
+└── package.json         — version: 1.43.0
 ```
 
 ---
@@ -341,6 +341,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.43.0** | minor | Chèques : bouton « 🧾 Chèque » (+ n° optionnel) dans la saisie d'une dépense ; bandeau « N chèques non encaissés » sous la hero card de l'accueil, liste avec ancienneté colorée, encaissement à une date choisie (la dépense passe à la date d'encaissement, la date d'émission est conservée), annulation des chèques périmés (1 an et 8 jours) ; pointer un chèque dans l'Historique = l'encaisser à la date du jour ; rappels (tous les 15/30/60 j + 1 mois avant péremption) ; confirmation des récurrentes basée sur la date d'émission (`recurringRefDate`) pour qu'un loyer payé par chèque reste rattaché au bon mois. Aucun calcul de solde modifié |
 | **1.42.0** | minor | Dépenses hors compte (tickets resto…) : entrée « 🎫 Hors compte » dans le bouton + (3ᵉ en partant du bas), formulaire avec le clavier de l'app, stockage séparé `offAccountEntries` (aucun impact sur les calculs bancaires) ; porte-monnaie par type avec « Suivre le solde » (rechargements, corrections, solde = rechargements − dépenses hors compte − TR utilisés en complément), 3ᵉ mini-carte « métal » dans la hero card de l'accueil ; lignes hors compte dans l'Historique (hors totaux et pointage, filtre Masquer) ; Rapport : montants à part incluant le hors compte + carte « Payé hors banque par catégorie » (filtres type et mois/année) ; couleur TR dédiée `--tr` (or/cuivre) partout |
 | **1.41.1** | patch | Nettoyage code mort : composant `Sparkline` (jamais rendu) + hook `useSpark`, imports inutilisés `getPrevMonth` (hooks.js) et `polar` (charts.jsx), 18 règles CSS jamais utilisées (`fixed-card*`, `fixed-grid`, `fixed-row`, `savings-bar-bg`, `dash-balance`, `dash-decag`, `hero-indicator`, `section-enter`, `section-title`, `btn-success`, `filter-row`) |
 | **1.41.0** | minor | Budget par tag : montant optionnel « par mois » ou « total (projet) » dans le gestionnaire de tags (désormais modifiable ✏️), barres de suivi dans Rapport (vert < 80 %, orange 80–100 %, rouge dépassé), alerte sur l'Accueil dès 80 % ; calcul unique `computeTagBudgets()` dans hooks.js |

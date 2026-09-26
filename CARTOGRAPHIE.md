@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.42.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.43.0**.
 
 ---
 
@@ -76,7 +76,7 @@ Aucun contexte React global autre que `ToastCtx` : tout redescend explicitement 
 
 | Champ | Description |
 |---|---|
-| `transactions[]` | Toutes les opérations. Champs notables : `type`, `amount`, `date`, `categoryId`, `pointed`, `templateId` (lien récurrente), `adjSign` (`"+"`/`"-"`, pour `balance_adjustment`), `tagIds[]`, `sideAmounts` (`{ [typeId]: montant }`), `targetCagId` |
+| `transactions[]` | Toutes les opérations. Champs notables : `paymentMethod` (`"cheque"`), `chequeNumber`, `issuedDate` (date d'émission d'un chèque — `date` devient la date d'encaissement une fois pointé), `type`, `amount`, `date`, `categoryId`, `pointed`, `templateId` (lien récurrente), `adjSign` (`"+"`/`"-"`, pour `balance_adjustment`), `tagIds[]`, `sideAmounts` (`{ [typeId]: montant }`), `targetCagId` |
 | `categories[]` | Catégories (icône, nom, type) |
 | `cagnottes[]` | Cagnottes (avec `cagType`) |
 | `fixedExpenses[]` | Frais fixes. Champs : `startYM`, `monthlyOverrides`, `pointedMonths`, `paused`, `pausedFrom`, `pausedUntil` |
@@ -112,6 +112,8 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | `isPointable(type)` | `true` sauf `decagnottage`/`transfer` (mouvements internes, absents d'un relevé) | Rapprochement bancaire, filtres Historique |
 | `useReconciliation(txs, fixedExpenses, fixedIncomes)` | LA seule source pour `soldePointe`/`soldeAttente`/`nbPointed`/`totalPointable`. Inclut les frais ET revenus fixes avec leur propre `pointedMonths` | Accueil (rapprochement + base du solde estimé) |
 | `useBalanceWithRecurring(...)` | Solde estimé = `soldePointe + soldeAttente` moins les récurrentes/programmées pas encore confirmées. **Ne recompte jamais un frais fixe non pointé une 2e fois** (déjà dans `soldeAttente`) | Le gros chiffre "Solde bancaire estimé" |
+| `pendingCheques(txs)` | Chèques non pointés avec âge, date limite (1 an + 8 j) et niveau `recent`/`old`/`veryold`/`expired` | Bandeau + liste chèques (Accueil) |
+| `recurringRefDate(t)` (utils.js) | `issuedDate || date` : date qui décide quel mois une opération confirme pour les récurrentes. **À utiliser pour toute vérification « récurrente déjà confirmée ce mois »** | hooks, Accueil, Historique, App |
 | `computeWallets(types, offEntries, txs, ym)` | Porte-monnaie par type suivi : solde = rechargements − dépenses hors compte − montants à part en complément ; rechargé/dépensé du mois (corrections exclues) ; mouvements | Mini-carte hero + panneau porte-monnaie (Accueil) |
 | `computeSidePaidByCategory(txs, offEntries, type, période)` | Payé hors banque vs budget réel par catégorie | Rapport |
 | `computeTagBudgets(tags, txs, ym)` | Budgets par tag : dépensé / budget / % / niveau (`ok`/`warn`/`over`). Dépenses uniquement, montant banque | Rapport (`TagBudgetBars`) ET alerte Accueil |
@@ -174,6 +176,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 ---
 
 - **Notifications** : plugin `@capacitor/local-notifications`, canal `budget`, replanifiées à chaque ouverture (après déverrouillage, +4 s, sans popup de permission). Ne jamais demander une permission au démarrage (écran noir 1.39.1).
+- **Chèques** : pointer = encaisser. `TOGGLE_POINT_TX` sur un chèque déplace sa date au jour même (et la remet à `issuedDate` au dépointage) ; `CASH_CHEQUE` encaisse à une date choisie. Couleur `--chq` (bleu ardoise).
 - **Hors compte** : couleur dédiée `--tr` (or/cuivre) + classes `.tr-metal-box` / `.tr-metal-text` (dégradé) dans `styles.css`. Le jaune `--warning` reste réservé à « En attente » et aux alertes.
 - **Données entrantes** : tout passe par `normalizeData()` (chargement ET import de sauvegarde). Toute future migration de champ s'ajoute là.
 

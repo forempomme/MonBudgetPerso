@@ -189,13 +189,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const [notifAlert,    setNotifAlert]    = useState(notifSettings.alertSolde   ?? true);
   const [notifSched,    setNotifSched]    = useState(notifSettings.scheduled    ?? true);
   const [notifBackup,   setNotifBackup]   = useState(notifSettings.backup       ?? true);
+  const [notifCheques,  setNotifCheques]  = useState(notifSettings.cheques      ?? true);
+  const [chequeDelay,   setChequeDelay]   = useState(notifSettings.chequeDelay  ?? 30);
 
   function saveNotif(field, val) {
-    const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, [field]:val };
+    const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay, [field]:val };
     onSaveNotifSettings?.(next);
   }
   function toggleNotifMain(val) {
-    const next = { enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup };
+    const next = { enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay };
     setNotifOn(val);
     onSaveNotifSettings?.(next);
     // Action explicite : programme les rappels si activé, les annule tous sinon
@@ -800,6 +802,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               ["alertSolde", notifAlert,     setNotifAlert,     "🔔", "Alerte solde bas",          "Quand le solde passe sous le seuil"],
               ["scheduled",  notifSched,     setNotifSched,     "📅", "Dépenses programmées",      "La veille de chaque dépense prévue"],
               ["backup",     notifBackup,    setNotifBackup,    "💾", "Rappel sauvegarde",         "Si aucune sauvegarde depuis 7 jours"],
+              ["cheques",    notifCheques,   setNotifCheques,   "🧾", "Chèques non encaissés",     `Tous les ${chequeDelay} jours, et 1 mois avant péremption`],
             ].map(([key, val, setter, ico, lbl, desc]) => (
               <div key={key} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
                 <div style={{ width:32, height:32, borderRadius:8, background:"rgba(200,184,96,.1)", border:"1px solid rgba(200,184,96,.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem", flexShrink:0 }}>{ico}</div>
@@ -817,6 +820,18 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 </div>
               </div>
             ))}
+            {notifCheques && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+                <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>🧾 Rappel chèque tous les</span>
+                {[15, 30, 60].map(n => (
+                  <button key={n} onClick={() => { setChequeDelay(n); saveNotif("chequeDelay", n); }} style={{
+                    padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+                    border:`1px solid ${chequeDelay===n ? "var(--chq)" : "var(--border)"}`, color: chequeDelay===n ? "var(--chq)" : "var(--text2)",
+                    background: chequeDelay===n ? "var(--chq-glow)" : "transparent",
+                  }}>{n} j</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {!notifOn && (
@@ -831,7 +846,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           <button
             className="btn btn-outline"
             style={{ width:"100%", fontSize:".68rem", color:"var(--accent)", borderColor:"var(--accent)" }}
-            onClick={() => onScheduleNotifications?.({ enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup }, { test: true })}>
+            onClick={() => onScheduleNotifications?.({ enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay }, { test: true })}>
             🔔 Planifier + envoyer une notification de test
           </button>
         </div>

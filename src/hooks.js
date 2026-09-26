@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -357,10 +357,10 @@ export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncome
       const signedAmount = tpl.type === "income" ? -amount : amount;
 
       if (tpl.frequency === "yearly") {
-        const doneThisYear = confirmed.some(t => t.date.startsWith(curY));
+        const doneThisYear = confirmed.some(t => recurringRefDate(t).startsWith(curY));
         if (!doneThisYear) pending += signedAmount;
       } else {
-        const doneThisMonth = confirmed.some(t => t.date.startsWith(curYM));
+        const doneThisMonth = confirmed.some(t => recurringRefDate(t).startsWith(curYM));
         if (!doneThisMonth) pending += signedAmount;
       }
     });
@@ -473,7 +473,7 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
           // Si le mois en cours n'est pas encore confirmé, le solde de
           // départ (balance) l'anticipe déjà comme "fait" — il compte
           // donc pour 1 occurrence de plus que ce qui est dans les données.
-          const doneThisMonth  = confirmed.some(t => t.date.startsWith(curYM));
+          const doneThisMonth  = confirmed.some(t => recurringRefDate(t).startsWith(curYM));
           const effectiveDone  = doneThisMonth ? doneSoFar : doneSoFar + 1;
           if (effectiveDone + i > tpl.occurrences) return s;
         }
@@ -640,4 +640,24 @@ export function computeSidePaidByCategory(transactions, offEntries, satFilter, p
     .filter(r => r.side > 0)
     .map(r => ({ ...r, total: r.bank + r.side, pct: r.side / (r.bank + r.side) * 100 }))
     .sort((a, b) => b.side - a.side);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Chèques non encaissés (v1.43.0) — une dépense payée par chèque et
+//  pas encore pointée. Aucun calcul nouveau : elle est déjà déduite du
+//  solde estimé et comptée « en attente » comme toute dépense non pointée.
+//  level : "recent" < 30 j · "old" 30 j–3 mois · "veryold" > 3 mois
+//          · "expired" au-delà d'1 an et 8 jours (plus encaissable).
+// ─────────────────────────────────────────────────────────────────
+export function pendingCheques(transactions, today = todayISO()) {
+  return (transactions || [])
+    .filter(t => t.paymentMethod === "cheque" && !t.pointed)
+    .map(t => {
+      const issued = t.issuedDate || t.date;
+      const age    = Math.max(0, daysBetweenISO(issued, today));
+      const expiry = chequeExpiryISO(issued);
+      const level  = today > expiry ? "expired" : age > 90 ? "veryold" : age >= 30 ? "old" : "recent";
+      return { t, issued, age, expiry, level };
+    })
+    .sort((a, b) => b.age - a.age);
 }

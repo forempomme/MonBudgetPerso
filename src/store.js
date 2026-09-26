@@ -101,6 +101,7 @@ export const A = /** @type {const} */ ({
   SAVE_QUICK_TEMPLATE:      "SAVE_QUICK_TEMPLATE",
   SAVE_OFF_ACCOUNT:         "SAVE_OFF_ACCOUNT",
   DELETE_OFF_ACCOUNT:       "DELETE_OFF_ACCOUNT",
+  CASH_CHEQUE:              "CASH_CHEQUE",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
@@ -166,6 +167,7 @@ export const DEFAULT_DATA = {
     alertSolde: true,
     scheduled:  true,
     backup:     true,
+    cheques: true, chequeDelay: 30,   // v1.43.0 : rappels chèques non encaissés
   },
 };
 
@@ -561,9 +563,27 @@ export function reducer(state, action) {
     case A.TOGGLE_POINT_TX:
       return {
         ...state,
-        transactions: state.transactions.map(t =>
-          t.id === action.id ? { ...t, pointed: !t.pointed } : t
-        ),
+        transactions: state.transactions.map(t => {
+          if (t.id !== action.id) return t;
+          // Chèque (v1.43.0) : pointer = encaisser → l'opération passe à la date
+          // du jour (règle : dépense datée à l'encaissement) ; dépointer la
+          // ramène à sa date d'émission. La date d'émission n'est jamais perdue.
+          if (t.paymentMethod === "cheque") {
+            const issuedDate = t.issuedDate || t.date;
+            return t.pointed
+              ? { ...t, pointed: false, date: issuedDate, issuedDate }
+              : { ...t, pointed: true, date: todayISO(), issuedDate };
+          }
+          return { ...t, pointed: !t.pointed };
+        }),
+      };
+
+    // Encaissement d'un chèque à une date choisie (v1.43.0)
+    case A.CASH_CHEQUE:
+      return {
+        ...state,
+        transactions: state.transactions.map(t => t.id !== action.id ? t
+          : { ...t, pointed: true, issuedDate: t.issuedDate || t.date, date: action.date }),
       };
 
     case A.TOGGLE_POINT_FIX:

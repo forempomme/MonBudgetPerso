@@ -1,8 +1,8 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT } from "../utils.js";
-import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets } from "../hooks.js";
+import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO } from "../utils.js";
+import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenOffAccount, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
+export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -217,6 +217,9 @@ export function AccueilView({ data, onOpenOffAccount, onShowDetail, onSwitchTab,
   const [cagSheet, setCagSheet] = useState(null); // null | "month" | "year"
   // Porte-monnaie hors compte (v1.42.0) — purement informatif
   const [walletOpen, setWalletOpen] = useState(false);
+  // Chèques non encaissés (v1.43.0)
+  const [chequesOpen, setChequesOpen] = useState(false);
+  const [cashing,     setCashing]     = useState(null);   // { id, date } en cours d'encaissement
 
   const cagBreakdown = useMemo(() => {
     const prefix = cagSheet === "month" ? curM : cagSheet === "year" ? curY : null;
@@ -255,9 +258,9 @@ export function AccueilView({ data, onOpenOffAccount, onShowDetail, onSwitchTab,
       const confirmed = (data.transactions || []).filter(t => t.templateId === tpl.id);
       if (tpl.occurrences != null && confirmed.length >= tpl.occurrences) return false;
       if (tpl.frequency === "yearly") {
-        return !(data.transactions || []).some(t => t.templateId === tpl.id && t.date.startsWith(curY));
+        return !(data.transactions || []).some(t => t.templateId === tpl.id && recurringRefDate(t).startsWith(curY));
       }
-      return !(data.transactions || []).some(t => t.templateId === tpl.id && t.date.startsWith(curM));
+      return !(data.transactions || []).some(t => t.templateId === tpl.id && recurringRefDate(t).startsWith(curM));
     });
   }, [data.recurringTemplates, data.transactions, curM, curY]);
 
@@ -728,6 +731,107 @@ export function AccueilView({ data, onOpenOffAccount, onShowDetail, onSwitchTab,
         <div className={`hero-dot ${heroIndex === 0 ? "active" : ""}`} />
         <div className={`hero-dot ${heroIndex === 1 ? "active" : ""}`} />
       </div>
+
+      {/* ── 🧾 Chèques non encaissés (v1.43.0) — n'apparaît que s'il y en a ── */}
+      {(() => {
+        const pend = pendingCheques(transactions);
+        if (pend.length === 0) return null;
+        const total = pend.reduce((s, c) => s + (parseFloat(c.t.amount) || 0), 0);
+        const oldest = pend[0];
+        const alertCol = oldest.level === "expired" || oldest.level === "veryold" ? "var(--danger)" : oldest.level === "old" ? "var(--warning)" : "var(--text2)";
+        return (
+          <div onClick={() => setChequesOpen(true)} style={{
+            display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "10px 13px", borderRadius: 14,
+            background: "var(--chq-glow)", border: "1px solid var(--chq-border)", cursor: "pointer",
+          }}>
+            <span style={{ fontSize: "1rem" }}>🧾</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: ".7rem", fontWeight: 800, color: "var(--chq)" }}>
+                {pend.length} chèque{pend.length > 1 ? "s" : ""} non encaissé{pend.length > 1 ? "s" : ""} · {fmt(total)}
+              </div>
+              <div style={{ fontSize: ".58rem", color: alertCol, marginTop: 2 }}>
+                {oldest.level === "expired" ? "⚠️ Au moins un chèque n'est plus encaissable"
+                  : pend.length > 1 ? `Le plus ancien : il y a ${oldest.age} jour${oldest.age > 1 ? "s" : ""}` : `Émis il y a ${oldest.age} jour${oldest.age > 1 ? "s" : ""}`}
+              </div>
+            </div>
+            <span style={{ color: "var(--text2)" }}>›</span>
+          </div>
+        );
+      })()}
+
+      {chequesOpen && (() => {
+        const pend = pendingCheques(transactions);
+        const cats = data.categories || [];
+        const total = pend.reduce((s, c) => s + (parseFloat(c.t.amount) || 0), 0);
+        const lvl = { recent: ["var(--chq)", "var(--chq-glow)"], old: ["var(--warning)", "rgba(200,184,96,.15)"], veryold: ["var(--danger)", "rgba(200,112,112,.14)"], expired: ["var(--danger)", "rgba(200,112,112,.14)"] };
+        const close = () => { setChequesOpen(false); setCashing(null); };
+        const shortcuts = [["Aujourd'hui", todayISO()], ["Hier", daysAgoISO(1)], ["Avant-hier", daysAgoISO(2)]];
+        const dd = iso => `${iso.slice(8)}/${iso.slice(5, 7)}`;
+        return (
+          <Modal onClose={close} title="">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontWeight: 800, fontSize: ".85rem" }}>🧾 Chèques non encaissés</div>
+              <button onClick={close} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ fontSize: ".6rem", color: "var(--text2)", marginBottom: 6, lineHeight: 1.5 }}>
+              {pend.length === 0 ? "Tous tes chèques sont encaissés ✓" : `${fmt(total)} déjà déduits de ton solde estimé, pas encore sortis de ton compte.`}
+            </div>
+            <div style={{ maxHeight: "55vh", overflowY: "auto" }}>
+              {pend.map(({ t, issued, age, expiry, level }) => {
+                const cat = cats.find(c => c.id === t.categoryId);
+                const [col, bg] = lvl[level];
+                const isCashing = cashing?.id === t.id;
+                return (
+                  <div key={t.id} style={{ padding: "11px 2px", borderBottom: "1px solid var(--border-soft)" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: ".74rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat?.icon || "🧾"} {t.note || cat?.name || "Chèque"}</div>
+                        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 2 }}>{t.chequeNumber ? `n°${t.chequeNumber} · ` : ""}émis le {dd(issued)}</div>
+                        <span style={{ display: "inline-block", marginTop: 4, fontSize: ".54rem", fontWeight: 800, padding: "1px 7px", borderRadius: 8, color: col, background: bg }}>
+                          {level === "expired" ? `Périmé depuis le ${dd(expiry)}` : `il y a ${age} j`}
+                        </span>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: "var(--danger)" }}>−{fmt(t.amount)}</div>
+                        {!isCashing && level !== "expired" && (
+                          <button onClick={() => setCashing({ id: t.id, date: todayISO() })} style={{ marginTop: 6, padding: "6px 10px", borderRadius: 16, border: "1px solid var(--success)", color: "var(--success)", background: "rgba(104,212,152,.08)", fontSize: ".6rem", fontWeight: 800, cursor: "pointer" }}>✓ Encaissé</button>
+                        )}
+                        {level === "expired" && (
+                          <button onClick={() => onDeleteTrans?.(t.id)} style={{ marginTop: 6, padding: "6px 10px", borderRadius: 16, border: "1px solid var(--danger)", color: "var(--danger)", background: "transparent", fontSize: ".6rem", fontWeight: 800, cursor: "pointer" }}>Annuler le chèque</button>
+                        )}
+                      </div>
+                    </div>
+                    {level === "expired" && (
+                      <div style={{ fontSize: ".58rem", color: "var(--text2)", marginTop: 6, lineHeight: 1.5 }}>Supprime la dépense : les {fmt(t.amount)} reviennent dans ton solde estimé. « Annuler » ne sert que si le bénéficiaire ne l'a jamais encaissé.</div>
+                    )}
+                    {isCashing && (
+                      <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+                        <div style={{ fontSize: ".56rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>Encaissé le</div>
+                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                          {shortcuts.map(([l, v]) => (
+                            <button key={v} onClick={() => setCashing({ id: t.id, date: v })} style={{ padding: "5px 10px", borderRadius: 16, fontSize: ".6rem", fontWeight: 700, cursor: "pointer", border: `1px solid ${cashing.date === v ? "var(--chq)" : "var(--border)"}`, color: cashing.date === v ? "var(--chq)" : "var(--text2)", background: cashing.date === v ? "var(--chq-glow)" : "transparent" }}>{l}</button>
+                          ))}
+                          <input type="date" value={cashing.date} min={issued} onChange={e => e.target.value && setCashing({ id: t.id, date: e.target.value })} style={{ fontSize: ".62rem", padding: "4px 6px" }} />
+                        </div>
+                        {cashing.date < issued && <div style={{ fontSize: ".58rem", color: "var(--danger)", marginTop: 6 }}>La date d'encaissement est avant l'émission ({dd(issued)}).</div>}
+                        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.5 }}>La dépense passera au {dd(cashing.date)} et sera pointée.</div>
+                        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                          <button onClick={() => setCashing(null)} style={{ flex: 1, padding: 8, borderRadius: 9, border: "1px solid var(--border)", background: "transparent", color: "var(--text2)", fontWeight: 700, fontSize: ".64rem", cursor: "pointer" }}>Annuler</button>
+                          <button disabled={cashing.date < issued} onClick={() => { onCashCheque?.(t.id, cashing.date); setCashing(null); }} style={{ flex: 2, padding: 8, borderRadius: 9, border: "none", background: cashing.date < issued ? "var(--surface3)" : "var(--success)", color: "#06121c", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>✓ Marquer encaissé</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.6 }}>
+              <span style={{ color: "var(--chq)" }}>■</span> moins de 30 j · <span style={{ color: "var(--warning)" }}>■</span> 30 j à 3 mois · <span style={{ color: "var(--danger)" }}>■</span> plus de 3 mois.<br/>
+              Un chèque n'est plus encaissable 1 an et 8 jours après son émission. Pointer un chèque dans l'Historique l'encaisse à la date du jour.
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* ── 🐷 Cagnottes + 📌 Fixes ── */}
       <Sec id="cagnottes_fixes">

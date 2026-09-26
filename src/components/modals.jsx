@@ -313,6 +313,9 @@ export function TransModal({
   const [occurrences, setOccurrences] = useState("");
   const [tagIds,      setTagIds]      = useState(tx?.tagIds || []);
   const side = useSideAmounts(tx?.sideAmounts);
+  // Chèque (v1.43.0) — dépense normale, simplement identifiée pour être suivie
+  const [isCheque,  setIsCheque]  = useState(tx?.paymentMethod === "cheque");
+  const [chequeNum, setChequeNum] = useState(tx?.chequeNumber || "");
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
@@ -377,7 +380,13 @@ export function TransModal({
     // dans le nombre de fois choisi (bug : la récurrente se répétait une fois de trop).
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
     const sideAmounts = type === "expense" ? side.toPayload() : undefined;
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts });
+    const cheque = type === "expense" && isCheque;
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts,
+      // Chèque encaissé : sa date est celle de l'encaissement, la date d'émission est conservée à part
+      paymentMethod: cheque ? "cheque" : undefined,
+      chequeNumber:  cheque && chequeNum.trim() ? chequeNum.trim() : undefined,
+      issuedDate:    cheque ? (tx?.pointed ? (tx.issuedDate || tx.date) : date) : undefined,
+    });
     if (recurringId) {
       onSaveRecurring?.({
         id: recurringId,
@@ -721,6 +730,35 @@ export function TransModal({
         {type === "expense" && (
           <div style={{ marginTop: 8 }}>
             <SideAmountsPicker types={sideAmountTypes} side={side} />
+          </div>
+        )}
+
+        {/* Chèque (v1.43.0) */}
+        {type === "expense" && (
+          <div style={{ marginTop: 8 }}>
+            {!isCheque ? (
+              <button type="button" onClick={() => setIsCheque(true)} style={{
+                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 20,
+                background: "var(--chq-glow)", border: "1.5px dashed var(--chq-border)", color: "var(--chq)",
+                fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
+              }}>🧾 Chèque</button>
+            ) : (
+              <div style={{ padding: "9px 10px", background: "var(--chq-glow)", border: "1px solid var(--chq-border)", borderRadius: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: ".85rem" }}>🧾</span>
+                  <input type="text" inputMode="numeric" placeholder="N° de chèque (optionnel)" value={chequeNum}
+                    onChange={e => setChequeNum(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
+                    style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }} />
+                  <button type="button" onClick={() => { setIsCheque(false); setChequeNum(""); }}
+                    style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4 }}>✕</button>
+                </div>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.5 }}>
+                  {tx?.pointed && tx?.paymentMethod === "cheque"
+                    ? `Encaissé le ${tx.date.slice(8)}/${tx.date.slice(5, 7)} · émis le ${(tx.issuedDate || tx.date).slice(8)}/${(tx.issuedDate || tx.date).slice(5, 7)}`
+                    : "Déduit tout de suite de ton solde estimé, en attente jusqu'à l'encaissement. À l'encaissement, la dépense passe à cette date."}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

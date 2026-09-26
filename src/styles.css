@@ -11,6 +11,8 @@
   --warning: #c8b860; --warning-glow: rgba(200,184,96,.12);
   /* Tickets resto / montants hors compte (v1.42.0) — teinte « métal » or→cuivre */
   --tr: #d9a066; --tr-glow: rgba(217,160,102,.1); --tr-border: rgba(217,160,102,.5);
+  /* Chèques non encaissés (v1.43.0) — bleu ardoise */
+  --chq: #9fb4e6; --chq-glow: rgba(159,180,230,.1); --chq-border: rgba(159,180,230,.45);
   --tr-metal: linear-gradient(135deg, #f0cf86, #c07a45, #f0cf86);
   --danger: #c87070;  --danger-glow:  rgba(200,112,112,.12);
   --khaki: #a0d898;   --khaki-glow:   rgba(160,216,152,.12);
@@ -31,6 +33,7 @@
   --success: #059669; --success-glow: rgba(5,150,105,.08);
   --warning: #d97706; --warning-glow: rgba(217,119,6,.08);
   --tr: #b86f34; --tr-glow: rgba(184,111,52,.08); --tr-border: rgba(184,111,52,.45);
+  --chq: #4a63a8; --chq-glow: rgba(74,99,168,.08); --chq-border: rgba(74,99,168,.4);
   --tr-metal: linear-gradient(135deg, #d9a24a, #a8612d, #d9a24a);
   --danger: #dc2626;  --danger-glow:  rgba(220,38,38,.08);
   --khaki: #5a7a30;   --khaki-glow:   rgba(90,122,48,.1);

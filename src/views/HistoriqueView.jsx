@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO } from "../utils.js";
+import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO } from "../utils.js";
 import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
@@ -257,10 +257,10 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
 
       if (tpl.frequency === "yearly") {
         const year = month.slice(0, 4);
-        return !transactions.some(t => t.templateId === tpl.id && t.date.startsWith(year));
+        return !transactions.some(t => t.templateId === tpl.id && recurringRefDate(t).startsWith(year));
       }
       // monthly
-      return !transactions.some(t => t.templateId === tpl.id && t.date.startsWith(month));
+      return !transactions.some(t => t.templateId === tpl.id && recurringRefDate(t).startsWith(month));
     });
   }, [recurringTemplates, transactions, month]);
   const mStats = useMonthStats(transactions, fixedExpenses, month);
@@ -1297,6 +1297,11 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
               return (
                 <>
                   <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
+                  {t.paymentMethod === "cheque" && (
+                    <span style={{ fontSize: ".5rem", padding: "1px 5px", background: "var(--chq-glow)", color: "var(--chq)", border: "1px solid var(--chq-border)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
+                      🧾 {t.pointed ? "Encaissé" : `En attente · ${Math.max(0, daysBetweenISO(t.issuedDate || t.date, todayISO()))} j`}
+                    </span>
+                  )}
                   {Object.entries(t.sideAmounts || {}).map(([satId, amt]) => {
                     if (!(amt > 0)) return null;
                     const st = allSideAmountTypes.find(s => s.id === satId);

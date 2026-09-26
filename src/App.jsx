@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM } from "./utils.js";
+import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM, recurringRefDate, chequeExpiryISO } from "./utils.js";
 import { useBalanceWithRecurring } from "./hooks.js";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
@@ -186,6 +186,24 @@ export default function App() {
         push(6, "🔔 Solde bas", `Ton solde estimé est de ${fmtAmt(currentBalance)}, sous ton seuil de ${fmtAmt(data.alertThreshold ?? 500)}`,
           tomorrowAt(9));
       }
+      // Chèques non encaissés (v1.43.0) : un rappel tous les N jours (30 par
+      // défaut) tant que le chèque n'est pas encaissé — jamais quotidien —, et
+      // un rappel un mois avant qu'il ne soit plus encaissable (1 an et 8 j).
+      if (ns.cheques !== false) {
+        const delay = Math.max(7, parseInt(ns.chequeDelay, 10) || 30);
+        (data.transactions || []).filter(t => t.paymentMethod === "cheque" && !t.pointed).slice(0, 50).forEach((t, i) => {
+          const issued = t.issuedDate || t.date;
+          const [y, m, d] = issued.split("-").map(Number);
+          const label = `${t.note || "Chèque"} · ${fmtAmt(t.amount)}${t.chequeNumber ? " · n°" + t.chequeNumber : ""}`;
+          // Prochain multiple de `delay` jours après l'émission, dans le futur
+          let k = 1, at;
+          do { at = new Date(y, m - 1, d + delay * k, 9, 0, 0); k++; } while (at <= now && k < 60);
+          if (at > now) push(300 + i, `🧾 Chèque non encaissé depuis ${delay * (k - 1)} jours`, label, at);
+          const exp = chequeExpiryISO(issued).split("-").map(Number);
+          const warn = new Date(exp[0], exp[1] - 1, exp[2] - 30, 9, 0, 0);
+          if (warn > now) push(400 + i, "🧾 Chèque bientôt périmé", `${label} — plus encaissable après le ${String(exp[2]).padStart(2, "0")}/${String(exp[1]).padStart(2, "0")}/${exp[0]}`, warn);
+        });
+      }
       if (test) push(9, "✅ Notifications actives", "Tes rappels Gestion du Budget fonctionnent.", new Date(Date.now() + 5000));
 
       if (pending.length > 0) await LN.schedule({ notifications: pending });
@@ -197,7 +215,7 @@ export default function App() {
   // addToast est défini plus bas mais stable (useCallback sans dépendance) :
   // il est lu au moment de l'appel, jamais au rendu — pas dans les deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold]);
+  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold, data.transactions]);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
@@ -427,7 +445,7 @@ export default function App() {
   const confirmRecurring = useCallback((tpl, month) => {
     // Garde anti-double-clic : vérifier qu'aucune transaction avec ce templateId n'existe déjà ce mois
     const alreadyConfirmed = (data.transactions || []).some(
-      t => t.templateId === tpl.id && t.date.startsWith(month)
+      t => t.templateId === tpl.id && recurringRefDate(t).startsWith(month)
     );
     if (alreadyConfirmed) return;
     const [y, m] = month.split("-").map(Number);
@@ -626,6 +644,8 @@ export default function App() {
   switch (tab) {
   case "accueil": return (
       <AccueilView data={data}
+        onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
+        onDeleteTrans={deleteTransaction}
         onOpenOffAccount={(mode, satId, entry) => setOffModal({ mode, satId, entry })}
         onShowDetail={(type, period) => setDetailModal({ type, period })}
         onSwitchTab={navigateTo}
