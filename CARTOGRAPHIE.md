@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.43.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.44.1**.
 
 ---
 
@@ -130,7 +130,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 
 | Fonctionnalité | Fichier(s) | Composant / fonction |
 |---|---|---|
-| Saisie d'une opération | `modals.jsx` | `TransModal` (+ `NumPad` partagé) |
+| Saisie d'une opération | `modals.jsx` | `TransModal` (+ `NumPad` partagé). Depuis 1.44.0 : doit tenir **sans défilement sur un Pixel 8** (≈ 412 × 860 px) ; tout champ optionnel va dans le menu « Options » (superposé), jamais en ligne |
 | Récurrentes | `modals.jsx` (saisie) + `store.js` (`SAVE_RECURRING`, `DEL_RECURRING`) + `hooks.js`/`views.jsx` (`upcomingRecurring`) | — |
 | Frais/revenus fixes | `modals.jsx` (`FixedModal`, `FixedIncomeModal`) + `views.jsx` (`FixesView`) | — |
 | Pause d'un frais/revenu fixe | `hooks.js` (`isActiveForMonth`), `modals.jsx` (toggle + champ `pausedUntil`), `views.jsx` (`FixesView` badge + tooltip) | — |
@@ -158,7 +158,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Demander confirmation avant toute suppression** de code, même identifié comme "mort" — et vérifier l'usage dans tout le dépôt connu, pas seulement les fichiers en main.
 - **Mockup avant implémentation** pour tout ce qui touche à une interaction ou un visuel nouveau (l'utilisateur valide toujours un mockup HTML autonome — fond sombre, cadre téléphone, variables CSS du vrai thème — avant le code réel).
 - **Dates toujours en heure locale**, jamais `toISOString()` (bug UTC déjà rencontré et corrigé à de nombreux endroits).
-- **Préserver les champs non gérés par un formulaire lors d'une édition** — un `{ ...old, ...payload }` naïf écrase silencieusement un champ que le formulaire ne connaît pas (ex : `templateId` cassé lors de l'édition d'une récurrente, corrigé en v1.39.23/24). Vérifier ce risque à chaque nouveau champ optionnel ajouté à `transactions`/`fixedExpenses`/`fixedIncomes`.
+- **Préserver les champs non gérés par un formulaire lors d'une édition** — un `{ ...old, ...payload }` naïf écrase silencieusement un champ que le formulaire ne connaît pas (ex : `templateId` effacé lors de l'édition d'une opération récurrente → double comptage ; corrigé en v1.44.1 : le reducer fait `templateId: tx.templateId ?? t.templateId`). Vérifier ce risque à chaque nouveau champ optionnel ajouté à `transactions`/`fixedExpenses`/`fixedIncomes`.
 
 ---
 

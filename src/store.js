@@ -275,8 +275,12 @@ export function reducer(state, action) {
           );
         }
 
+        // Le lien avec la récurrente (templateId) n'est JAMAIS effacé par une
+        // édition : le formulaire ne le connaît pas et envoyait undefined, ce qui
+        // faisait recompter la récurrente comme « à confirmer » (double
+        // comptage dans le solde estimé). Corrigé en v1.44.1.
         let transactions = state.transactions.map(t =>
-          t.id === tx.id ? { ...t, ...tx } : t
+          t.id === tx.id ? { ...t, ...tx, templateId: tx.templateId ?? t.templateId } : t
         );
         let warning = state.warning;
 

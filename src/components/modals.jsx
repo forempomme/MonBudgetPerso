@@ -62,10 +62,10 @@ function Field({ label, error, children }) {
 }
 
 // ─── Section label compact (style app) ───────────────────────────
-function SectionLabel({ children }) {
+function SectionLabel({ children, color }) {
   return (
     <div style={{
-      fontSize: ".6rem", fontWeight: 700, color: "var(--text3)",
+      fontSize: ".6rem", fontWeight: 700, color: color || "var(--text3)",
       letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 5,
     }}>
       {children}
@@ -300,6 +300,8 @@ export function TransModal({
   onSave, onSaveRecurring, onClose,
 }) {
   const toast = useToast();
+  // v1.44.0 : options (montants à part, chèque, tags, récurrence) dans un menu déroulant
+  const [optOpen, setOptOpen] = useState(false);
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
   const [type,        setType]        = useState(tx?.type || defaultType);
@@ -381,7 +383,7 @@ export function TransModal({
     const recurringId = (isRecurring && !editingId && !isCag) ? uid("rc") : undefined;
     const sideAmounts = type === "expense" ? side.toPayload() : undefined;
     const cheque = type === "expense" && isCheque;
-    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts,
+    onSave({ id: editingId || null, type, amount: parsedAmt, date, categoryId: catId, targetCagId: cagId, note, tagIds: tagIds.length > 0 ? tagIds : undefined, templateId: editingId ? tx?.templateId : recurringId, adjSign: isAdj ? adjSign : undefined, sideAmounts,
       // Chèque encaissé : sa date est celle de l'encaissement, la date d'émission est conservée à part
       paymentMethod: cheque ? "cheque" : undefined,
       chequeNumber:  cheque && chequeNum.trim() ? chequeNum.trim() : undefined,
@@ -424,7 +426,7 @@ export function TransModal({
     <Modal onClose={onClose} title={editingId ? "Modifier l'opération" : "Nouvelle opération"}>
 
       {/* ── Pills type ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginBottom: 10 }}>
         {[
           { k: "expense",            emoji: "💸", label: "Dépense"   },
           { k: "income",             emoji: "💰", label: "Revenu"    },
@@ -439,15 +441,15 @@ export function TransModal({
               onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setType(k); setErrors({}); setCatId(""); }}
               onClick={() => { setType(k); setErrors({}); setCatId(""); }}
               style={{
-                padding: "9px 4px 7px",
+                padding: "7px 2px 6px",
                 borderRadius: "var(--radius)",
                 border: `1.5px solid ${sel ? c : "var(--border)"}`,
                 background: sel ? `color-mix(in srgb, ${c} 14%, var(--surface2))` : "var(--surface2)",
                 display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 cursor: "pointer", touchAction: "manipulation",
               }}>
-              <span style={{ fontSize: "1.2rem" }}>{emoji}</span>
-              <span style={{ fontSize: ".65rem", fontWeight: 700, color: sel ? c : "var(--text3)" }}>{label}</span>
+              <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>{emoji}</span>
+              <span style={{ fontSize: ".6rem", fontWeight: 700, color: sel ? c : "var(--text3)", whiteSpace: "nowrap" }}>{label}</span>
             </button>
           );
         })}
@@ -508,7 +510,7 @@ export function TransModal({
       {/* ── Catégorie — overlay fixed, scroll bloqué, drag détecté ── */}
       {!isCag && !isAdj && (
         <div style={{ marginBottom: 10 }}>
-          <SectionLabel>Catégorie</SectionLabel>
+          <SectionLabel color="var(--purple)">Catégorie</SectionLabel>
 
           {/* Trigger */}
           <button
@@ -517,8 +519,8 @@ export function TransModal({
             onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
-              background: "var(--surface2)",
-              border: `1.5px solid ${catId ? accentColor : "var(--border)"}`,
+              background: catId ? "rgba(176,144,224,.1)" : "rgba(176,144,224,.05)",
+              border: "1px solid rgba(176,144,224,.3)", borderLeft: "3px solid var(--purple)",
               borderRadius: 10,
               color: catId ? "var(--text)" : "var(--text3)",
               fontSize: ".78rem", fontFamily: "inherit",
@@ -684,9 +686,10 @@ export function TransModal({
 
       {/* ── Date — 4 boutons pills ── */}
       <div style={{ marginBottom: 10 }}>
-        <SectionLabel>Date</SectionLabel>
+        <SectionLabel color="var(--accent)">Date</SectionLabel>
         {errors.date && <FieldError msg={errors.date} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
+          background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
           {[
             ["Aujourd'hui", todayStr],
             ["Hier",        yesterdayStr],
@@ -701,9 +704,9 @@ export function TransModal({
                 onClick={() => { if (d) { setDate(d); setErrors(v => ({ ...v, date: "" })); } }}
                 style={{
                   padding: "6px 2px", borderRadius: 20, fontSize: ".65rem",
-                  border: `1.5px solid ${sel ? accentColor : "var(--border)"}`,
-                  background: sel ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                  color: sel ? accentColor : "var(--text2)",
+                  border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`,
+                  background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                  color: sel ? "var(--accent)" : "var(--text2)",
                   fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
                 }}>{label}</button>
             );
@@ -723,71 +726,8 @@ export function TransModal({
       <div style={{ marginBottom: 10 }}>
         <input type="text" placeholder={isAdj ? "Ex: Écart bancaire, arrondi…" : "Note (optionnel)…"} value={note}
           onChange={e => setNote(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box" }}
+          style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }}
         />
-
-        {/* Montants à part — purement informatifs, jamais comptés dans le solde */}
-        {type === "expense" && (
-          <div style={{ marginTop: 8 }}>
-            <SideAmountsPicker types={sideAmountTypes} side={side} />
-          </div>
-        )}
-
-        {/* Chèque (v1.43.0) */}
-        {type === "expense" && (
-          <div style={{ marginTop: 8 }}>
-            {!isCheque ? (
-              <button type="button" onClick={() => setIsCheque(true)} style={{
-                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 20,
-                background: "var(--chq-glow)", border: "1.5px dashed var(--chq-border)", color: "var(--chq)",
-                fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
-              }}>🧾 Chèque</button>
-            ) : (
-              <div style={{ padding: "9px 10px", background: "var(--chq-glow)", border: "1px solid var(--chq-border)", borderRadius: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: ".85rem" }}>🧾</span>
-                  <input type="text" inputMode="numeric" placeholder="N° de chèque (optionnel)" value={chequeNum}
-                    onChange={e => setChequeNum(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
-                    style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }} />
-                  <button type="button" onClick={() => { setIsCheque(false); setChequeNum(""); }}
-                    style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4 }}>✕</button>
-                </div>
-                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.5 }}>
-                  {tx?.pointed && tx?.paymentMethod === "cheque"
-                    ? `Encaissé le ${tx.date.slice(8)}/${tx.date.slice(5, 7)} · émis le ${(tx.issuedDate || tx.date).slice(8)}/${(tx.issuedDate || tx.date).slice(5, 7)}`
-                    : "Déduit tout de suite de ton solde estimé, en attente jusqu'à l'encaissement. À l'encaissement, la dépense passe à cette date."}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Tags */}
-        {tags.length > 0 && !isCag && (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", fontWeight: 700, marginBottom: 6 }}>
-              🏷️ Tags <span style={{ fontWeight: 400 }}>(optionnel)</span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-              {tags.map(tag => {
-                const selected = tagIds.includes(tag.id);
-                return (
-                  <div key={tag.id}
-                    onClick={() => setTagIds(ids => selected ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
-                      background: selected ? `${tag.color}22` : "var(--surface2)",
-                      border: `1px solid ${selected ? tag.color : "var(--border)"}`,
-                      borderRadius: 20, cursor: "pointer",
-                    }}>
-                    <span style={{ fontSize: ".7rem" }}>{tag.icon}</span>
-                    <span style={{ fontSize: ".65rem", fontWeight: selected ? 700 : 400, color: selected ? tag.color : "var(--text2)" }}>{tag.name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {/* Preview arrondi automatique */}
         {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
@@ -816,66 +756,133 @@ export function TransModal({
         })()}
       </div>
 
-      {/* ── Récurrence ── */}
-      {!isCag && !isAdj && !editingId && (
-        <div style={{ marginBottom: 10 }}>
-          <div
-            onClick={() => setIsRecurring(r => !r)}
-            style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "9px 12px",
-              background: isRecurring ? "var(--accent-glow)" : "var(--surface2)",
-              border: `1px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
-              borderRadius: "var(--radius-sm)", cursor: "pointer",
-            }}>
-            <div style={{
-              width: 20, height: 20, borderRadius: "50%",
-              background: isRecurring ? "var(--accent)" : "transparent",
-              border: `2px solid ${isRecurring ? "var(--accent)" : "var(--border)"}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: ".7rem", color: "var(--bg)", flexShrink: 0, transition: "all .15s",
-            }}>{isRecurring ? "✓" : ""}</div>
-            <div>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: isRecurring ? "var(--accent)" : "var(--text2)" }}>
-                🔄 Récurrente
-              </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-                Mémorise cette opération pour la retrouver chaque mois
-              </div>
-            </div>
-          </div>
-          {isRecurring && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-              <div style={{ display: "flex", gap: 6 }}>
-                {[["monthly", "Mensuelle"], ["yearly", "Annuelle"]].map(([k, l]) => (
-                  <button key={k} onClick={() => setFrequency(k)} style={{
-                    flex: 1, background: frequency === k ? "var(--accent-glow)" : "transparent",
-                    border: `1px solid ${frequency === k ? "var(--accent)" : "var(--border)"}`,
-                    borderRadius: 8, padding: "6px 0", fontSize: ".68rem", fontWeight: 700,
-                    color: frequency === k ? "var(--accent)" : "var(--text2)", cursor: "pointer",
-                  }}>{l}</button>
-                ))}
-              </div>
-              {frequency === "monthly" && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "var(--surface2)", borderRadius: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: ".65rem", fontWeight: 700, color: "var(--text2)", marginBottom: 2 }}>Nombre de fois</div>
-                    <div style={{ fontSize: ".58rem", color: "var(--text3)" }}>Laisser vide = illimité</div>
+      {/* ── Options (v1.44.0) : un menu déroulant qui s'ouvre par-dessus ──
+          → activer une option n'allonge jamais l'écran de saisie */}
+      {(() => {
+        const canSide  = type === "expense";
+        const canTags  = tags.length > 0 && !isCag;
+        const canRec   = !isCag && !isAdj && !editingId;
+        if (!canSide && !canTags && !canRec) return null;
+        const chips = [];
+        if (canSide) [...side.open].forEach(k => {
+          const st = sideAmountTypes.find(x => x.id === k); const v = side.vals[k];
+          if (st && v) chips.push([`${st.icon} ${v} €`, "var(--tr)", "var(--tr-glow)"]);
+        });
+        if (canSide && isCheque) chips.push([`🧾 Chèque${chequeNum ? " n°" + chequeNum : ""}`, "var(--chq)", "var(--chq-glow)"]);
+        if (canTags) tagIds.forEach(id => { const tg = tags.find(x => x.id === id); if (tg) chips.push([`${tg.icon} ${tg.name}`, tg.color, `${tg.color}22`]); });
+        if (canRec && isRecurring) chips.push([`🔄 ${frequency === "yearly" ? "Annuelle" : "Mensuelle"}${frequency === "monthly" && occurrences ? " ×" + occurrences : ""}`, "var(--sapin)", "rgba(88,192,144,.14)"]);
+        const hint = [canSide && sideAmountTypes.map(x => x.label).join(", "), canSide && "chèque", canTags && "tags", canRec && "récurrente"].filter(Boolean).join(", ");
+        const rowStyle = col => ({ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 11, border: `1px solid ${col}`, marginBottom: 7 });
+        const pill = (on, col, bg) => ({ padding: "5px 10px", borderRadius: 14, fontSize: ".64rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+          border: `1px solid ${on ? col : "var(--border)"}`, color: on ? col : "var(--text2)", background: on ? bg : "transparent" });
+        const close = () => { document.activeElement?.blur(); setOptOpen(false); };
+        return (
+          <div style={{ marginBottom: 10 }}>
+            <SectionLabel color="var(--tr)">Options</SectionLabel>
+            <button type="button"
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setOptOpen(true); }}
+              onClick={() => { if (!('ontouchstart' in window)) setOptOpen(true); }}
+              style={{
+                width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", borderRadius: 10,
+                background: "rgba(217,160,102,.05)", border: "1px solid rgba(217,160,102,.3)", borderLeft: "3px solid var(--tr)",
+                display: "flex", alignItems: "center", gap: 8, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit",
+              }}>
+              <span style={{ flex: 1, display: "flex", gap: 5, overflow: "hidden", whiteSpace: "nowrap", textAlign: "left" }}>
+                {chips.length === 0
+                  ? <span style={{ fontSize: ".72rem", color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis" }}>{hint.charAt(0).toUpperCase() + hint.slice(1)}…</span>
+                  : chips.map(([l, col, bg], n) => <span key={n} style={{ fontSize: ".64rem", fontWeight: 800, padding: "3px 8px", borderRadius: 10, color: col, background: bg, flexShrink: 0 }}>{l}</span>)}
+              </span>
+              <span style={{ color: "var(--text2)", fontSize: ".7rem" }}>▾</span>
+            </button>
+
+            {optOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
+                  onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
+                  onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
+                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); close(); }}
+                  onClick={close} />
+                <div style={{
+                    position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
+                    width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
+                    background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
+                    boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+                  }}
+                  onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
+                  onTouchEnd={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--tr)", textTransform: "uppercase", letterSpacing: ".1em" }}>✨ Options</span>
+                    <button type="button" onClick={close} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
                   </div>
-                  <input
-                    type="number" min="2" max="120" placeholder="∞"
-                    value={occurrences} onChange={e => setOccurrences(e.target.value)}
-                    style={{
-                      width: 64, background: "var(--bg)", border: `1px solid ${occurrences ? "var(--accent)" : "var(--border)"}`,
-                      borderRadius: 7, padding: "6px 8px", color: "var(--text)",
-                      fontSize: ".85rem", fontFamily: "var(--mono)", textAlign: "center",
-                    }}
-                  />
+
+                  {canSide && sideAmountTypes.map(st => (
+                    <div key={st.id} style={rowStyle("var(--tr-border)")}>
+                      <span style={{ fontSize: ".95rem" }}>{st.icon}</span>
+                      <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--tr)" }}>{st.label}</span>
+                      <input type="text" inputMode="decimal" placeholder="Montant €" value={side.vals[st.id] || ""}
+                        onChange={e => { const v = e.target.value; side.setVal(st.id, v); if (v) side.openType(st.id); }}
+                        style={{ width: 96, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }} />
+                    </div>
+                  ))}
+                  {canSide && sideAmountTypes.length > 0 && (
+                    <div style={{ fontSize: ".56rem", color: "var(--text3)", margin: "-3px 2px 8px", lineHeight: 1.4 }}>Montants à part : informatifs, n'affectent pas ton solde.</div>
+                  )}
+
+                  {canSide && (
+                    <div style={rowStyle("var(--chq-border)")} onClick={() => { if (!isCheque) setIsCheque(true); }}>
+                      <span style={{ fontSize: ".95rem" }}>🧾</span>
+                      <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--chq)" }}>Chèque</span>
+                      {isCheque ? (
+                        <>
+                          <input type="text" inputMode="numeric" placeholder="N° (option.)" value={chequeNum}
+                            onChange={e => setChequeNum(e.target.value.replace(/[^0-9A-Za-z]/g, ""))}
+                            style={{ width: 96, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }} />
+                          <button type="button" onClick={e => { e.stopPropagation(); setIsCheque(false); setChequeNum(""); }}
+                            style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 2 }}>✕</button>
+                        </>
+                      ) : <span style={{ fontSize: ".62rem", color: "var(--text3)" }}>Toucher pour activer</span>}
+                    </div>
+                  )}
+
+                  {canTags && (
+                    <div style={{ ...rowStyle("rgba(228,139,184,.35)"), flexWrap: "wrap" }}>
+                      <span style={{ fontSize: ".95rem" }}>🏷️</span>
+                      <span style={{ fontSize: ".74rem", fontWeight: 700, color: "#e48bb8", marginRight: 4 }}>Tags</span>
+                      {tags.map(tag => {
+                        const on = tagIds.includes(tag.id);
+                        return <span key={tag.id} onClick={() => setTagIds(ids => on ? ids.filter(i => i !== tag.id) : [...ids, tag.id])}
+                          style={pill(on, tag.color, `${tag.color}22`)}>{tag.icon} {tag.name}</span>;
+                      })}
+                    </div>
+                  )}
+
+                  {canRec && (
+                    <div style={{ ...rowStyle("rgba(88,192,144,.35)"), flexWrap: "wrap" }}>
+                      <span style={{ fontSize: ".95rem" }}>🔄</span>
+                      <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--sapin)" }}>Récurrente</span>
+                      {[["monthly", "Mensuelle"], ["yearly", "Annuelle"]].map(([k, l]) => {
+                        const on = isRecurring && frequency === k;
+                        return <span key={k} onClick={() => { if (on) setIsRecurring(false); else { setIsRecurring(true); setFrequency(k); } }}
+                          style={pill(on, "var(--sapin)", "rgba(88,192,144,.14)")}>{l}</span>;
+                      })}
+                      {isRecurring && frequency === "monthly" && (
+                        <div style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                          <span style={{ flex: 1, fontSize: ".62rem", color: "var(--text2)" }}>Nombre de fois <span style={{ color: "var(--text3)" }}>(vide = illimité)</span></span>
+                          <input type="number" min="2" max="120" placeholder="∞" value={occurrences} onChange={e => setOccurrences(e.target.value)}
+                            style={{ width: 64, boxSizing: "border-box", fontSize: ".8rem", textAlign: "center", fontFamily: "var(--mono)" }} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button type="button" onClick={close} style={{ width: "100%", marginTop: 4, padding: 11, borderRadius: 11, border: "none", background: "var(--tr)", color: "#1a1405", fontWeight: 800, fontSize: ".76rem", cursor: "pointer" }}>OK</button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Alerte doublon ── */}
       {dupWarning && (

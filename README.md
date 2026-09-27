@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.43.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.44.1`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.43.0
+└── package.json         — version: 1.44.1
 ```
 
 ---
@@ -341,6 +341,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.44.1** | patch | Fix récurrentes : modifier une opération créée par une récurrente effaçait son lien (`templateId`) → la récurrente redevenait « à confirmer » et était comptée deux fois dans le solde estimé. Le formulaire renvoie désormais le lien existant et le reducer ne peut plus l'effacer |
+| **1.44.0** | minor | Écran de saisie qui tient sans défilement sur un Pixel 8 (largeur inchangée) : 4 boutons de type sur une ligne (même style), catégorie en violet, date en bleu, note en gris ; montants à part, chèque, tags et récurrence regroupés dans un menu déroulant « Options » (cuivre) qui s'ouvre par-dessus et affiche un résumé une fois rempli |
 | **1.43.0** | minor | Chèques : bouton « 🧾 Chèque » (+ n° optionnel) dans la saisie d'une dépense ; bandeau « N chèques non encaissés » sous la hero card de l'accueil, liste avec ancienneté colorée, encaissement à une date choisie (la dépense passe à la date d'encaissement, la date d'émission est conservée), annulation des chèques périmés (1 an et 8 jours) ; pointer un chèque dans l'Historique = l'encaisser à la date du jour ; rappels (tous les 15/30/60 j + 1 mois avant péremption) ; confirmation des récurrentes basée sur la date d'émission (`recurringRefDate`) pour qu'un loyer payé par chèque reste rattaché au bon mois. Aucun calcul de solde modifié |
 | **1.42.0** | minor | Dépenses hors compte (tickets resto…) : entrée « 🎫 Hors compte » dans le bouton + (3ᵉ en partant du bas), formulaire avec le clavier de l'app, stockage séparé `offAccountEntries` (aucun impact sur les calculs bancaires) ; porte-monnaie par type avec « Suivre le solde » (rechargements, corrections, solde = rechargements − dépenses hors compte − TR utilisés en complément), 3ᵉ mini-carte « métal » dans la hero card de l'accueil ; lignes hors compte dans l'Historique (hors totaux et pointage, filtre Masquer) ; Rapport : montants à part incluant le hors compte + carte « Payé hors banque par catégorie » (filtres type et mois/année) ; couleur TR dédiée `--tr` (or/cuivre) partout |
 | **1.41.1** | patch | Nettoyage code mort : composant `Sparkline` (jamais rendu) + hook `useSpark`, imports inutilisés `getPrevMonth` (hooks.js) et `polar` (charts.jsx), 18 règles CSS jamais utilisées (`fixed-card*`, `fixed-grid`, `fixed-row`, `savings-bar-bg`, `dash-balance`, `dash-decag`, `hero-indicator`, `section-enter`, `section-title`, `btn-success`, `filter-row`) |
