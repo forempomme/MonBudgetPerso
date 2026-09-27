@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.44.1";
+export const APP_VERSION = "1.44.2";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -159,3 +159,25 @@ export function daysBetweenISO(fromISO, toISO) {
   const a = new Date(fromISO + "T12:00:00"), b = new Date(toISO + "T12:00:00");
   return Math.round((b - a) / 86400000);
 }
+
+// ─── Tap vs glissement (v1.44.2) ─────────────────────────────────
+// Beaucoup de boutons réagissent au relâcher du doigt (onTouchEnd) pour
+// éviter le délai du clic sur Android. Sans précaution, commencer à faire
+// défiler l'écran en posant le doigt sur un bouton le déclenchait (ouverture
+// d'un menu, pointage, confirmation…). Un écouteur global, en phase de
+// capture, mémorise si le doigt a bougé de plus de 10 px depuis qu'il s'est
+// posé : les gestionnaires onTouchEnd appellent touchMoved() et ne font rien
+// si c'était un défilement.
+const _tap = { x: 0, y: 0, moved: false };
+if (typeof document !== "undefined") {
+  document.addEventListener("touchstart", e => {
+    const t = e.touches[0]; if (!t) return;
+    _tap.x = t.clientX; _tap.y = t.clientY; _tap.moved = false;
+  }, { capture: true, passive: true });
+  document.addEventListener("touchmove", e => {
+    const t = e.touches[0]; if (!t) return;
+    if (Math.abs(t.clientX - _tap.x) > 10 || Math.abs(t.clientY - _tap.y) > 10) _tap.moved = true;
+  }, { capture: true, passive: true });
+}
+/** true si le geste en cours est un glissement (défilement), pas un tap. */
+export function touchMoved() { return _tap.moved; }

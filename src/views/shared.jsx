@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState } from "react";
-import { fmt, isIncome } from "../utils.js";
+import { fmt, isIncome, touchMoved } from "../utils.js";
 import { isIncomeDirection } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
                       <button onClick={()=>startEdit(tag)}
                         style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text2)", fontSize:".7rem", cursor:"pointer", minHeight:30, touchAction:"manipulation" }}>✏️</button>
                       <button
-                        onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteTag?.(tag.id);}}
+                        onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteTag?.(tag.id);}}
                         onClick={()=>onDeleteTag?.(tag.id)}
                         style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 9px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer", minHeight:30, touchAction:"manipulation" }}>✕</button>
                     </div>

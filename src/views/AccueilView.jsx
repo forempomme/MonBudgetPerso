@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO } from "../utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
 import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 
@@ -1080,8 +1080,8 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                               <span style={{ fontFamily:"var(--mono)", fontSize:".75rem", fontWeight:800, color:amtColor }}>{amtSign}{fmt(item.amount)}</span>
                               {isFix && <button onClick={()=>onTogglePointFix?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
                               {isInc && <button onClick={()=>onTogglePointIncome?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
-                              {isRec && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onConfirmRecurring?.(item,curM);}} onClick={()=>onConfirmRecurring?.(item,curM)} style={{ width:22, height:22, borderRadius:"50%", background:"rgba(220,228,240,.12)", border:`1px solid ${Cbord}`, color:C, fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}>✓</button>}
-                              {isSch && <button onTouchEnd={e=>{e.stopPropagation();e.preventDefault();setDeleteConfirm(item.id);}} onClick={()=>setDeleteConfirm(item.id)} style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid rgba(255,255,255,.25)", color:"var(--text2)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>}
+                              {isRec && <button onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onConfirmRecurring?.(item,curM);}} onClick={()=>onConfirmRecurring?.(item,curM)} style={{ width:22, height:22, borderRadius:"50%", background:"rgba(220,228,240,.12)", border:`1px solid ${Cbord}`, color:C, fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}>✓</button>}
+                              {isSch && <button onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();setDeleteConfirm(item.id);}} onClick={()=>setDeleteConfirm(item.id)} style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid rgba(255,255,255,.25)", color:"var(--text2)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>}
                             </div>
                           </div>
                         )}

@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.44.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.44.2`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.44.1
+└── package.json         — version: 1.44.2
 ```
 
 ---
@@ -341,6 +341,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.44.2** | patch | Fix date « Autre… » : le bouton ne faisait rien, il ouvre maintenant le calendrier natif (et affiche la date choisie) ; fix glissement : commencer un défilement le doigt posé sur un bouton ne le déclenche plus (ouverture de menu, pointage, confirmation de récurrente…) — détecteur global `touchMoved()` appliqué aux 33 boutons réagissant au relâcher du doigt |
 | **1.44.1** | patch | Fix récurrentes : modifier une opération créée par une récurrente effaçait son lien (`templateId`) → la récurrente redevenait « à confirmer » et était comptée deux fois dans le solde estimé. Le formulaire renvoie désormais le lien existant et le reducer ne peut plus l'effacer |
 | **1.44.0** | minor | Écran de saisie qui tient sans défilement sur un Pixel 8 (largeur inchangée) : 4 boutons de type sur une ligne (même style), catégorie en violet, date en bleu, note en gris ; montants à part, chèque, tags et récurrence regroupés dans un menu déroulant « Options » (cuivre) qui s'ouvre par-dessus et affiche un résumé une fois rempli |
 | **1.43.0** | minor | Chèques : bouton « 🧾 Chèque » (+ n° optionnel) dans la saisie d'une dépense ; bandeau « N chèques non encaissés » sous la hero card de l'accueil, liste avec ancienneté colorée, encaissement à une date choisie (la dépense passe à la date d'encaissement, la date d'émission est conservée), annulation des chèques périmés (1 an et 8 jours) ; pointer un chèque dans l'Historique = l'encaisser à la date du jour ; rappels (tous les 15/30/60 j + 1 mois avant péremption) ; confirmation des récurrentes basée sur la date d'émission (`recurringRefDate`) pour qu'un loyer payé par chèque reste rattaché au bon mois. Aucun calcul de solde modifié |

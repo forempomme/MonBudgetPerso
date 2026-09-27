@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { fmt, isIncome, APP_NAME, APP_VERSION } from "../utils.js";
+import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved } from "../utils.js";
 import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ function LinkForm({ categories, onLink }) {
       <button
         disabled={!canLink}
         onTouchStart={e => e.stopPropagation()}
-        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); doLink(); }}
+        onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); doLink(); }}
         onClick={doLink}
         style={{
           background: canLink ? "var(--accent)" : "var(--surface2)",
@@ -391,7 +391,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 <div
                   onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
                   onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
-                  onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); if (item.action) item.action(); else setOpenSheet(item.id); }}
+                  onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); if (item.action) item.action(); else setOpenSheet(item.id); }}
                   onClick={()=> item.action ? item.action() : setOpenSheet(item.id)}
                   style={{
                     display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
@@ -404,7 +404,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     {item.desc && (
                       <span
                         onClick={e=>{ e.stopPropagation(); setInfoOpenId(id => id===item.id ? null : item.id); }}
-                        onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); setInfoOpenId(id => id===item.id ? null : item.id); }}
+                        onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setInfoOpenId(id => id===item.id ? null : item.id); }}
                         style={{
                           width:15, height:15, borderRadius:"50%",
                           background: infoOpenId===item.id ? "var(--accent-glow)" : "var(--surface2)",
@@ -423,7 +423,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 {infoOpenId === item.id && (
                   <div
                     onClick={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation(); e.preventDefault(); }}
+                    onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); }}
                     style={{
                       padding:"2px 16px 12px", background:"var(--surface)",
                       borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
@@ -541,7 +541,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   ? <div key={i} style={{ width:54, height:42 }} />
                   : <button key={i}
                       onTouchStart={e=>e.stopPropagation()}
-                      onTouchEnd={e=>{ e.stopPropagation();e.preventDefault();
+                      onTouchEnd={e=>{ e.stopPropagation();if (touchMoved()) return; e.preventDefault();
                         if(k==="⌫"){setPinEntry(p=>p.slice(0,-1));setPinError("");return;}
                         const next=pinEntry+k; if(next.length>4)return; setPinEntry(next);
                         if(next.length===4){
@@ -584,7 +584,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 style={{ width:36, height:20, borderRadius:10, background:plan.enabled?"var(--purple)":"var(--border)", position:"relative", cursor:"pointer", transition:"background .2s", flexShrink:0 }}>
                 <div style={{ position:"absolute", top:2, left:plan.enabled?17:2, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
               </div>
-              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={()=>onDeleteAutoSaving?.(plan.id)}
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={()=>onDeleteAutoSaving?.(plan.id)}
                 style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", color:"var(--text3)", fontSize:".65rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
             </div>
           );
@@ -716,7 +716,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     <span style={{ fontSize:".6rem", fontWeight:700, wordBreak:"break-word", whiteSpace:"normal", textAlign:"center", lineHeight:1.3, width:"100%", padding:"0 3px" }}>{c.name}</span>
                     {linkedTo && <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>🔗</span>}
                     <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"2px 6px", marginTop:2, lineHeight:1.4, minWidth:24, minHeight:24 }}
-                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteCat(c.id);}} onClick={e=>e.stopPropagation()}>✕</button>
+                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteCat(c.id);}} onClick={e=>e.stopPropagation()}>✕</button>
                   </div>
                 );
               })
@@ -739,7 +739,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               <span style={{ fontSize:".7rem", color:"var(--text3)", flexShrink:0 }}>→</span>
               <span style={{ fontSize:".85rem" }}>{target.icon}</span>
               <span style={{ fontSize:".72rem", fontWeight:700, color:"var(--success)", flex:1, minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{target.name}</span>
-              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onEditCat({id:c.id,linkedToId:null});}} onClick={()=>onEditCat({id:c.id,linkedToId:null})}
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onEditCat({id:c.id,linkedToId:null});}} onClick={()=>onEditCat({id:c.id,linkedToId:null})}
                 style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"6px 10px", color:"var(--text3)", fontSize:".75rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
             </div>
           );
@@ -771,7 +771,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 </div>
               </div>
               <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:isInc?"var(--success)":"var(--danger)", fontSize:".78rem", flexShrink:0 }}>{fmt(tpl.amount)}</div>
-              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onDeleteRecurring?.(tpl.id);}} onClick={()=>onDeleteRecurring?.(tpl.id)}
+              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteRecurring?.(tpl.id);}} onClick={()=>onDeleteRecurring?.(tpl.id)}
                 style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 8px", color:"var(--text3)", fontSize:".72rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
             </div>
           );
@@ -887,7 +887,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                       </div>
                       <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{b.txCount} transactions · {b.sizeKo} ko</div>
                     </div>
-                    <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();e.preventDefault();onExport();}} onClick={onExport}
+                    <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onExport();}} onClick={onExport}
                       style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"5px 10px", color:"var(--accent)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>📥</button>
                   </div>
                 ))}

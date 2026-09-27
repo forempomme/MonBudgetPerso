@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.44.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.44.2**.
 
 ---
 
@@ -157,6 +157,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Toujours bumper la version à 3 endroits** : `utils.js` (`APP_VERSION`), `package.json`, `README.md` — et **l'annoncer** à la fin de chaque réponse contenant une modif de code (patch pour un fix, minor pour une nouvelle fonctionnalité).
 - **Demander confirmation avant toute suppression** de code, même identifié comme "mort" — et vérifier l'usage dans tout le dépôt connu, pas seulement les fichiers en main.
 - **Mockup avant implémentation** pour tout ce qui touche à une interaction ou un visuel nouveau (l'utilisateur valide toujours un mockup HTML autonome — fond sombre, cadre téléphone, variables CSS du vrai thème — avant le code réel).
+- **Tout bouton qui réagit au relâcher du doigt (`onTouchEnd`) doit commencer par `if (touchMoved()) return;`** (utils.js) — sinon un défilement démarré sur ce bouton le déclenche (bug corrigé en v1.44.2).
 - **Dates toujours en heure locale**, jamais `toISOString()` (bug UTC déjà rencontré et corrigé à de nombreux endroits).
 - **Préserver les champs non gérés par un formulaire lors d'une édition** — un `{ ...old, ...payload }` naïf écrase silencieusement un champ que le formulaire ne connaît pas (ex : `templateId` effacé lors de l'édition d'une opération récurrente → double comptage ; corrigé en v1.44.1 : le reducer fait `templateId: tx.templateId ?? t.templateId`). Vérifier ce risque à chaque nouveau champ optionnel ajouté à `transactions`/`fixedExpenses`/`fixedIncomes`.
 

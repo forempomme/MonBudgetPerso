@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
-import { fmt, currentYM, isIncome, PALETTE } from "../utils.js";
+import { fmt, currentYM, isIncome, PALETTE, touchMoved } from "../utils.js";
 import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory } from "../hooks.js";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
@@ -424,19 +424,19 @@ function SuiviModal({ onClose, categories, transactions, fixedExpenses, threshol
                         style={{ width: 80, background: "var(--surface2)", border: "1.5px solid var(--accent)", borderRadius: 7, padding: "6px 8px", color: "var(--text)", fontSize: ".78rem", fontFamily: "var(--mono)" }} />
                       <button
                         onTouchStart={e => e.stopPropagation()}
-                        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); saveThreshold(cat.id); }}
+                        onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); saveThreshold(cat.id); }}
                         onClick={() => saveThreshold(cat.id)}
                         style={{ background: "var(--accent)", border: "none", borderRadius: 7, padding: "7px 10px", color: "var(--bg)", fontWeight: 800, fontSize: ".75rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation" }}>✓</button>
                       <button
                         onTouchStart={e => e.stopPropagation()}
-                        onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setEditId(null); }}
+                        onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setEditId(null); }}
                         onClick={() => setEditId(null)}
                         style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "7px 9px", color: "var(--text3)", fontSize: ".75rem", cursor: "pointer", minHeight: 32, touchAction: "manipulation" }}>✕</button>
                     </div>
                   ) : (
                     <button
                       onTouchStart={e => e.stopPropagation()}
-                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setEditId(cat.id); setDraft(thresholds[cat.id] > 0 ? String(thresholds[cat.id]) : ""); }}
+                      onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setEditId(cat.id); setDraft(thresholds[cat.id] > 0 ? String(thresholds[cat.id]) : ""); }}
                       onClick={() => { setEditId(cat.id); setDraft(thresholds[cat.id] > 0 ? String(thresholds[cat.id]) : ""); }}
                       style={{
                         background: thresholds[cat.id] > 0 ? "rgba(112,184,224,.1)" : "transparent",

@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO } from "../utils.js";
+import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved } from "../utils.js";
 import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
@@ -99,7 +99,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
         {/* Bouton pointage */}
         <button
           onTouchStart={e => e.stopPropagation()}
-          onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onToggle(item.id); }}
+          onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onToggle(item.id); }}
           onClick={e => e.stopPropagation()}
           style={{
             width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
@@ -136,7 +136,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
           {isFixed && onEditFixed && (
             <button
               onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); startEdit(); }}
+              onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); startEdit(); }}
               onClick={e => { e.stopPropagation(); startEdit(); }}
               style={{
                 background: "var(--accent-glow)", border: "1px solid var(--border)",
@@ -877,12 +877,12 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                 <div style={{ display:"flex", gap:5 }}>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onApplyAutoSaving?.(plan.id); }}
+                    onTouchEnd={e=>{ e.stopPropagation();if (touchMoved()) return; e.preventDefault(); onApplyAutoSaving?.(plan.id); }}
                     onClick={() => onApplyAutoSaving?.(plan.id)}
                     style={{ background:"var(--purple)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>＋</button>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onSkipAutoSaving?.(plan.id); }}
+                    onTouchEnd={e=>{ e.stopPropagation();if (touchMoved()) return; e.preventDefault(); onSkipAutoSaving?.(plan.id); }}
                     onClick={() => onSkipAutoSaving?.(plan.id)}
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
                 </div>
@@ -911,12 +911,12 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                 <div style={{ display:"flex", gap:5 }}>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onConfirmScheduled?.(s.id); }}
+                    onTouchEnd={e=>{ e.stopPropagation();if (touchMoved()) return; e.preventDefault(); onConfirmScheduled?.(s.id); }}
                     onClick={() => onConfirmScheduled?.(s.id)}
                     style={{ background:"var(--warning)", border:"none", borderRadius:7, padding:"7px 12px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✓</button>
                   <button
                     onTouchStart={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation();e.preventDefault(); onDeleteScheduled?.(s.id); }}
+                    onTouchEnd={e=>{ e.stopPropagation();if (touchMoved()) return; e.preventDefault(); onDeleteScheduled?.(s.id); }}
                     onClick={() => onDeleteScheduled?.(s.id)}
                     style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:7, padding:"7px 10px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer", minHeight:32, touchAction:"manipulation" }}>✕</button>
                 </div>
@@ -1234,7 +1234,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
         {onTogglePoint && isPointable(t.type) ? (
           <button
             onTouchStart={e => e.stopPropagation()}
-            onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); onTogglePoint(t.id); }}
+            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onTogglePoint(t.id); }}
             onClick={e => { e.stopPropagation(); }}
             style={{
               width: 32, height: 32, borderRadius: "50%", flexShrink: 0,

@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved } from "../utils.js";
 import { useToast } from "../context.js";
 import { useTotalFixes } from "../hooks.js";
 
@@ -195,7 +195,7 @@ function NumPad({ value, onChange, type, onTypeChange, variant }) {
               return (
                 <button key={ki}
                   onTouchStart={e => e.stopPropagation()}
-                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); press(k); }}
+                  onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); press(k); }}
                   onClick={() => press(k)}
                   style={{
                     height: 43,                          // ← 50→43px
@@ -302,6 +302,15 @@ export function TransModal({
   const toast = useToast();
   // v1.44.0 : options (montants à part, chèque, tags, récurrence) dans un menu déroulant
   const [optOpen, setOptOpen] = useState(false);
+  // v1.44.2 : « Autre… » ouvre le calendrier (avant : le bouton ne faisait rien)
+  const [customDate, setCustomDate] = useState(false);
+  const dateInputRef = useRef(null);
+  const openCalendar = () => {
+    setCustomDate(true);
+    // Ouvre directement le calendrier natif d'Android ; si le navigateur
+    // refuse, le champ date reste affiché et un tap dessus l'ouvre.
+    setTimeout(() => { try { dateInputRef.current?.showPicker?.(); } catch { dateInputRef.current?.focus(); } }, 60);
+  };
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
   const [type,        setType]        = useState(tx?.type || defaultType);
@@ -438,7 +447,7 @@ export function TransModal({
           return (
             <button key={k}
               onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setType(k); setErrors({}); setCatId(""); }}
+              onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setType(k); setErrors({}); setCatId(""); }}
               onClick={() => { setType(k); setErrors({}); setCatId(""); }}
               style={{
                 padding: "7px 2px 6px",
@@ -461,7 +470,7 @@ export function TransModal({
           {[["epargne", "↑ Dépôt"], ["decagnottage", "↓ Retrait"]].map(([k, l]) => (
             <button key={k}
               onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setType(k); setErrors({}); }}
+              onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setType(k); setErrors({}); }}
               onClick={() => { setType(k); setErrors({}); }}
               style={{
                 padding: "7px", borderRadius: 10, fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
@@ -515,7 +524,7 @@ export function TransModal({
           {/* Trigger */}
           <button
             onTouchStart={e => e.stopPropagation()}
-            onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCatOpen(o => !o); }}
+            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setCatOpen(o => !o); }}
             onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
@@ -547,7 +556,7 @@ export function TransModal({
                 style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
                 onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
                 onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
-                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
                 onClick={() => { document.activeElement?.blur(); setCatOpen(false); }}
               />
 
@@ -578,7 +587,7 @@ export function TransModal({
                   </span>
                   <button
                     onTouchStart={e => e.stopPropagation()}
-                    onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                    onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
                     onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatOpen(false); } }}
                     style={{
                       width: 24, height: 24, borderRadius: 6,
@@ -666,7 +675,7 @@ export function TransModal({
               : cagnottes.map(c => (
                 <button key={c.id}
                   onTouchStart={e => e.stopPropagation()}
-                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setCagId(c.id); setErrors(v => ({ ...v, cag: "" })); }}
+                  onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setCagId(c.id); setErrors(v => ({ ...v, cag: "" })); }}
                   onClick={() => { setCagId(c.id); setErrors(v => ({ ...v, cag: "" })); }}
                   style={{
                     flexShrink: 0, padding: "5px 13px", borderRadius: 20,
@@ -696,27 +705,33 @@ export function TransModal({
             ["Avant-hier",  beforeStr],
             ["Autre…",      null],
           ].map(([label, d]) => {
-            const sel = d ? date === d : !dateIsShortcut;
+            const custom = customDate || !dateIsShortcut;
+            const sel = d ? date === d && !custom : custom;
+            const pick = () => {
+              if (d) { setDate(d); setCustomDate(false); setErrors(v => ({ ...v, date: "" })); }
+              else openCalendar();
+            };
+            const shown = !d && !dateIsShortcut ? `📅 ${date.slice(8)}/${date.slice(5, 7)}` : label;
             return (
               <button key={label}
                 onTouchStart={e => e.stopPropagation()}
-                onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); if (d) { setDate(d); setErrors(v => ({ ...v, date: "" })); } }}
-                onClick={() => { if (d) { setDate(d); setErrors(v => ({ ...v, date: "" })); } }}
+                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); pick(); }}
+                onClick={() => { if (!('ontouchstart' in window)) pick(); }}
                 style={{
                   padding: "6px 2px", borderRadius: 20, fontSize: ".65rem",
                   border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`,
                   background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
                   color: sel ? "var(--accent)" : "var(--text2)",
                   fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
-                }}>{label}</button>
+                }}>{shown}</button>
             );
           })}
         </div>
         {/* Champ date natif affiché uniquement si "Autre…" sélectionné */}
-        {!dateIsShortcut && (
-          <input type="date" value={date}
+        {(customDate || !dateIsShortcut) && (
+          <input type="date" value={date} ref={dateInputRef} max="2100-12-31"
             className={errors.date ? "error" : ""}
-            onChange={e => { setDate(e.target.value); setErrors(v => ({ ...v, date: "" })); }}
+            onChange={e => { if (e.target.value) { setDate(e.target.value); setErrors(v => ({ ...v, date: "" })); } }}
             style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }}
           />
         )}
@@ -781,7 +796,7 @@ export function TransModal({
             <SectionLabel color="var(--tr)">Options</SectionLabel>
             <button type="button"
               onTouchStart={e => e.stopPropagation()}
-              onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); setOptOpen(true); }}
+              onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setOptOpen(true); }}
               onClick={() => { if (!('ontouchstart' in window)) setOptOpen(true); }}
               style={{
                 width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", borderRadius: 10,
@@ -801,7 +816,7 @@ export function TransModal({
                 <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
                   onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
                   onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
-                  onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); close(); }}
+                  onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); close(); }}
                   onClick={close} />
                 <div style={{
                     position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
