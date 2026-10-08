@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.45.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.45.1**.
 
 ---
 
@@ -108,7 +108,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 
 | Helper (`hooks.js`) | Rôle | À utiliser pour |
 |---|---|---|
-| `isActiveForMonth(f, ym)` | Un frais/revenu fixe est-il actif ce mois-là ? Gère **à la fois** `startYM` et la pause (`paused`/`pausedFrom`/`pausedUntil`) | Tout filtrage de frais/revenu fixe par mois |
+| `isActiveForMonth(f, ym)` | Un frais/revenu fixe est-il actif ce mois-là ? Gère `startYM`, la pause en cours (`paused`/`pausedFrom`/`pausedUntil`) **et les pauses terminées (`pauseHistory`, v1.45.1)** | Tout filtrage de frais/revenu fixe par mois |
 | `isIncomeDirection(t)` | Le sens d'une transaction (+ ou −). Respecte `adjSign` pour une opération d'équilibre (qui peut être + ou −), sinon retombe sur `isIncome(t.type)` | Tout endroit qui affiche/calcule un signe, une couleur, un total net |
 | `isPointable(type)` | `true` sauf `decagnottage`/`transfer` (mouvements internes, absents d'un relevé) | Rapprochement bancaire, filtres Historique |
 | `computeReconciliation(...)` / `useReconciliation(txs, fixedExpenses, fixedIncomes)` | LA seule source (le hook n'est qu'un `useMemo` autour de la fonction pure, qui garde aussi le détail des lignes en attente) pour `soldePointe`/`soldeAttente`/`nbPointed`/`totalPointable`. Inclut les frais ET revenus fixes avec leur propre `pointedMonths` | Accueil (rapprochement + base du solde estimé) |
@@ -176,6 +176,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **Pauses terminées archivées** (`pauseHistory` [{from, until}], rempli par `withPauseHistory` dans le reducer à chaque réactivation ; éditable dans Options du formulaire « Pauses passées ») — v1.45.1. Ne jamais remettre `pausedFrom` à null sans archiver la période.
 - **Info-bulles ⓘ dans Options** — v1.39.35, repositionnées dans le flux normal (au lieu d'un survol) en v1.39.36 pour éviter d'être coupées par les coins arrondis des cartes
 
 ---

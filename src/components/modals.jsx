@@ -1173,6 +1173,9 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   const [paused,      setPaused]      = useState(f?.paused || false);
   const [pausedFrom,  setPausedFrom]  = useState(f?.pausedFrom || "");
   const [pausedUntil, setPausedUntil] = useState(f?.pausedUntil || "");
+  // Pauses déjà terminées (v1.45.1) — modifiables, pour corriger un mois compté à tort
+  const [pastPauses, setPastPauses] = useState(f?.pauseHistory || []);
+  const [newPast, setNewPast] = useState(null); // { from, until } en cours d'ajout
   const [errors, setErrors] = useState({});
 
   function switchKind(k) {
@@ -1196,6 +1199,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       // vient de l'activer (jamais rétroactif sur l'historique déjà passé)
       pausedFrom:  paused ? (pausedFrom || curM) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
+      pauseHistory: pastPauses.length ? pastPauses : undefined,
     };
     if (isInc) onSaveIncome({ idx: editingIdx, income: payload });
     else       onSaveExpense({ idx: editingIdx, fixed: payload });
@@ -1222,8 +1226,11 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
         ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
       ]} />
-      <OptionsField hint="Mettre en pause…"
-        chips={paused ? [[`⏸️ En pause${pausedUntil ? " → " + ymLabel(pausedUntil) : ""}`, "var(--warning)", "var(--warning-glow)"]] : []}>
+      <OptionsField hint="Mettre en pause, pauses passées…"
+        chips={[
+          ...(paused ? [[`⏸️ En pause${pausedUntil ? " → " + ymLabel(pausedUntil) : ""}`, "var(--warning)", "var(--warning-glow)"]] : []),
+          ...(pastPauses.length ? [[`🕓 ${pastPauses.length} pause${pastPauses.length > 1 ? "s" : ""} passée${pastPauses.length > 1 ? "s" : ""}`, "var(--text2)", "var(--surface3)"]] : []),
+        ]}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 11, border: "1px solid rgba(200,184,96,.4)", marginBottom: 7, flexWrap: "wrap" }}>
           <span style={{ fontSize: ".95rem" }}>⏸️</span>
           <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--warning)" }}>Mettre en pause</span>
@@ -1252,6 +1259,47 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
                     style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", padding: 0, cursor: "pointer" }} />
                 </label>
               </div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: "9px 10px", borderRadius: 11, border: "1px solid var(--border)", marginBottom: 7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ fontSize: ".95rem" }}>🕓</span>
+            <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--text2)" }}>Pauses passées</span>
+          </div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", lineHeight: 1.5, margin: "4px 0 7px" }}>
+            Mois où ce {isInc ? "revenu n'a pas été versé" : "frais n'a pas été prélevé"} : ils ne comptent pas dans le solde.
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {pastPauses.map((p, i) => (
+              <span key={p.from + p.until} style={pill(true, "var(--text2)")}
+                onClick={() => setPastPauses(list => list.filter((_, j) => j !== i))}>
+                {p.from === p.until ? ymLabel(p.from) : `${ymLabel(p.from)} → ${ymLabel(p.until)}`} ✕
+              </span>
+            ))}
+            {!newPast && <span style={pill(false, "var(--accent)")} onClick={() => setNewPast({ from: addMonthsYM(curM, -1), until: addMonthsYM(curM, -1) })}>＋ Ajouter</span>}
+          </div>
+          {newPast && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 6, alignItems: "end", marginTop: 8 }}>
+              <div>
+                <div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>DU MOIS</div>
+                <input type="month" value={newPast.from} max={curM} onChange={e => setNewPast(v => ({ ...v, from: e.target.value }))}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: ".72rem", padding: "7px 6px" }} />
+              </div>
+              <div>
+                <div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>AU MOIS (INCLUS)</div>
+                <input type="month" value={newPast.until} max={curM} onChange={e => setNewPast(v => ({ ...v, until: e.target.value }))}
+                  style={{ width: "100%", boxSizing: "border-box", fontSize: ".72rem", padding: "7px 6px" }} />
+              </div>
+              <button type="button"
+                onClick={() => {
+                  const { from, until } = newPast;
+                  if (from && until && from <= until) {
+                    setPastPauses(list => [...list.filter(p => !(p.from === from && p.until === until)), { from, until }].sort((a, b) => a.from.localeCompare(b.from)));
+                    setNewPast(null);
+                  }
+                }}
+                style={{ padding: "8px 10px", borderRadius: 9, border: "1px solid var(--accent)", background: "var(--accent-glow)", color: "var(--accent)", fontWeight: 800, fontSize: ".68rem", cursor: "pointer" }}>OK</button>
             </div>
           )}
         </div>

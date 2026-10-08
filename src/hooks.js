@@ -16,6 +16,8 @@ import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO,
 // ─────────────────────────────────────────────────────────────────
 export function isActiveForMonth(f, ym) {
   if (f.startYM && ym < f.startYM) return false;
+  // Pauses terminées (v1.45.1) : restent exclues après réactivation
+  if (f.pauseHistory?.some(p => ym >= p.from && ym <= p.until)) return false;
   if (f.paused) {
     // La pause ne s'applique qu'à partir du mois où elle a été activée
     // (pausedFrom) — jamais rétroactivement sur les mois déjà passés,

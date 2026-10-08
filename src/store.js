@@ -1,4 +1,4 @@
-import { uid, todayISO } from "./utils.js";
+import { uid, todayISO, getPrevMonth, currentYM } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  JSDoc Types
@@ -105,6 +105,37 @@ export const A = /** @type {const} */ ({
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
+
+// ─────────────────────────────────────────────────────────────────
+//  withPauseHistory — v1.45.1
+//  Avant : réactiver un frais/revenu fixe effaçait pausedFrom → la pause
+//  disparaissait et les mois passés en pause redevenaient « dus »
+//  (en attente) dans le solde estimé. Désormais, chaque pause terminée
+//  est archivée dans pauseHistory [{ from, until }] et isActiveForMonth
+//  continue de l'exclure. Appliqué dans le reducer → couvre le bouton
+//  ▶️ de la liste ET le formulaire.
+// ─────────────────────────────────────────────────────────────────
+export function withPauseHistory(old, next, curYM = currentYM()) {
+  const history = [...(old.pauseHistory || [])];
+  const push = (from, until) => {
+    if (!from || !until || from > until) return;
+    if (!history.some(p => p.from === from && p.until === until)) history.push({ from, until });
+  };
+  if (old.paused && old.pausedFrom) {
+    if (!next.paused) {
+      // Réactivation : la pause couvrait jusqu'au mois précédent (ou jusqu'à
+      // sa date de reprise prévue si celle-ci est déjà passée)
+      const lastPaused = old.pausedUntil && old.pausedUntil < curYM ? old.pausedUntil : getPrevMonth(curYM);
+      push(old.pausedFrom, lastPaused);
+    } else if (next.pausedFrom && next.pausedFrom !== old.pausedFrom) {
+      // Nouvelle pause qui remplace une ancienne : on garde l'ancienne période
+      const end = old.pausedUntil && old.pausedUntil < next.pausedFrom ? old.pausedUntil : getPrevMonth(next.pausedFrom);
+      push(old.pausedFrom, end);
+    }
+  }
+  history.sort((a, b) => a.from.localeCompare(b.from));
+  return history.length ? history : undefined;
+}
 
 // ─────────────────────────────────────────────────────────────────
 //  Default state
@@ -435,6 +466,8 @@ export function reducer(state, action) {
         newFixed[idx] = {
           ...old,
           ...fixed,
+          // Liste éditée dans le formulaire (si envoyée) + archivage automatique d'une pause qu'on vient d'arrêter
+          pauseHistory: withPauseHistory({ ...old, pauseHistory: fixed.pauseHistory !== undefined ? fixed.pauseHistory : old.pauseHistory }, { ...old, ...fixed }, curYM),
           // Préserver les champs non envoyés par le modal (startYM, monthlyOverrides)
           startYM:        fixed.startYM !== undefined ? fixed.startYM : old.startYM,
           monthlyOverrides: old.monthlyOverrides,
@@ -461,6 +494,7 @@ export function reducer(state, action) {
         newIncomes[idx] = {
           ...old,
           ...income,
+          pauseHistory: withPauseHistory({ ...old, pauseHistory: income.pauseHistory !== undefined ? income.pauseHistory : old.pauseHistory }, { ...old, ...income }),
           startYM: income.startYM !== undefined ? income.startYM : old.startYM,
         };
       } else {
