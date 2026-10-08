@@ -1005,8 +1005,10 @@ export default function App() {
         <FixedModal
           categories={data.categories}
           fixedExpenses={data.fixedExpenses}
+          fixedIncomes={data.fixedIncomes || []}
           editingIdx={fixedModal.editingIdx}
           onSave={payload => { saveFixed(payload); setFixedModal(null); }}
+          onSaveIncome={payload => { saveFixedIncome(payload); setFixedModal(null); }}
           onClose={() => setFixedModal(null)}
         />
       )}
@@ -1044,8 +1046,10 @@ export default function App() {
         <FixedIncomeModal
           categories={data.categories}
           fixedIncomes={data.fixedIncomes || []}
+          fixedExpenses={data.fixedExpenses}
           editingIdx={fixedIncomeModal.editingIdx}
           onSave={payload => { saveFixedIncome(payload); setFixedIncomeModal(null); }}
+          onSaveExpense={payload => { saveFixed(payload); setFixedIncomeModal(null); }}
           onClose={() => setFixedIncomeModal(null)}
         />
       )}

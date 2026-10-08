@@ -2,8 +2,9 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceWithRecurring, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
+import { useBalanceBreakdown, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
+import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  CountUp — chiffre animé de 0 à target
@@ -129,7 +130,11 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
   const prevM     = getPrevMonth(curM);
   const curY      = new Date().getFullYear().toString();
 
-  const balance   = useBalanceWithRecurring(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || []);
+  // v1.45.0 : le détail du calcul (panneau ouvert en touchant le montant)
+  // et le montant lui-même viennent de la même fonction.
+  const breakdown = useBalanceBreakdown(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || []);
+  const balance   = breakdown.total;
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   // v1.39.10 : projection du solde sur les prochains mois (médiane des
   // dépenses courantes + fixes/récurrentes/programmées déjà connus)
@@ -461,8 +466,12 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
               <>
                 {/* Solde + badge delta inline */}
                 <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:10 }}>
-                  <div className="hero-value" style={{ color: balanceColor, marginBottom: 0 }}>
+                  <div className="hero-value" role="button"
+                    onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+                    style={{ color: balanceColor, marginBottom: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
                     <CountUp target={balance} color={balanceColor} duration={1000} />
+                    <span style={{ fontSize: ".58rem", fontWeight: 700, color: "var(--accent)", border: "1px solid rgba(112,184,224,.45)",
+                      borderRadius: 10, padding: "2px 7px", background: "rgba(112,184,224,.1)", whiteSpace: "nowrap", letterSpacing: 0 }}>ⓘ calcul</span>
                   </div>
                   {deltaPct !== null && (
                     <div style={{
@@ -867,6 +876,11 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
       </Sec>
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
+      {breakdownOpen && (
+        <BalanceBreakdownSheet breakdown={breakdown} categories={data.categories || []} cagnottes={cagnottes}
+          onClose={() => setBreakdownOpen(false)} />
+      )}
+
       {/* Panneau porte-monnaie (v1.42.0) — ouvert depuis la 3ᵉ mini-carte */}
       {walletOpen && (() => {
         const wallets = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM);

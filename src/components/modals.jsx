@@ -76,7 +76,7 @@ function SectionLabel({ children, color }) {
 // ─────────────────────────────────────────────────────────────────
 //  NumPad — clavier numérique custom (touches réduites à 43px)
 // ─────────────────────────────────────────────────────────────────
-function NumPad({ value, onChange, type, onTypeChange, variant }) {
+function NumPad({ value, onChange, type, onTypeChange, variant, hideDisplay }) {
   const OPERATORS = ["+", "-"];
   const isAdj = type === "balance_adjustment";
   const isSimpleType = (type === "expense" || type === "income") && !isAdj;
@@ -133,8 +133,10 @@ function NumPad({ value, onChange, type, onTypeChange, variant }) {
   const isExpense   = type === "expense";
   // variant "tr" (v1.42.0) : dépense hors compte — couleur métal, sans signe
   const isTr        = variant === "tr";
-  const accentColor = isTr ? "var(--tr)" : isExpense ? "var(--danger)" : "var(--success)";
-  const sign        = isTr ? "" : isExpense ? "−" : "+";
+  // variant "cag" (v1.45.0) : mouvement entre cagnottes — violet, sans signe
+  const isCagV      = variant === "cag";
+  const accentColor = isTr ? "var(--tr)" : isCagV ? "var(--purple)" : isExpense ? "var(--danger)" : "var(--success)";
+  const sign        = isTr || isCagV ? "" : isExpense ? "−" : "+";
 
   // ── Disposition touches : ⌫ en haut à droite, opérateurs à droite ──
   const KEYS = [
@@ -147,9 +149,9 @@ function NumPad({ value, onChange, type, onTypeChange, variant }) {
   return (
     <div>
       {/* Affichage montant + bascule type */}
-      <div style={{
-        background: isTr ? "var(--tr-glow)" : isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
-        border: `1px solid ${isTr ? "var(--tr-border)" : isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
+      {!hideDisplay && <div style={{
+        background: isTr ? "var(--tr-glow)" : isCagV ? "var(--purple-glow)" : isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
+        border: `1px solid ${isTr ? "var(--tr-border)" : isCagV ? "rgba(176,144,224,.3)" : isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
         borderRadius: 12, padding: "8px 12px", marginBottom: 8,
         display: "flex", alignItems: "center", gap: 10,
       }}>
@@ -181,7 +183,7 @@ function NumPad({ value, onChange, type, onTypeChange, variant }) {
             </span>
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Grille touches — hauteur réduite 50→43px */}
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -293,6 +295,222 @@ function SideAmountsPicker({ types, side, showHint = true }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────
+//  CategoryField / DateField — v1.44.3
+//  Champs partagés par la saisie d'une dépense ET la saisie hors compte,
+//  pour qu'ils restent identiques (même menu, mêmes couleurs, mêmes gestes).
+// ─────────────────────────────────────────────────────────────────
+function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", label = "Catégorie", allowNone = true, emptyLabel = "Aucune catégorie", error }) {
+  const [catOpen, setCatOpen] = useState(false);
+  const catTouchRef = useRef({ startY: 0, startX: 0, moved: false });
+  return (
+    <div style={{ marginBottom: 10 }}>
+          <SectionLabel color="var(--purple)">{label}</SectionLabel>
+          {error && <FieldError msg={error} />}
+
+          {/* Trigger */}
+          <button
+            onTouchStart={e => e.stopPropagation()}
+            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setCatOpen(o => !o); }}
+            onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
+            style={{
+              width: "100%", padding: "9px 12px", boxSizing: "border-box",
+              background: catId ? "rgba(176,144,224,.1)" : "rgba(176,144,224,.05)",
+              border: "1px solid rgba(176,144,224,.3)", borderLeft: "3px solid var(--purple)",
+              borderRadius: 10,
+              color: catId ? "var(--text)" : "var(--text3)",
+              fontSize: ".78rem", fontFamily: "inherit",
+              display: "flex", alignItems: "center", gap: 8,
+              cursor: "pointer", touchAction: "manipulation",
+            }}>
+            {(() => {
+              const cat = cats.find(c => c.id === catId);
+              return cat
+                ? <><span style={{ fontSize: "1rem" }}>{cat.icon}</span><span style={{ flex: 1, textAlign: "left" }}>{cat.name}{cat.sub && <span style={{ color: "var(--text3)", marginLeft: 6 }}>({cat.sub})</span>}</span></>
+                : <span style={{ flex: 1, textAlign: "left", color: "var(--text3)" }}>{emptyLabel}</span>;
+            })()}
+            <span style={{
+              color: "var(--text2)", fontSize: ".7rem",
+              display: "inline-block", transition: "transform .2s",
+              transform: catOpen ? "rotate(180deg)" : "none",
+            }}>▾</span>
+          </button>
+
+          {catOpen && (
+            <>
+              {/* Overlay — bloque le scroll du fond via onTouchMove passive:false */}
+              <div
+                style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
+                onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
+                onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
+                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                onClick={() => { document.activeElement?.blur(); setCatOpen(false); }}
+              />
+
+              {/* Grille centrée */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: "50%", left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  zIndex: 201,
+                  width: "min(92vw, 380px)",
+                  background: "var(--surface)",
+                  border: "1.5px solid var(--border)",
+                  borderRadius: 16,
+                  padding: 12,
+                  boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+                }}
+                // Empêche les events de buller vers l'overlay
+                onTouchStart={e => e.stopPropagation()}
+                onTouchMove={e => e.stopPropagation()}
+                onTouchEnd={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* En-tête */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
+                    {label}
+                  </span>
+                  <button
+                    onTouchStart={e => e.stopPropagation()}
+                    onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
+                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatOpen(false); } }}
+                    style={{
+                      width: 24, height: 24, borderRadius: 6,
+                      background: "var(--surface2)", border: "1px solid var(--border)",
+                      color: "var(--text2)", fontSize: 13, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      touchAction: "manipulation",
+                    }}>✕</button>
+                </div>
+
+                {/* Grille 4 colonnes — drag détecté pour éviter sélection au scroll */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+
+                  {/* Aucune */}
+                  {allowNone && <button
+                    onTouchStart={e => {
+                      e.stopPropagation();
+                      catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
+                    }}
+                    onTouchMove={e => {
+                      const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
+                      const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
+                      if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
+                    }}
+                    onTouchEnd={e => {
+                      e.stopPropagation(); e.preventDefault();
+                      if (!catTouchRef.current.moved) { document.activeElement?.blur(); onChange(""); setCatOpen(false); }
+                    }}
+                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); onChange(""); setCatOpen(false); } }}
+                    style={{
+                      gridColumn: "1 / -1", padding: "7px 10px", borderRadius: 9,
+                      border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
+                      background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                      color: !catId ? accentColor : "var(--text3)",
+                      fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
+                    }}>⊘ Aucune</button>}
+
+                  {cats.map(c => (
+                    <button key={c.id}
+                      onTouchStart={e => {
+                        e.stopPropagation();
+                        catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
+                      }}
+                      onTouchMove={e => {
+                        const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
+                        const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
+                        if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
+                      }}
+                      onTouchEnd={e => {
+                        e.stopPropagation(); e.preventDefault();
+                        if (!catTouchRef.current.moved) { document.activeElement?.blur(); onChange(c.id); setCatOpen(false); }
+                      }}
+                      onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); onChange(c.id); setCatOpen(false); } }}
+                      style={{
+                        display: "flex", flexDirection: "column", alignItems: "center",
+                        padding: "8px 4px", gap: 4, borderRadius: 10,
+                        border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
+                        background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                        cursor: "pointer", touchAction: "pan-y",
+                      }}>
+                      <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
+                      <span style={{
+                        fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
+                        color: catId === c.id ? accentColor : "var(--text3)",
+                        fontWeight: catId === c.id ? 700 : 400,
+                        maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      }}>{c.name}</span>
+                      {c.sub && <span style={{ fontSize: ".5rem", color: "var(--text3)", whiteSpace: "nowrap" }}>{c.sub}</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+  );
+}
+
+function DateField({ date, onChange, error, label = "Date", shortcuts, min }) {
+  const todayStr     = todayISO();
+  const yesterdayStr = daysAgoISO(1);
+  const beforeStr    = daysAgoISO(2);
+  const SC = shortcuts || [["Aujourd'hui", todayStr], ["Hier", yesterdayStr], ["Avant-hier", beforeStr]];
+  const dateIsShortcut = SC.some(([, d]) => d === date);
+  const [customDate, setCustomDate] = useState(false);
+  const dateInputRef = useRef(null);
+  const openCalendar = () => {
+    setCustomDate(true);
+    // Ouvre directement le calendrier d'Android ; si le navigateur refuse,
+    // le champ date reste affiché et un tap dessus l'ouvre.
+    setTimeout(() => { try { dateInputRef.current?.showPicker?.(); } catch { dateInputRef.current?.focus(); } }, 60);
+  };
+  const errors = { date: error };
+  const setDate = onChange;
+  const setErrors = () => {};
+  return (
+      <div style={{ marginBottom: 10 }}>
+        <SectionLabel color="var(--accent)">{label}</SectionLabel>
+        {errors.date && <FieldError msg={errors.date} />}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
+          background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+          {[...SC, ["Autre…", null]].map(([label, d]) => {
+            const custom = customDate || !dateIsShortcut;
+            const sel = d !== null ? date === d && !custom : custom;
+            const pick = () => {
+              if (d !== null) { setDate(d); setCustomDate(false); setErrors(v => ({ ...v, date: "" })); }
+              else openCalendar();
+            };
+            const shown = d === null && !dateIsShortcut ? `📅 ${date.slice(8)}/${date.slice(5, 7)}` : label;
+            return (
+              <button key={label}
+                onTouchStart={e => e.stopPropagation()}
+                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); pick(); }}
+                onClick={() => { if (!('ontouchstart' in window)) pick(); }}
+                style={{
+                  padding: "6px 2px", borderRadius: 20, fontSize: ".65rem",
+                  border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`,
+                  background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                  color: sel ? "var(--accent)" : "var(--text2)",
+                  fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
+                }}>{shown}</button>
+            );
+          })}
+        </div>
+        {/* Champ date natif affiché uniquement si "Autre…" sélectionné */}
+        {(customDate || !dateIsShortcut) && (
+          <input type="date" value={date} ref={dateInputRef} max="2100-12-31" min={min}
+            className={errors.date ? "error" : ""}
+            onChange={e => { if (e.target.value) { setDate(e.target.value); setErrors(v => ({ ...v, date: "" })); } }}
+            style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }}
+          />
+        )}
+      </div>
+  );
+}
+
 export function TransModal({
   transactions, categories, cagnottes, tags = [], sideAmountTypes = [],
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
@@ -302,15 +520,6 @@ export function TransModal({
   const toast = useToast();
   // v1.44.0 : options (montants à part, chèque, tags, récurrence) dans un menu déroulant
   const [optOpen, setOptOpen] = useState(false);
-  // v1.44.2 : « Autre… » ouvre le calendrier (avant : le bouton ne faisait rien)
-  const [customDate, setCustomDate] = useState(false);
-  const dateInputRef = useRef(null);
-  const openCalendar = () => {
-    setCustomDate(true);
-    // Ouvre directement le calendrier natif d'Android ; si le navigateur
-    // refuse, le champ date reste affiché et un tap dessus l'ouvre.
-    setTimeout(() => { try { dateInputRef.current?.showPicker?.(); } catch { dateInputRef.current?.focus(); } }, 60);
-  };
   const tx    = editingId ? transactions.find(t => t.id === editingId) : null;
 
   const [type,        setType]        = useState(tx?.type || defaultType);
@@ -330,9 +539,6 @@ export function TransModal({
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
-  const [catOpen,     setCatOpen]     = useState(false);
-  // Ref pour détecter un drag (scroll) vs un tap sur la grille catégorie
-  const catTouchRef = useRef({ startY: 0, startX: 0, moved: false });
 
   const isCag = type === "epargne" || type === "decagnottage";
   const isInc = type === "income";
@@ -342,18 +548,13 @@ export function TransModal({
   const isAdj = type === "balance_adjustment";
   const accentColor = isAdj ? "var(--sapin)" : isInc ? "var(--success)" : isCag ? "var(--purple)" : "var(--danger)";
 
-  // Raccourcis date
-  const todayStr     = todayISO();
-  const yesterdayStr = daysAgoISO(1);
-  const beforeStr    = daysAgoISO(2);
-  const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
 
   function findDuplicate(amt, catId, txDate, txType) {
     if (!amt || editingId) return null;
     const d = new Date(txDate + "T12:00:00");
     return transactions.find(t => {
       if (t.type !== txType) return false;
-      if (Math.abs((parseFloat(t.amount)||0) - parseAmt(amt)) > 0.01) return false;
+      if (Math.abs((parseFloat(t.amount)||0) - amountOf(amt)) > 0.01) return false;
       if (t.categoryId !== catId) return false;
       const td = new Date(t.date + "T12:00:00");
       return Math.abs((d - td) / 86400000) <= 7;
@@ -362,7 +563,7 @@ export function TransModal({
 
   function validate() {
     const e = {};
-    const a = parseAmt(amount);
+    const a = amountOf(amount);
     if (!amount || isNaN(a) || a <= 0)  e.amount = "Montant requis et doit être > 0";
     if (!date)                           e.date   = "Date requise";
     if (isCag && !cagId)                 e.cag    = "Sélectionnez une cagnotte";
@@ -376,7 +577,7 @@ export function TransModal({
 
   function handleSave(force = false) {
     if (!validate()) return;
-    const parsedAmt = parseAmt(amount);
+    const parsedAmt = amountOf(amount);
     if (!force && !isCag) {
       const dup = findDuplicate(amount, catId, date, type);
       if (dup) {
@@ -516,153 +717,8 @@ export function TransModal({
         />
       </div>
 
-      {/* ── Catégorie — overlay fixed, scroll bloqué, drag détecté ── */}
-      {!isCag && !isAdj && (
-        <div style={{ marginBottom: 10 }}>
-          <SectionLabel color="var(--purple)">Catégorie</SectionLabel>
-
-          {/* Trigger */}
-          <button
-            onTouchStart={e => e.stopPropagation()}
-            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setCatOpen(o => !o); }}
-            onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
-            style={{
-              width: "100%", padding: "9px 12px", boxSizing: "border-box",
-              background: catId ? "rgba(176,144,224,.1)" : "rgba(176,144,224,.05)",
-              border: "1px solid rgba(176,144,224,.3)", borderLeft: "3px solid var(--purple)",
-              borderRadius: 10,
-              color: catId ? "var(--text)" : "var(--text3)",
-              fontSize: ".78rem", fontFamily: "inherit",
-              display: "flex", alignItems: "center", gap: 8,
-              cursor: "pointer", touchAction: "manipulation",
-            }}>
-            {(() => {
-              const cat = cats.find(c => c.id === catId);
-              return cat
-                ? <><span style={{ fontSize: "1rem" }}>{cat.icon}</span><span style={{ flex: 1, textAlign: "left" }}>{cat.name}</span></>
-                : <span style={{ flex: 1, textAlign: "left", color: "var(--text3)" }}>Aucune catégorie</span>;
-            })()}
-            <span style={{
-              color: "var(--text2)", fontSize: ".7rem",
-              display: "inline-block", transition: "transform .2s",
-              transform: catOpen ? "rotate(180deg)" : "none",
-            }}>▾</span>
-          </button>
-
-          {catOpen && (
-            <>
-              {/* Overlay — bloque le scroll du fond via onTouchMove passive:false */}
-              <div
-                style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
-                onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
-                onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
-                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
-                onClick={() => { document.activeElement?.blur(); setCatOpen(false); }}
-              />
-
-              {/* Grille centrée */}
-              <div
-                style={{
-                  position: "fixed",
-                  top: "50%", left: "50%",
-                  transform: "translate(-50%, -50%)",
-                  zIndex: 201,
-                  width: "min(92vw, 380px)",
-                  background: "var(--surface)",
-                  border: "1.5px solid var(--border)",
-                  borderRadius: 16,
-                  padding: 12,
-                  boxShadow: "0 24px 60px rgba(0,0,0,.8)",
-                }}
-                // Empêche les events de buller vers l'overlay
-                onTouchStart={e => e.stopPropagation()}
-                onTouchMove={e => e.stopPropagation()}
-                onTouchEnd={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}
-              >
-                {/* En-tête */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
-                    Catégorie
-                  </span>
-                  <button
-                    onTouchStart={e => e.stopPropagation()}
-                    onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
-                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatOpen(false); } }}
-                    style={{
-                      width: 24, height: 24, borderRadius: 6,
-                      background: "var(--surface2)", border: "1px solid var(--border)",
-                      color: "var(--text2)", fontSize: 13, cursor: "pointer",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      touchAction: "manipulation",
-                    }}>✕</button>
-                </div>
-
-                {/* Grille 4 colonnes — drag détecté pour éviter sélection au scroll */}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-
-                  {/* Aucune */}
-                  <button
-                    onTouchStart={e => {
-                      e.stopPropagation();
-                      catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
-                    }}
-                    onTouchMove={e => {
-                      const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
-                      const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
-                      if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
-                    }}
-                    onTouchEnd={e => {
-                      e.stopPropagation(); e.preventDefault();
-                      if (!catTouchRef.current.moved) { document.activeElement?.blur(); setCatId(""); setCatOpen(false); }
-                    }}
-                    onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatId(""); setCatOpen(false); } }}
-                    style={{
-                      gridColumn: "1 / -1", padding: "7px 10px", borderRadius: 9,
-                      border: `1px solid ${!catId ? accentColor : "var(--border)"}`,
-                      background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                      color: !catId ? accentColor : "var(--text3)",
-                      fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
-                    }}>⊘ Aucune</button>
-
-                  {cats.map(c => (
-                    <button key={c.id}
-                      onTouchStart={e => {
-                        e.stopPropagation();
-                        catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
-                      }}
-                      onTouchMove={e => {
-                        const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY);
-                        const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX);
-                        if (dy > 6 || dx > 6) catTouchRef.current.moved = true;
-                      }}
-                      onTouchEnd={e => {
-                        e.stopPropagation(); e.preventDefault();
-                        if (!catTouchRef.current.moved) { document.activeElement?.blur(); setCatId(c.id); setCatOpen(false); }
-                      }}
-                      onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatId(c.id); setCatOpen(false); } }}
-                      style={{
-                        display: "flex", flexDirection: "column", alignItems: "center",
-                        padding: "8px 4px", gap: 4, borderRadius: 10,
-                        border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
-                        background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                        cursor: "pointer", touchAction: "pan-y",
-                      }}>
-                      <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
-                      <span style={{
-                        fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
-                        color: catId === c.id ? accentColor : "var(--text3)",
-                        fontWeight: catId === c.id ? 700 : 400,
-                        maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      }}>{c.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+      {/* ── Catégorie : menu déroulant partagé (v1.44.3, aussi utilisé hors compte) ── */}
+      {!isCag && !isAdj && <CategoryField cats={cats} catId={catId} onChange={setCatId} accentColor={accentColor} />}
 
       {/* ── Cagnotte cible — chips scrollables ── */}
       {isCag && (
@@ -693,49 +749,9 @@ export function TransModal({
         </div>
       )}
 
-      {/* ── Date — 4 boutons pills ── */}
-      <div style={{ marginBottom: 10 }}>
-        <SectionLabel color="var(--accent)">Date</SectionLabel>
-        {errors.date && <FieldError msg={errors.date} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
-          background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
-          {[
-            ["Aujourd'hui", todayStr],
-            ["Hier",        yesterdayStr],
-            ["Avant-hier",  beforeStr],
-            ["Autre…",      null],
-          ].map(([label, d]) => {
-            const custom = customDate || !dateIsShortcut;
-            const sel = d ? date === d && !custom : custom;
-            const pick = () => {
-              if (d) { setDate(d); setCustomDate(false); setErrors(v => ({ ...v, date: "" })); }
-              else openCalendar();
-            };
-            const shown = !d && !dateIsShortcut ? `📅 ${date.slice(8)}/${date.slice(5, 7)}` : label;
-            return (
-              <button key={label}
-                onTouchStart={e => e.stopPropagation()}
-                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); pick(); }}
-                onClick={() => { if (!('ontouchstart' in window)) pick(); }}
-                style={{
-                  padding: "6px 2px", borderRadius: 20, fontSize: ".65rem",
-                  border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`,
-                  background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
-                  color: sel ? "var(--accent)" : "var(--text2)",
-                  fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
-                }}>{shown}</button>
-            );
-          })}
-        </div>
-        {/* Champ date natif affiché uniquement si "Autre…" sélectionné */}
-        {(customDate || !dateIsShortcut) && (
-          <input type="date" value={date} ref={dateInputRef} max="2100-12-31"
-            className={errors.date ? "error" : ""}
-            onChange={e => { if (e.target.value) { setDate(e.target.value); setErrors(v => ({ ...v, date: "" })); } }}
-            style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }}
-          />
-        )}
-      </div>
+      {/* ── Date : boutons + « Autre… » → calendrier (composant partagé, v1.44.3) ── */}
+      <DateField date={date} error={errors.date}
+        onChange={d => { setDate(d); setErrors(v => ({ ...v, date: "" })); }} />
 
       {/* ── Note ── */}
       <div style={{ marginBottom: 10 }}>
@@ -746,7 +762,7 @@ export function TransModal({
 
         {/* Preview arrondi automatique */}
         {roundingEnabled && type === "expense" && roundingCagnotteId && (() => {
-          const parsedA = parseAmt(amount);
+          const parsedA = amountOf(amount);
           if (isNaN(parsedA) || parsedA <= 0) return null;
           const rounded  = roundingRule === "5"  ? Math.ceil(parsedA / 5)  * 5
                          : roundingRule === "10" ? Math.ceil(parsedA / 10) * 10
@@ -939,397 +955,410 @@ export function TransModal({
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Fixed expense modal
+//  Briques de formulaire communes — v1.45.0
+//  Tous les formulaires de saisie reprennent la présentation de la
+//  saisie d'une dépense : boutons de type en haut, montant + clavier de
+//  l'app, champs colorés avec liseré (catégorie violet, date bleu, texte
+//  gris, options cuivre), Annuler / Enregistrer en bas.
 // ─────────────────────────────────────────────────────────────────
-export function FixedModal({ categories, fixedExpenses, editingIdx, onSave, onClose }) {
-  const toast  = useToast();
-  const f      = editingIdx != null ? fixedExpenses[editingIdx] : null;
-  const expCats = categories.filter(c => c.type === "expense");
+/** Props tactiles standard : ignore un glissement (touchMoved), clic souris sinon */
+function tap(fn) {
+  return {
+    onTouchStart: e => e.stopPropagation(),
+    onTouchEnd:   e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); fn(); },
+    onClick:      () => { if (!("ontouchstart" in window)) fn(); },
+  };
+}
 
-  const [name,     setName]     = useState(f?.name       || "");
-  const [amt,      setAmt]      = useState(f?.amount      || "");
-  const [catId,    setCatId]    = useState(f?.categoryId  || expCats[0]?.id || "");
-  const [startYM,  setStartYM]  = useState(f?.startYM    || "");
-  const [paused,       setPaused]       = useState(f?.paused || false);
-  const [pausedFrom,   setPausedFrom]   = useState(f?.pausedFrom || "");
-  const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
+/** "2026-10" + n mois → "2026-11" */
+function addMonthsYM(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+const ymLabel = ym => ym ? `${MONTHS_SHORT[parseInt(ym.slice(5, 7), 10) - 1]} ${ym.slice(0, 4)}` : "";
+/** Date locale + n jours → "YYYY-MM-DD" (jamais toISOString : UTC) */
+function plusDaysISO(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Boutons de type — même rendu que les 4 types de la saisie d'une dépense */
+function TypeButtons({ options, value, onChange, locked }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: 6, marginBottom: 10 }}>
+      {options.map(({ k, emoji, label, color }) => {
+        const sel = value === k;
+        const dim = locked && !sel;
+        return (
+          <button key={k} type="button" {...tap(() => { if (!locked) onChange(k); })}
+            style={{
+              padding: "7px 2px 6px", borderRadius: "var(--radius)",
+              border: `1.5px solid ${sel ? color : "var(--border)"}`,
+              background: sel ? `color-mix(in srgb, ${color} 14%, var(--surface2))` : "var(--surface2)",
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+              cursor: locked ? "default" : "pointer", touchAction: "manipulation", opacity: dim ? .35 : 1,
+            }}>
+            <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>{emoji}</span>
+            <span style={{ fontSize: ".6rem", fontWeight: 700, color: sel ? color : "var(--text3)", whiteSpace: "nowrap" }}>{label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Champ texte gris (nom, note, raison…) — même style que la note de la saisie */
+function TextField({ label, value, onChange, placeholder, error, maxLength, inputStyle }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {label && <SectionLabel color="#a8b4c2">{label}</SectionLabel>}
+      {error && <FieldError msg={error} />}
+      <input type="text" value={value} placeholder={placeholder} maxLength={maxLength}
+        className={error ? "error" : ""}
+        onChange={e => onChange(e.target.value)}
+        style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)", ...inputStyle }} />
+    </div>
+  );
+}
+
+/** Icône (grand carré) + nom côte à côte — catégories et templates */
+function IconNameField({ icon, onIcon, name, onName, namePlaceholder, iconPlaceholder, errors = {} }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SectionLabel color="#a8b4c2">Icône & nom</SectionLabel>
+      {(errors.icon || errors.name) && <FieldError msg={errors.icon || errors.name} />}
+      <div style={{ display: "flex", gap: 8 }}>
+        <input type="text" maxLength={4} value={icon} placeholder={iconPlaceholder || "🙂"} onChange={e => onIcon(e.target.value)}
+          className={errors.icon ? "error" : ""}
+          style={{ width: 54, height: 54, flexShrink: 0, padding: 0, textAlign: "center", fontSize: "1.6rem", borderRadius: 12,
+            borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
+        <input type="text" value={name} placeholder={namePlaceholder} onChange={e => onName(e.target.value)}
+          className={errors.name ? "error" : ""}
+          style={{ flex: 1, minWidth: 0, height: 54, boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
+      </div>
+    </div>
+  );
+}
+
+/** Rangée de 4 boutons bleus pour choisir un MOIS (début, reprise…) ; « Autre… » → sélecteur de mois */
+function MonthField({ label, value, onChange, shortcuts }) {
+  const [custom, setCustom] = useState(false);
+  const ref = useRef(null);
+  const isShortcut = shortcuts.some(([, v]) => v === value);
+  const showCustom = custom || !isShortcut;
+  const openPicker = () => {
+    setCustom(true);
+    setTimeout(() => { try { ref.current?.showPicker?.(); } catch { ref.current?.focus(); } }, 60);
+  };
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SectionLabel color="var(--accent)">{label}</SectionLabel>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
+        background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+        {[...shortcuts, ["Autre…", undefined]].map(([lbl, v]) => {
+          const sel = v === undefined ? showCustom : (!showCustom && value === v);
+          const shown = v === undefined && !isShortcut && value ? `📅 ${ymLabel(value)}` : lbl;
+          return (
+            <button key={lbl} type="button" {...tap(() => { if (v === undefined) openPicker(); else { setCustom(false); onChange(v); } })}
+              style={{
+                padding: "6px 2px", borderRadius: 20, fontSize: ".62rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`,
+                background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                color: sel ? "var(--accent)" : "var(--text2)", fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation",
+              }}>{shown}</button>
+          );
+        })}
+      </div>
+      {showCustom && (
+        <input type="month" ref={ref} value={value || ""} onChange={e => { if (e.target.value) onChange(e.target.value); }}
+          style={{ marginTop: 6, width: "100%", boxSizing: "border-box" }} />
+      )}
+    </div>
+  );
+}
+
+/** Champ « Options » cuivre : un bouton qui ouvre un panneau par-dessus (l'écran ne s'allonge jamais) */
+function OptionsField({ hint, chips = [], children }) {
+  const [open, setOpen] = useState(false);
+  const close = () => { document.activeElement?.blur(); setOpen(false); };
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SectionLabel color="var(--tr)">Options</SectionLabel>
+      <button type="button" {...tap(() => setOpen(true))}
+        style={{
+          width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", borderRadius: 10,
+          background: "rgba(217,160,102,.05)", border: "1px solid rgba(217,160,102,.3)", borderLeft: "3px solid var(--tr)",
+          display: "flex", alignItems: "center", gap: 8, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit",
+        }}>
+        <span style={{ flex: 1, display: "flex", gap: 5, overflow: "hidden", whiteSpace: "nowrap", textAlign: "left" }}>
+          {chips.length === 0
+            ? <span style={{ fontSize: ".72rem", color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis" }}>{hint}</span>
+            : chips.map(([l, col, bg], n) => <span key={n} style={{ fontSize: ".64rem", fontWeight: 800, padding: "3px 8px", borderRadius: 10, color: col, background: bg, flexShrink: 0 }}>{l}</span>)}
+        </span>
+        <span style={{ color: "var(--text2)", fontSize: ".7rem" }}>▾</span>
+      </button>
+      {open && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.55)" }}
+            onTouchStart={e => { e.stopPropagation(); e.preventDefault(); }}
+            onTouchMove={e => { e.stopPropagation(); e.preventDefault(); }}
+            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); close(); }}
+            onClick={close} />
+          <div style={{
+              position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
+              width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
+              background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
+              boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+            }}
+            onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
+            onTouchEnd={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--tr)", textTransform: "uppercase", letterSpacing: ".1em" }}>✨ Options</span>
+              <button type="button" onClick={close} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
+            </div>
+            {children}
+            <button type="button" onClick={close} style={{ width: "100%", marginTop: 4, padding: 11, borderRadius: 11, border: "none", background: "var(--tr)", color: "#1a1405", fontWeight: 800, fontSize: ".76rem", cursor: "pointer" }}>OK</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Boutons du bas : Annuler / Enregistrer */
+function FormActions({ onCancel, onSave, emoji, label = "Enregistrer", color }) {
+  return (
+    <div className="grid-2" style={{ marginBottom: 0 }}>
+      <button className="btn btn-outline" style={{ width: "100%" }} onClick={onCancel}>Annuler</button>
+      <button className="btn btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, ...(color ? { background: color } : {}) }}
+        onClick={onSave}>
+        {emoji && <span>{emoji}</span>}<span>{label}</span>
+      </button>
+    </div>
+  );
+}
+
+/** Petit encart d'information gris */
+function InfoNote({ children, color }) {
+  return (
+    <div style={{ fontSize: ".62rem", color: color || "var(--text3)", lineHeight: 1.45, padding: "7px 10px", borderRadius: 9, marginBottom: 10,
+      background: "var(--surface2)", border: `1px solid ${color ? `color-mix(in srgb, ${color} 35%, transparent)` : "var(--border)"}` }}>{children}</div>
+  );
+}
+
+/** Montant saisi au clavier de l'app (accepte « 12+3 » même sans appuyer sur =) */
+const amountOf = str => { const v = evalAmount(str); return isNaN(v) ? NaN : Math.round(v * 100) / 100; };
+const toPadStr = n => (n === undefined || n === null || n === "") ? "" : String(n).replace(".", ",");
+
+// ─────────────────────────────────────────────────────────────────
+//  Frais fixe / revenu fixe — v1.45.0 (un seul formulaire pour les deux)
+//  À la création, les boutons du haut permettent de basculer de l'un à
+//  l'autre ; en modification le type est verrouillé (un frais existant
+//  reste un frais).
+// ─────────────────────────────────────────────────────────────────
+function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedIncomes = [], editingIdx, onSaveExpense, onSaveIncome, onClose }) {
+  const toast = useToast();
+  const isEdit = editingIdx != null;
+  const [kind, setKind] = useState(initialKind);
+  const f = isEdit ? (initialKind === "income" ? fixedIncomes : fixedExpenses)[editingIdx] : null;
+  const isInc = kind === "income";
+  const cats = categories.filter(c => c.type === (isInc ? "income" : "expense"));
+  const curM = currentYM();
+
+  const [name,   setName]   = useState(f?.name || "");
+  const [amt,    setAmt]    = useState(toPadStr(f?.amount));
+  const [catId,  setCatId]  = useState(f?.categoryId || cats[0]?.id || "");
+  const [startYM, setStartYM] = useState(f?.startYM || "");
+  const [paused,      setPaused]      = useState(f?.paused || false);
+  const [pausedFrom,  setPausedFrom]  = useState(f?.pausedFrom || "");
+  const [pausedUntil, setPausedUntil] = useState(f?.pausedUntil || "");
   const [errors, setErrors] = useState({});
 
-  function validate() {
-    const e = {};
-    if (!name.trim())                               e.name = "Nom requis";
-    const a = parseAmt(amt);
-    if (!amt || isNaN(a) || a <= 0)                 e.amt  = "Montant requis et doit être > 0";
-    setErrors(e);
-    return Object.keys(e).length === 0;
+  function switchKind(k) {
+    if (k === kind) return;
+    setKind(k);
+    setCatId(categories.find(c => c.type === (k === "income" ? "income" : "expense"))?.id || "");
   }
 
   function handleSave() {
-    if (!validate()) return;
-    onSave({ idx: editingIdx, fixed: {
-      name: name.trim(),
-      amount: parseAmt(amt),
-      categoryId: catId,
+    const e = {};
+    const a = amountOf(amt);
+    if (!name.trim()) e.name = "Nom requis";
+    if (!amt || isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    const payload = {
+      name: name.trim(), amount: a, categoryId: catId,
       startYM: startYM || null,
-      paused: paused,
+      paused,
       // Point de départ de la pause : le mois en cours par défaut si on
       // vient de l'activer (jamais rétroactif sur l'historique déjà passé)
-      pausedFrom:  paused ? (pausedFrom || currentYM()) : null,
+      pausedFrom:  paused ? (pausedFrom || curM) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
-    }});
-    toast(editingIdx != null ? "Frais fixe modifié" : "Frais fixe ajouté");
+    };
+    if (isInc) onSaveIncome({ idx: editingIdx, income: payload });
+    else       onSaveExpense({ idx: editingIdx, fixed: payload });
+    toast(isInc ? (isEdit ? "Revenu fixe modifié" : "Revenu fixe ajouté") : (isEdit ? "Frais fixe modifié" : "Frais fixe ajouté"));
   }
 
+  const pill = (on, col) => ({ padding: "5px 10px", borderRadius: 14, fontSize: ".64rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+    border: `1px solid ${on ? col : "var(--border)"}`, color: on ? col : "var(--text2)", background: on ? `color-mix(in srgb, ${col} 14%, transparent)` : "transparent" });
+
   return (
-    <Modal onClose={onClose} title={editingIdx != null ? "Modifier le frais fixe" : "Nouveau frais fixe"}>
-      <Field label="Nom" error={errors.name}>
-        <input type="text" value={name} className={errors.name ? "error" : ""}
-          onChange={e => { setName(e.target.value); setErrors(v => ({...v, name: ""})); }} />
-      </Field>
-      <Field label="Montant (€)" error={errors.amt}>
-        <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
-          onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
-      </Field>
-      <Field label="Catégorie">
-        <select value={catId} onChange={e => setCatId(e.target.value)}>
-          {expCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-      </Field>
-      {/* ★ Champ startYM — date de début optionnelle */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>
-            📅 Début (optionnel)
-          </label>
-          <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>
-            — mois à partir duquel ce frais est déduit
-          </span>
-        </div>
-        {startYM
-          ? (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="month" value={startYM} onChange={e => setStartYM(e.target.value)}
-                style={{ flex: 1 }} />
-              <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
-                onClick={() => setStartYM("")}>
-                ✕ Retirer
-              </button>
-            </div>
-          )
-          : (
-            <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-              onClick={() => setStartYM(currentYM())}>
-              ＋ Définir une date de début
-            </button>
-          )
-        }
-        {startYM && (
-          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-            Ce frais ne sera pas déduit avant {startYM}. Utile si tu l'as souscrit en cours d'année.
-          </div>
-        )}
+    <Modal onClose={onClose} title={isEdit ? (isInc ? "Modifier le revenu fixe" : "Modifier le frais fixe") : (isInc ? "Nouveau revenu fixe" : "Nouveau frais fixe")}>
+      <TypeButtons value={kind} onChange={switchKind} locked={isEdit} options={[
+        { k: "expense", emoji: "💸", label: "Frais fixe",  color: "var(--danger)"  },
+        { k: "income",  emoji: "💰", label: "Revenu fixe", color: "var(--success)" },
+      ]} />
+      <TextField label="Nom" value={name} error={errors.name} placeholder={isInc ? "Ex : Salaire, CAF…" : "Ex : Loyer, Netflix…"}
+        onChange={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
+      <div style={{ marginBottom: 10 }}>
+        {errors.amt && <FieldError msg={errors.amt} />}
+        <NumPad value={amt} type={isInc ? "income" : "expense"}
+          onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
       </div>
-      {/* ★ Pause — indéfinie ou jusqu'à un mois donné (reprise automatique) */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
-          <button
+      <CategoryField cats={cats} catId={catId} onChange={setCatId} />
+      <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
+        ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
+      ]} />
+      <OptionsField hint="Mettre en pause…"
+        chips={paused ? [[`⏸️ En pause${pausedUntil ? " → " + ymLabel(pausedUntil) : ""}`, "var(--warning)", "var(--warning-glow)"]] : []}>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 11, border: "1px solid rgba(200,184,96,.4)", marginBottom: 7, flexWrap: "wrap" }}>
+          <span style={{ fontSize: ".95rem" }}>⏸️</span>
+          <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--warning)" }}>Mettre en pause</span>
+          <button type="button"
             onClick={() => {
-              setPaused(p => {
-                const next = !p;
-                if (next && !pausedFrom) setPausedFrom(currentYM());
-                if (!next) { setPausedFrom(""); setPausedUntil(""); }
-                return next;
-              });
+              const next = !paused;
+              setPaused(next);
+              if (next && !pausedFrom) setPausedFrom(curM);
+              if (!next) { setPausedFrom(""); setPausedUntil(""); }
             }}
-            style={{
-              width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
-              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",
-            }}>
-            <span style={{
-              position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%",
-              background: "#fff", transition: "left .15s",
-            }} />
+            style={{ width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative", flexShrink: 0,
+              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s" }}>
+            <span style={{ position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
           </button>
-        </div>
-        {paused && (
-          <>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
-              Ce frais n'est déduit nulle part tant qu'il est en pause (solde, historique, rapport…).
-            </div>
-            {pausedUntil
-              ? (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input type="month" value={pausedUntil} onChange={e => setPausedUntil(e.target.value)} style={{ flex: 1 }} />
-                  <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
-                    onClick={() => setPausedUntil("")}>
-                    ✕ Retirer
-                  </button>
-                </div>
-              )
-              : (
-                <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-                  onClick={() => setPausedUntil(currentYM())}>
-                  ＋ Reprise automatique à une date connue (optionnel)
-                </button>
-              )
-            }
-            {pausedUntil && (
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-                Reprend automatiquement à partir du mois suivant {pausedUntil}. Laisse vide pour une pause indéfinie (à réactiver toi-même).
+          {paused && (
+            <div style={{ width: "100%" }}>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", lineHeight: 1.5, margin: "4px 0 7px" }}>
+                Non {isInc ? "compté" : "déduit"} nulle part à partir de {ymLabel(pausedFrom || curM)} (solde, historique, rapport…). Reprise :
               </div>
-            )}
-          </>
-        )}
-      </div>
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline"  style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary"  style={{ width: "100%" }} onClick={handleSave}>Valider</button>
-      </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <span style={pill(!pausedUntil, "var(--warning)")} onClick={() => setPausedUntil("")}>Indéfinie</span>
+                <span style={pill(pausedUntil === curM, "var(--warning)")} onClick={() => setPausedUntil(curM)}>Mois prochain</span>
+                <label style={{ ...pill(pausedUntil && pausedUntil !== curM, "var(--warning)"), position: "relative", margin: 0, display: "inline-block", textTransform: "none", letterSpacing: 0 }}>
+                  {pausedUntil && pausedUntil !== curM ? `Après ${ymLabel(pausedUntil)}` : "Autre…"}
+                  <input type="month" value={pausedUntil || ""} onChange={e => setPausedUntil(e.target.value)}
+                    style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", padding: 0, cursor: "pointer" }} />
+                </label>
+              </div>
+            </div>
+          )}
+        </div>
+      </OptionsField>
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={isInc ? "💰" : "💸"} />
     </Modal>
   );
 }
 
-
-// ─────────────────────────────────────────────────────────────────
-//  Fixed income modal
-// ─────────────────────────────────────────────────────────────────
-export function FixedIncomeModal({ categories, fixedIncomes, editingIdx, onSave, onClose }) {
-  const toast   = useToast();
-  const f       = editingIdx != null ? fixedIncomes[editingIdx] : null;
-  const incCats = categories.filter(c => c.type === "income");
-  const fallbackCat = incCats[0]?.id || "";
-
-  const [name,     setName]     = useState(f?.name       || "");
-  const [amt,      setAmt]      = useState(f?.amount      || "");
-  const [catId,    setCatId]    = useState(f?.categoryId  || fallbackCat);
-  const [startYM,  setStartYM]  = useState(f?.startYM    || "");
-  const [paused,       setPaused]       = useState(f?.paused || false);
-  const [pausedFrom,   setPausedFrom]   = useState(f?.pausedFrom || "");
-  const [pausedUntil,  setPausedUntil]  = useState(f?.pausedUntil || "");
-  const [errors, setErrors] = useState({});
-
-  function validate() {
-    const e = {};
-    if (!name.trim())                              e.name = "Nom requis";
-    const a = parseAmt(amt);
-    if (!amt || isNaN(a) || a <= 0)                e.amt  = "Montant requis et doit être > 0";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function handleSave() {
-    if (!validate()) return;
-    onSave({ idx: editingIdx, income: {
-      name: name.trim(),
-      amount: parseAmt(amt),
-      categoryId: catId,
-      startYM: startYM || null,
-      paused: paused,
-      pausedFrom:  paused ? (pausedFrom || currentYM()) : null,
-      pausedUntil: paused ? (pausedUntil || null) : null,
-    }});
-    toast(editingIdx != null ? "Revenu fixe modifié" : "Revenu fixe ajouté");
-  }
-
-  return (
-    <Modal onClose={onClose} title={editingIdx != null ? "Modifier le revenu fixe" : "Nouveau revenu fixe"}>
-      <Field label="Nom" error={errors.name}>
-        <input type="text" value={name} className={errors.name ? "error" : ""}
-          onChange={e => { setName(e.target.value); setErrors(v => ({...v, name: ""})); }} />
-      </Field>
-      <Field label="Montant (€)" error={errors.amt}>
-        <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
-          onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
-      </Field>
-      <Field label="Catégorie">
-        <select value={catId} onChange={e => setCatId(e.target.value)}>
-          <option value="">— Sans catégorie —</option>
-          {incCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-      </Field>
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>📅 Début (optionnel)</label>
-          <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>— mois à partir duquel ce revenu s'applique</span>
-        </div>
-        {startYM
-          ? (
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="month" value={startYM} onChange={e => setStartYM(e.target.value)} style={{ flex: 1 }} />
-              <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }} onClick={() => setStartYM("")}>✕ Retirer</button>
-            </div>
-          )
-          : (
-            <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-              onClick={() => setStartYM(currentYM())}>
-              ＋ Définir une date de début
-            </button>
-          )
-        }
-      </div>
-      {/* ★ Pause — indéfinie ou jusqu'à un mois donné (reprise automatique) */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-          <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600 }}>⏸️ Mettre en pause</label>
-          <button
-            onClick={() => {
-              setPaused(p => {
-                const next = !p;
-                if (next && !pausedFrom) setPausedFrom(currentYM());
-                if (!next) { setPausedFrom(""); setPausedUntil(""); }
-                return next;
-              });
-            }}
-            style={{
-              width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative",
-              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s",
-            }}>
-            <span style={{
-              position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%",
-              background: "#fff", transition: "left .15s",
-            }} />
-          </button>
-        </div>
-        {paused && (
-          <>
-            <div style={{ fontSize: ".6rem", color: "var(--text3)", marginBottom: 8, lineHeight: 1.5 }}>
-              Ce revenu n'est compté nulle part tant qu'il est en pause (solde, historique, rapport…).
-            </div>
-            {pausedUntil
-              ? (
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  <input type="month" value={pausedUntil} onChange={e => setPausedUntil(e.target.value)} style={{ flex: 1 }} />
-                  <button className="btn btn-outline" style={{ padding: "6px 10px", fontSize: ".65rem" }}
-                    onClick={() => setPausedUntil("")}>
-                    ✕ Retirer
-                  </button>
-                </div>
-              )
-              : (
-                <button className="btn btn-outline" style={{ width: "100%", fontSize: ".68rem", color: "var(--text2)" }}
-                  onClick={() => setPausedUntil(currentYM())}>
-                  ＋ Reprise automatique à une date connue (optionnel)
-                </button>
-              )
-            }
-            {pausedUntil && (
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-                Reprend automatiquement à partir du mois suivant {pausedUntil}. Laisse vide pour une pause indéfinie.
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%", background: "var(--success)" }} onClick={handleSave}>Valider</button>
-      </div>
-    </Modal>
-  );
+export function FixedModal({ categories, fixedExpenses, fixedIncomes, editingIdx, onSave, onSaveIncome, onClose }) {
+  return <FixedFormModal initialKind="expense" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes}
+    editingIdx={editingIdx} onSaveExpense={onSave} onSaveIncome={onSaveIncome || (() => {})} onClose={onClose} />;
 }
-// ─────────────────────────────────────────────────────────────────
-//  Cagnotte modal
-// ─────────────────────────────────────────────────────────────────
 
+export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, editingIdx, onSave, onSaveExpense, onClose }) {
+  return <FixedFormModal initialKind="income" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes}
+    editingIdx={editingIdx} onSaveExpense={onSaveExpense || (() => {})} onSaveIncome={onSave} onClose={onClose} />;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Cagnotte modal — v1.45.0
+// ─────────────────────────────────────────────────────────────────
 const CAG_TYPES = [
   { id:"projet",         icon:"🎯", label:"Projet",          color:"var(--accent)"   },
   { id:"urgence",        icon:"🛡️", label:"Urgence",         color:"var(--danger)"   },
   { id:"plaisir",        icon:"✈️", label:"Plaisir",         color:"var(--purple)"   },
-  { id:"investissement", icon:"📈", label:"Investissement",  color:"var(--success)"  },
+  { id:"investissement", icon:"📈", label:"Invest.",         color:"var(--success)"  },
 ];
 export function CagModal({ cagnottes, editingId, onSave, onClose }) {
   const toast = useToast();
   const c     = editingId ? cagnottes.find(x => x.id === editingId) : null;
 
-  const [name,       setName]       = useState(c?.name       || "");
-  const [target,     setTarget]     = useState(c?.target      || "");
-  const [targetDate, setTargetDate] = useState(c?.targetDate  || "");
-  const [current,    setCurrent]    = useState(c?.current     ?? 0);
-  const [cagType,    setCagType]    = useState(c?.cagType     || null);
+  const [name,       setName]       = useState(c?.name || "");
+  const [target,     setTarget]     = useState(toPadStr(c?.target));
+  const [targetDate, setTargetDate] = useState(c?.targetDate || "");
+  const [current,    setCurrent]    = useState(toPadStr(c?.current || ""));
+  const [cagType,    setCagType]    = useState(c?.cagType || null);
+  const [which,      setWhich]      = useState(c ? "current" : "target"); // case remplie par le clavier
   const [errors,     setErrors]     = useState({});
 
   const calcInfo = (() => {
-    const t = parseAmt(target), cur = parseAmt(current) || 0;
+    const t = amountOf(target), cur = amountOf(current) || 0;
     if (!t || !targetDate) return null;
     const rem = t - cur;
-    const today = new Date(), tgt = new Date(targetDate);
-    const months = Math.max(1,
-      (tgt.getFullYear() - today.getFullYear()) * 12 + (tgt.getMonth() - today.getMonth())
-    );
-    return rem > 0
-      ? `📅 Objectif le ${tgt.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })} — à épargner : ${fmt(rem / months)}/mois pendant ${months} mois`
-      : "🎉 Objectif déjà atteint !";
+    const today = new Date(), tgt = new Date(targetDate + "T12:00:00");
+    const months = Math.max(1, (tgt.getFullYear() - today.getFullYear()) * 12 + (tgt.getMonth() - today.getMonth()));
+    return rem > 0 ? `📅 À épargner : ${fmt(rem / months)}/mois pendant ${months} mois` : "🎉 Objectif déjà atteint !";
   })();
 
-  function validate() {
+  function handleSave() {
     const e = {};
     if (!name.trim()) e.name = "Nom requis";
     setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function handleSave() {
-    if (!validate()) return;
+    if (Object.keys(e).length) return;
     onSave({
       id: editingId || null,
       name: name.trim(),
-      target: parseAmt(target) || null,
+      target: amountOf(target) || null,
       targetDate: targetDate || null,
-      current: parseAmt(current) || 0,
+      current: amountOf(current) || 0,
       cagType: cagType || null,
     });
     toast(editingId ? "Cagnotte modifiée" : "Cagnotte créée");
   }
 
+  const AmountBox = ({ k, label, value, color }) => { // appelée comme une fonction, pas comme un composant
+    const on = which === k;
+    return (
+      <button type="button" {...tap(() => setWhich(k))}
+        style={{ flex: 1, minWidth: 0, textAlign: "left", padding: "7px 10px", borderRadius: 12, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit",
+          border: `1.5px solid ${on ? color : "var(--border)"}`, background: on ? `color-mix(in srgb, ${color} 10%, var(--surface2))` : "var(--surface2)" }}>
+        <div style={{ fontSize: ".56rem", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: on ? color : "var(--text3)" }}>{label}</div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: "1.3rem", fontWeight: 800, color: on ? color : "var(--text2)", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value || "0"} €</div>
+      </button>
+    );
+  };
+
+  // Date objectif : raccourcis à 6 mois / 1 an (fin de mois)
+  const endOfMonthIn = n => { const d = new Date(); const e = new Date(d.getFullYear(), d.getMonth() + n + 1, 0);
+    return `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, "0")}-${String(e.getDate()).padStart(2, "0")}`; };
+
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier la cagnotte" : "Nouvelle cagnotte"}>
-      <Field label="Nom" error={errors.name}>
-        <input type="text" value={name} className={errors.name ? "error" : ""}
-          onChange={e => { setName(e.target.value); setErrors(v => ({...v, name: ""})); }} />
-      </Field>
-      <Field label="Objectif (€) — Optionnel">
-        <input type="number" min="0" value={target} onChange={e => setTarget(e.target.value)} />
-      </Field>
-      <Field label="Date objectif — Optionnel">
-        <input type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
-      </Field>
-      <Field label="Montant actuel (€)">
-        <input type="number" step="0.01" min="0" value={current} onChange={e => setCurrent(e.target.value)} />
-      </Field>
-      {calcInfo && <div className="cag-target-info" style={{ marginBottom: 14 }}>{calcInfo}</div>}
-      {/* ★ Type de cagnotte */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600, display: "block", marginBottom: 8 }}>
-          Type (optionnel)
-        </label>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-          {CAG_TYPES.map(t => (
-            <button key={t.id}
-              onClick={() => setCagType(cagType === t.id ? null : t.id)}
-              style={{
-                padding: "7px 10px", borderRadius: 9, cursor: "pointer",
-                border: `1.5px solid ${cagType === t.id ? t.color : "var(--border)"}`,
-                background: cagType === t.id ? `color-mix(in srgb, ${t.color} 14%, var(--surface2))` : "var(--surface2)",
-                display: "flex", alignItems: "center", gap: 7,
-                touchAction: "manipulation",
-              }}>
-              <span style={{ fontSize: ".9rem" }}>{t.icon}</span>
-              <span style={{ fontSize: ".65rem", fontWeight: cagType === t.id ? 700 : 400, color: cagType === t.id ? t.color : "var(--text2)" }}>{t.label}</span>
-            </button>
-          ))}
-        </div>
+      <TypeButtons value={cagType} onChange={k => setCagType(cagType === k ? null : k)}
+        options={CAG_TYPES.map(t => ({ k: t.id, emoji: t.icon, label: t.label, color: t.color }))} />
+      <TextField label="Nom" value={name} error={errors.name} placeholder="Ex : Vacances Bretagne"
+        onChange={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        {AmountBox({ k: "target",  label: "🎯 Objectif (option.)", value: target,  color: "var(--purple)" })}
+        {AmountBox({ k: "current", label: "💰 Déjà épargné",       value: current, color: "var(--success)" })}
       </div>
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>Enregistrer</button>
+      <div style={{ marginBottom: 10 }}>
+        <NumPad value={which === "target" ? target : current} type="income" hideDisplay
+          onChange={v => which === "target"
+            ? setTarget(p => typeof v === "function" ? v(p) : v)
+            : setCurrent(p => typeof v === "function" ? v(p) : v)} />
       </div>
+      <DateField label="Date objectif (optionnel)" date={targetDate} onChange={setTargetDate}
+        shortcuts={[["Aucune", ""], ["Dans 6 mois", endOfMonthIn(6)], ["Dans 1 an", endOfMonthIn(12)]]} />
+      {calcInfo && <InfoNote color="var(--purple)">{calcInfo}</InfoNote>}
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="🐷" />
     </Modal>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Transfer modal
+//  Transfer modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
 export function TransferModal({ cagnottes, onSave, onClose }) {
   const toast  = useToast();
@@ -1339,12 +1368,12 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
   const [toId,   setTo]    = useState(cagnottes[1]?.id || cagnottes[0]?.id || "");
   const [reason, setReason]= useState("");
   const [errors, setErrors] = useState({});
-
   const isWithdraw = mode === "withdraw";
+  const cagItems = cagnottes.map(c => ({ id: c.id, icon: CAG_TYPES.find(t => t.id === c.cagType)?.icon || "🐷", name: c.name, sub: fmt(c.current) }));
 
-  function validate() {
+  function handleSave() {
     const e = {};
-    const a = parseAmt(amt);
+    const a = amountOf(amt);
     if (!amt || isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
     if (!isWithdraw && fromId === toId) e.from = "Source et destination identiques";
     if (!e.amt) {
@@ -1352,136 +1381,100 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
       if (from && from.current < a) e.amt = `Fonds insuffisants (${fmt(from.current)} disponible)`;
     }
     setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function handleSave() {
-    if (!validate()) return;
-    onSave({ amt: parseAmt(amt), fromId, toId: isWithdraw ? "__account__" : toId, reason: reason.trim() || null });
+    if (Object.keys(e).length) return;
+    onSave({ amt: a, fromId, toId: isWithdraw ? "__account__" : toId, reason: reason.trim() || null });
     toast(isWithdraw ? "Retrait effectué" : "Transfert effectué");
   }
 
   return (
     <Modal onClose={onClose} title={isWithdraw ? "Retrait vers le compte" : "Transfert entre cagnottes"}>
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:16 }}>
-        {[["transfer","↔ Entre cagnottes"],["withdraw","↑ Vers le compte"]].map(([m, label]) => (
-          <button key={m} onClick={() => { setMode(m); setErrors({}); }} style={{
-            padding:"8px 6px", borderRadius:9, border:`1px solid ${mode===m ? "var(--accent)" : "var(--border)"}`,
-            background: mode===m ? "var(--accent-glow)" : "var(--surface2)",
-            color: mode===m ? "var(--accent)" : "var(--text3)",
-            fontSize:".65rem", fontWeight:700, cursor:"pointer",
-          }}>{label}</button>
-        ))}
+      <TypeButtons value={mode} onChange={m => { setMode(m); setErrors({}); }} options={[
+        { k: "transfer", emoji: "↔️", label: "Entre cagnottes", color: "var(--purple)" },
+        { k: "withdraw", emoji: "🏦", label: "Vers le compte",  color: "var(--accent)" },
+      ]} />
+      <div style={{ marginBottom: 10 }}>
+        {errors.amt && <FieldError msg={errors.amt} />}
+        <NumPad value={amt} type="transfer" variant="cag"
+          onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
       </div>
-      <Field label="Montant (€)" error={errors.amt}>
-        <input type="number" step="0.01" min="0" value={amt} className={errors.amt ? "error" : ""}
-          onChange={e => { setAmt(e.target.value); setErrors(v => ({...v, amt: ""})); }} />
-      </Field>
-      <Field label="Retirer de…" error={errors.from}>
-        <select value={fromId} className={errors.from ? "error" : ""}
-          onChange={e => { setFrom(e.target.value); setErrors(v => ({...v, from: ""})); }}>
-          {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name} ({fmt(c.current)})</option>)}
-        </select>
-      </Field>
-      {!isWithdraw && (
-        <Field label="Ajouter à…">
-          <select value={toId} onChange={e => setTo(e.target.value)}>
-            {cagnottes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </Field>
-      )}
-      {isWithdraw && (
-        <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:9, padding:"10px 14px", fontSize:".65rem", color:"var(--text3)", marginBottom:12 }}>
-          🏦 Le montant sera ajouté à votre solde bancaire estimé
-        </div>
-      )}
-      {/* ★ Raison optionnelle */}
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: ".72rem", color: "var(--text2)", fontWeight: 600, display: "block", marginBottom: 6 }}>
-          Raison <span style={{ fontWeight: 400, color: "var(--text3)" }}>(optionnel)</span>
-        </label>
-        <input type="text" value={reason} placeholder="Ex : Billet avion, remboursement…"
-          onChange={e => setReason(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box" }} />
-      </div>
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>
-          {isWithdraw ? "Retirer" : "Transférer"}
-        </button>
-      </div>
+      <CategoryField label="Depuis" cats={cagItems} catId={fromId} allowNone={false} emptyLabel="Choisir une cagnotte" error={errors.from}
+        onChange={id => { setFrom(id); setErrors(x => ({ ...x, from: "" })); }} />
+      {isWithdraw
+        ? <InfoNote>🏦 Le montant sera ajouté à ton solde bancaire estimé.</InfoNote>
+        : <CategoryField label="Vers" cats={cagItems} catId={toId} allowNone={false} emptyLabel="Choisir une cagnotte"
+            onChange={id => { setTo(id); setErrors(x => ({ ...x, from: "" })); }} />}
+      <TextField value={reason} onChange={setReason} placeholder="Raison (optionnel)… ex : billet d'avion" />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={isWithdraw ? "🏦" : "↔️"} label={isWithdraw ? "Retirer" : "Transférer"} />
     </Modal>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Scheduled transaction modal
+//  Scheduled transaction modal — v1.45.0 (même écran qu'une dépense,
+//  raccourcis de date tournés vers le futur)
 // ─────────────────────────────────────────────────────────────────
 export function ScheduledModal({ categories, onSave, onClose }) {
   const toast = useToast();
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const defaultDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth()+1).padStart(2,"0")}-${String(tomorrow.getDate()).padStart(2,"0")}`;
-
-  const [amount, setAmount]   = useState("");
-  const [date,   setDate]     = useState(defaultDate);
-  const [catId,  setCatId]    = useState("");
-  const [note,   setNote]     = useState("");
-  const [errors, setErrors]   = useState({});
-
-  const expenseCats = categories.filter(c => c.type === "expense" || !c.type);
   const today = todayISO();
+  const firstNext = (() => { const n = new Date(); const d = new Date(n.getFullYear(), n.getMonth() + 1, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; })();
 
-  function validate() {
+  const [amount, setAmount] = useState("");
+  const [date,   setDate]   = useState(plusDaysISO(1));
+  const [catId,  setCatId]  = useState("");
+  const [note,   setNote]   = useState("");
+  const [errors, setErrors] = useState({});
+  const expenseCats = categories.filter(c => c.type === "expense" || !c.type);
+
+  function handleSave() {
     const e = {};
-    const a = parseAmt(amount);
+    const a = amountOf(amount);
     if (!amount || isNaN(a) || a <= 0) e.amount = "Montant requis";
     if (!date || date <= today)        e.date   = "La date doit être dans le futur";
     setErrors(e);
-    return Object.keys(e).length === 0;
-  }
-
-  function handleSave() {
-    if (!validate()) return;
-    onSave({ amount: parseAmt(amount), date, categoryId: catId || null, note });
+    if (Object.keys(e).length) return;
+    onSave({ amount: a, date, categoryId: catId || null, note });
     toast("Transaction programmée ajoutée");
   }
 
   return (
     <Modal onClose={onClose} title="📅 Transaction programmée">
-      <Field label="Montant (€)" error={errors.amount}>
-        <input type="number" step="0.01" min="0" value={amount}
-          className={errors.amount ? "error" : ""}
-          onChange={e => { setAmount(e.target.value); setErrors(v => ({...v, amount:""})); }} />
-      </Field>
-      <Field label="Date prévue" error={errors.date}>
-        <input type="date" value={date} min={today}
-          className={errors.date ? "error" : ""}
-          onChange={e => { setDate(e.target.value); setErrors(v => ({...v, date:""})); }} />
-      </Field>
-      <Field label="Catégorie (optionnel)">
-        <select value={catId} onChange={e => setCatId(e.target.value)}>
-          <option value="">— Sans catégorie —</option>
-          {expenseCats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-      </Field>
-      <Field label="Note (optionnel)">
-        <input type="text" value={note} placeholder="Ex: Précommande Switch 2"
-          onChange={e => setNote(e.target.value)} />
-      </Field>
-      <div style={{ background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:9, padding:"9px 14px", fontSize:".62rem", color:"var(--text3)", marginBottom:12 }}>
-        📅 Cette dépense sera automatiquement confirmée à la date prévue et décomptée de votre solde.
+      <div style={{ marginBottom: 10 }}>
+        {errors.amount && <FieldError msg={errors.amount} />}
+        <NumPad value={amount} type="expense"
+          onChange={v => { setAmount(typeof v === "function" ? v(amount) : v); setErrors(x => ({ ...x, amount: "" })); }} />
       </div>
-      <div className="grid-2" style={{ marginBottom:0 }}>
-        <button className="btn btn-outline" style={{ width:"100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width:"100%" }} onClick={handleSave}>Programmer</button>
-      </div>
+      <CategoryField cats={expenseCats} catId={catId} onChange={setCatId} />
+      <DateField label="Date prévue" date={date} error={errors.date} min={plusDaysISO(1)}
+        onChange={d => { setDate(d); setErrors(x => ({ ...x, date: "" })); }}
+        shortcuts={[["Demain", plusDaysISO(1)], ["Dans 1 sem.", plusDaysISO(7)], ["Le 1er", firstNext]]} />
+      <TextField value={note} onChange={setNote} placeholder="Note (optionnel)… ex : Précommande Switch 2" />
+      <InfoNote>📅 Confirmée automatiquement à la date prévue, puis déduite de ton solde.</InfoNote>
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="📅" label="Programmer" />
     </Modal>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Category modal
+//  Aperçu d'une case catégorie (comme dans le menu des catégories)
+// ─────────────────────────────────────────────────────────────────
+function CategoryPreview({ icon, name, color }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SectionLabel>Aperçu</SectionLabel>
+      <div style={{ display: "flex", justifyContent: "center", padding: 10, borderRadius: 12, background: "var(--surface2)", border: "1px dashed var(--border)" }}>
+        <div style={{ width: 76, padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${color}`, background: `color-mix(in srgb, ${color} 14%, var(--surface2))`,
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: "1.2rem" }}>{icon || "❔"}</span>
+          <span style={{ fontSize: ".55rem", fontWeight: 700, color, maxWidth: 68, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name || "Nom"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Category modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
 export function CatModal({ editingCat, onSave, onClose }) {
   const toast  = useToast();
@@ -1489,41 +1482,29 @@ export function CatModal({ editingCat, onSave, onClose }) {
   const [icon,   setIcon]   = useState(editingCat?.icon || "");
   const [type,   setType]   = useState(editingCat?.type || "expense");
   const [errors, setErrors] = useState({});
-
-  function validate() {
-    const e = {};
-    if (!name.trim()) e.name = "Nom requis";
-    if (!icon.trim()) e.icon = "Icône requise";
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  }
+  const color = type === "income" ? "var(--success)" : "var(--danger)";
 
   function handleSave() {
-    if (!validate()) return;
+    const e = {};
+    if (!icon.trim()) e.icon = "Icône requise";
+    if (!name.trim()) e.name = "Nom requis";
+    setErrors(e);
+    if (Object.keys(e).length) return;
     onSave({ id: editingCat?.id || null, name: name.trim(), icon: icon.trim(), type });
     toast(editingCat ? "Catégorie modifiée" : "Catégorie créée");
   }
 
   return (
     <Modal onClose={onClose} title={editingCat ? "Modifier la catégorie" : "Nouvelle catégorie"}>
-      <Field label="Nom" error={errors.name}>
-        <input type="text" value={name} className={errors.name ? "error" : ""}
-          onChange={e => { setName(e.target.value); setErrors(v => ({...v, name: ""})); }} />
-      </Field>
-      <Field label="Icône (émoji)" error={errors.icon}>
-        <input type="text" maxLength={4} value={icon} className={errors.icon ? "error" : ""}
-          onChange={e => { setIcon(e.target.value); setErrors(v => ({...v, icon: ""})); }} />
-      </Field>
-      <Field label="Type">
-        <select value={type} onChange={e => setType(e.target.value)}>
-          <option value="expense">Dépense</option>
-          <option value="income">Revenu</option>
-        </select>
-      </Field>
-      <div className="grid-2" style={{ marginBottom: 0 }}>
-        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={handleSave}>Valider</button>
-      </div>
+      <TypeButtons value={type} onChange={setType} options={[
+        { k: "expense", emoji: "💸", label: "Dépense", color: "var(--danger)"  },
+        { k: "income",  emoji: "💰", label: "Revenu",  color: "var(--success)" },
+      ]} />
+      <IconNameField icon={icon} name={name} errors={errors} namePlaceholder="Ex : Animaux" iconPlaceholder="🐶"
+        onIcon={v => { setIcon(v); setErrors(x => ({ ...x, icon: "" })); }}
+        onName={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
+      <CategoryPreview icon={icon} name={name} color={color} />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="✓" />
     </Modal>
   );
 }
@@ -1815,23 +1796,18 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
 //  et la date restent à saisir à chaque fois, rien n'est pré-rempli.
 // ─────────────────────────────────────────────────────────────────
 export function QuickTemplateSheet({ template, categories, sideAmountTypes = [], onSave, onClose }) {
-  const [type, setType]   = useState(template.type || "expense");
+  // v1.45.0 : même ordre que la saisie normale — montant + clavier, date
+  // (avec « Autre… » → calendrier), montants à part dans « Options ».
+  const [type, setType]     = useState(template.type || "expense");
   const [amount, setAmount] = useState("");
-  const [date, setDate]   = useState(todayISO());
+  const [date, setDate]     = useState(todayISO());
   const side = useSideAmounts(null);
-  const [showNative, setShowNative] = useState(false);
-  const [err, setErr]     = useState(null);
+  const [err, setErr]       = useState(null);
   const toast = useToast();
-
-  const todayStr     = todayISO();
-  const yesterdayStr = daysAgoISO(1);
-  const beforeStr    = daysAgoISO(2);
-  const dateIsShortcut = [todayStr, yesterdayStr, beforeStr].includes(date);
-
   const cat = categories.find(c => c.id === template.categoryId);
 
   function handleSave() {
-    const amt = parseAmt(amount);
+    const amt = amountOf(amount);
     if (!amount || isNaN(amt) || amt <= 0) { setErr("Montant requis"); return; }
     const sideAmounts = type === "expense" ? side.toPayload() : undefined;
     onSave({ type, amount: amt, date, categoryId: template.categoryId, note: template.name, sideAmounts });
@@ -1839,53 +1815,47 @@ export function QuickTemplateSheet({ template, categories, sideAmountTypes = [],
     onClose();
   }
 
+  const chips = type === "expense" ? [...side.open].map(k => {
+    const st = sideAmountTypes.find(x => x.id === k); const v = side.vals[k];
+    return st && v ? [`${st.icon} ${v} €`, "var(--tr)", "var(--tr-glow)"] : null;
+  }).filter(Boolean) : [];
+
   return (
     <Modal onClose={onClose} title="">
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.2rem", flexShrink: 0 }}>
           {template.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: ".85rem" }}>{template.name}</div>
-          <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>{cat?.name || "Sans catégorie"}</div>
+          <div style={{ fontFamily: "var(--display)", fontWeight: 700, fontSize: "1rem" }}>{template.name}</div>
+          <div style={{ fontSize: ".64rem", color: "var(--purple)", fontWeight: 600 }}>{cat ? `${cat.icon} ${cat.name}` : "Sans catégorie"}</div>
         </div>
       </div>
 
-      {/* Montants à part — uniquement ceux configurés dans Options */}
+      <div style={{ marginBottom: 10 }}>
+        {err && <FieldError msg={err} />}
+        <NumPad value={amount} type={type} onTypeChange={setType}
+          onChange={v => { setAmount(typeof v === "function" ? v(amount) : v); setErr(null); }} />
+      </div>
+
+      <DateField date={date} onChange={setDate} />
+
       {type === "expense" && sideAmountTypes.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <SideAmountsPicker types={sideAmountTypes} side={side} showHint={false} />
-        </div>
+        <OptionsField hint={`${sideAmountTypes.map(x => x.label).join(", ")}…`} chips={chips}>
+          {sideAmountTypes.map(st => (
+            <div key={st.id} style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 11, border: "1px solid var(--tr-border)", marginBottom: 7 }}>
+              <span style={{ fontSize: ".95rem" }}>{st.icon}</span>
+              <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "var(--tr)" }}>{st.label}</span>
+              <input type="text" inputMode="decimal" placeholder="Montant €" value={side.vals[st.id] || ""}
+                onChange={e => { const v = e.target.value; side.setVal(st.id, v); if (v) side.openType(st.id); }}
+                style={{ width: 96, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }} />
+            </div>
+          ))}
+          <div style={{ fontSize: ".56rem", color: "var(--text3)", margin: "-3px 2px 8px", lineHeight: 1.4 }}>Montants à part : informatifs, n'affectent pas ton solde.</div>
+        </OptionsField>
       )}
 
-      {/* Raccourcis date — identiques à la saisie normale */}
-      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        {[["Aujourd'hui", todayStr], ["Hier", yesterdayStr], ["Avant-hier", beforeStr]].map(([label, val]) => (
-          <button key={val} onClick={() => { setDate(val); setShowNative(false); }}
-            className={`sort-chip ${date === val && !showNative ? "active" : ""}`} style={{ flex: 1 }}>
-            {label}
-          </button>
-        ))}
-        <button onClick={() => setShowNative(s => !s)}
-          className={`sort-chip ${showNative || !dateIsShortcut ? "active" : ""}`} style={{ flexShrink: 0, padding: "5px 10px" }}>
-          📅
-        </button>
-      </div>
-      {(showNative || !dateIsShortcut) && (
-        <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          style={{ width: "100%", marginBottom: 12, padding: "8px 10px", borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border-soft)", color: "var(--text)", fontSize: ".72rem" }} />
-      )}
-
-      <NumPad value={amount} onChange={setAmount} type={type} onTypeChange={setType} />
-      {err && <div style={{ color: "var(--danger)", fontSize: ".65rem", marginTop: 8 }}>{err}</div>}
-
-      <button className="btn" onClick={handleSave} style={{
-        width: "100%", marginTop: 14, padding: 13, borderRadius: 12,
-        background: type === "expense" ? "var(--danger)" : "var(--success)",
-        color: "#fff", fontWeight: 800, fontSize: ".78rem", border: "none", cursor: "pointer",
-      }}>
-        {type === "expense" ? "💸" : "💰"} Enregistrer
-      </button>
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={type === "expense" ? "💸" : "💰"} />
     </Modal>
   );
 }
@@ -1941,6 +1911,7 @@ export function QuickTemplateManagerModal({ templates, categories, onSave, onDel
 }
 
 function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
+  // v1.45.0 : même présentation que « Nouvelle catégorie » + menu des catégories
   const isEdit = !!tpl.id;
   const [name, setName]     = useState(tpl.name || "");
   const [icon, setIcon]     = useState(tpl.icon || "");
@@ -1952,8 +1923,8 @@ function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
 
   function handleSave() {
     const e = {};
-    if (!name.trim()) e.name = "Nom requis";
     if (!icon.trim()) e.icon = "Icône requise";
+    if (!name.trim()) e.name = "Nom requis";
     if (!categoryId)  e.cat  = "Catégorie requise";
     setErr(e);
     if (Object.keys(e).length > 0) return;
@@ -1962,42 +1933,16 @@ function QuickTemplateFormModal({ tpl, categories, onSave, onClose }) {
 
   return (
     <Modal onClose={onClose} title={isEdit ? "Modifier le template" : "Nouveau template"}>
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Nom</label>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Courses"
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.name ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".75rem" }} />
-        {err.name && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.name}</div>}
-      </div>
-
-      <div style={{ marginBottom: 14 }}>
-        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Icône (émoji)</label>
-        <input type="text" maxLength={4} value={icon} placeholder="Ex: 🛒"
-          onChange={e => { setIcon(e.target.value); setErr(v => ({ ...v, icon: "" })); }}
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.icon ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".9rem" }} />
-        {err.icon && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.icon}</div>}
-      </div>
-
-      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-        <button onClick={() => { setType("expense"); setCategoryId(""); }} className={`sort-chip ${type === "expense" ? "active" : ""}`} style={{ flex: 1 }}>💸 Dépense</button>
-        <button onClick={() => { setType("income"); setCategoryId(""); }} className={`sort-chip ${type === "income" ? "active" : ""}`} style={{ flex: 1 }}>💰 Revenu</button>
-      </div>
-
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ fontSize: ".62rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 6, display: "block" }}>Catégorie</label>
-        <select value={categoryId} onChange={e => setCategoryId(e.target.value)}
-          style={{ width: "100%", padding: "10px 12px", borderRadius: 10, background: "var(--surface2)", border: `1px solid ${err.cat ? "var(--danger)" : "var(--border-soft)"}`, color: "var(--text)", fontSize: ".75rem" }}>
-          <option value="">— Choisir —</option>
-          {cats.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-        </select>
-        {err.cat && <div style={{ color: "var(--danger)", fontSize: ".6rem", marginTop: 4 }}>{err.cat}</div>}
-      </div>
-
-      <button onClick={handleSave} style={{
-        width: "100%", padding: 12, borderRadius: 12, background: "var(--accent)", color: "#06121c",
-        fontWeight: 800, fontSize: ".75rem", border: "none", cursor: "pointer",
-      }}>
-        Enregistrer le template
-      </button>
+      <TypeButtons value={type} onChange={k => { if (k !== type) { setType(k); setCategoryId(""); } }} options={[
+        { k: "expense", emoji: "💸", label: "Dépense", color: "var(--danger)"  },
+        { k: "income",  emoji: "💰", label: "Revenu",  color: "var(--success)" },
+      ]} />
+      <IconNameField icon={icon} name={name} errors={err} namePlaceholder="Ex : Courses" iconPlaceholder="🛒"
+        onIcon={v => { setIcon(v); setErr(x => ({ ...x, icon: "" })); }}
+        onName={v => { setName(v); setErr(x => ({ ...x, name: "" })); }} />
+      <CategoryField cats={cats} catId={categoryId} allowNone={false} emptyLabel="Choisir une catégorie" error={err.cat}
+        onChange={id => { setCategoryId(id); setErr(x => ({ ...x, cat: "" })); }} />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="⚡" />
     </Modal>
   );
 }
@@ -2020,6 +1965,8 @@ function evalAmount(str) {
 }
 
 export function OffAccountModal({ mode = "expense", entry = null, defaultSatId, sideAmountTypes = [], categories = [], onSave, onDelete, onClose }) {
+  // v1.44.3 : même présentation que la saisie d'une dépense (boutons du haut,
+  // montant + clavier, catégorie en menu déroulant, date, note, boutons du bas)
   const isRecharge = (entry?.kind || mode) === "recharge";
   const types = isRecharge ? sideAmountTypes.filter(st => st.trackBalance) : sideAmountTypes;
   const [satId,  setSatId]  = useState(entry?.satId || defaultSatId || types[0]?.id || "");
@@ -2027,24 +1974,25 @@ export function OffAccountModal({ mode = "expense", entry = null, defaultSatId, 
   const [date,   setDate]   = useState(entry?.date || todayISO());
   const [catId,  setCatId]  = useState(entry?.categoryId || "");
   const [note,   setNote]   = useState(entry?.note || "");
-  const [showCal, setShowCal] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   // Rechargement négatif = correction de solde (le clavier n'accepte pas de « − » initial)
   const [neg,    setNeg]    = useState(entry?.kind === "recharge" && entry.amount < 0);
-  const [err,    setErr]    = useState(null);
+  const [errors, setErrors] = useState({});
   const toast = useToast();
 
-  const expCats = categories.filter(c => c.type === "expense" || !c.type);
-  const shortcuts = [["Aujourd'hui", todayISO()], ["Hier", daysAgoISO(1)], ["Avant-hier", daysAgoISO(2)]];
-  const isShortcut = shortcuts.some(([, v]) => v === date);
+  const cats = categories.filter(c => c.type === "expense" || !c.type);
   const st = sideAmountTypes.find(s => s.id === satId);
+  const accent = isRecharge ? (neg ? "var(--danger)" : "var(--success)") : "var(--tr)";
 
   function handleSave() {
     const raw = evalAmount(amount);
-    if (!satId) { setErr("Crée d'abord un type dans Options → Montants à part"); return; }
-    if (isNaN(raw) || raw <= 0) { setErr("Montant requis"); return; }
+    const e = {};
+    if (!satId) e.sat = isRecharge ? "Active « Suivre le solde » sur un type dans Options → Montants à part" : "Crée d'abord un type dans Options → Montants à part";
+    if (isNaN(raw) || raw <= 0) e.amount = "Montant requis";
+    if (!isRecharge && !catId) e.cat = "Choisis une catégorie";
+    setErrors(e);
+    if (Object.keys(e).length) return;
     const a = isRecharge && neg ? -raw : raw;
-    if (!isRecharge && !catId) { setErr("Choisis une catégorie"); return; }
     onSave({
       ...(entry ? { id: entry.id } : {}),
       kind: isRecharge ? "recharge" : "expense",
@@ -2056,68 +2004,96 @@ export function OffAccountModal({ mode = "expense", entry = null, defaultSatId, 
     onClose();
   }
 
-  const chip = (on, color = "var(--tr)") => ({
-    padding: "6px 11px", borderRadius: 18, fontSize: ".64rem", fontWeight: 700, cursor: "pointer",
-    border: `1px solid ${on ? color : "var(--border)"}`, color: on ? color : "var(--text2)",
-    background: on ? "var(--tr-glow)" : "transparent", touchAction: "manipulation",
-  });
-  const lbl = { fontSize: ".58rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase", margin: "10px 0 5px" };
+  const title = entry
+    ? (isRecharge ? "Modifier le rechargement" : "Modifier la dépense hors compte")
+    : (isRecharge ? `💳 Rechargement ${st?.label || ""}` : "🎫 Dépense hors compte");
 
   return (
-    <Modal onClose={onClose} title={isRecharge ? `💳 Rechargement ${st?.label || ""}` : "🎫 Dépense hors compte"}>
-      {types.length > 1 && (
-        <>
-          <div style={{ ...lbl, marginTop: 0 }}>{isRecharge ? "Porte-monnaie" : "Payé avec"}</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {types.map(t => <button key={t.id} type="button" onClick={() => setSatId(t.id)} style={chip(satId === t.id)}>{t.icon} {t.label}</button>)}
-          </div>
-        </>
-      )}
-      {types.length === 0 && (
-        <div style={{ fontSize: ".66rem", color: "var(--danger)", marginBottom: 8 }}>
-          {isRecharge ? "Active « Suivre le solde » sur un type dans Options → Montants à part." : "Crée d'abord un type dans Options → Montants à part."}
+    <Modal onClose={onClose} title={title}>
+
+      {/* ── « Payé avec » : même style que les boutons de type de la saisie ── */}
+      {types.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(types.length, 2), 4)}, 1fr)`, gap: 6, marginBottom: 10 }}>
+          {types.map(t => {
+            const sel = satId === t.id;
+            return (
+              <button key={t.id}
+                onTouchStart={e => e.stopPropagation()}
+                onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setSatId(t.id); setErrors(v => ({ ...v, sat: "" })); }}
+                onClick={() => { if (!('ontouchstart' in window)) { setSatId(t.id); setErrors(v => ({ ...v, sat: "" })); } }}
+                style={{
+                  padding: "7px 2px 6px", borderRadius: "var(--radius)",
+                  border: `1.5px solid ${sel ? "var(--tr)" : "var(--border)"}`,
+                  background: sel ? "var(--tr-glow)" : "var(--surface2)",
+                  display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                  cursor: "pointer", touchAction: "manipulation",
+                }}>
+                <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>{t.icon}</span>
+                <span style={{ fontSize: ".6rem", fontWeight: 700, color: sel ? "var(--tr)" : "var(--text3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", padding: "0 3px" }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      {errors.sat && <FieldError msg={errors.sat} />}
+
+      {/* ── Rechargement : sens (ajout / correction) ── */}
+      {isRecharge && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 10 }}>
+          {[[false, "＋ Rechargement", "var(--success)"], [true, "－ Correction", "var(--danger)"]].map(([v, l, c]) => (
+            <button key={l}
+              onTouchStart={e => e.stopPropagation()}
+              onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setNeg(v); }}
+              onClick={() => { if (!('ontouchstart' in window)) setNeg(v); }}
+              style={{
+                padding: "7px 4px", borderRadius: 20, fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
+                border: `1.5px solid ${neg === v ? c : "var(--border)"}`, color: neg === v ? c : "var(--text2)",
+                background: neg === v ? `color-mix(in srgb, ${c} 14%, var(--surface2))` : "var(--surface2)",
+              }}>{l}</button>
+          ))}
         </div>
       )}
 
+      {/* ── Montant + clavier de l'app ── */}
+      <div style={{ marginBottom: 10 }}>
+        {errors.amount && <FieldError msg={errors.amount} />}
+        <NumPad value={amount}
+          onChange={val => { setAmount(typeof val === "function" ? val(amount) : val); setErrors(v => ({ ...v, amount: "" })); }}
+          type={isRecharge && !neg ? "income" : "expense"} variant={isRecharge ? "recharge" : "tr"} />
+      </div>
+
+      {/* ── Catégorie : même menu déroulant que la saisie d'une dépense ── */}
       {!isRecharge && (
         <>
-          <div style={lbl}>Catégorie</div>
-          <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "none" }}>
-            {expCats.map(c => <button key={c.id} type="button" onClick={() => setCatId(c.id)} style={{ ...chip(catId === c.id), flexShrink: 0 }}>{c.icon} {c.name}</button>)}
-          </div>
+          {errors.cat && <FieldError msg={errors.cat} />}
+          <CategoryField cats={cats} catId={catId} accentColor="var(--tr)"
+            onChange={id => { setCatId(id); setErrors(v => ({ ...v, cat: "" })); }} />
         </>
       )}
 
-      <div style={lbl}>Note</div>
-      <input type="text" value={note} onChange={e => setNote(e.target.value)}
-        placeholder={isRecharge ? "Ex : septembre — 23 jours × 8 €" : "Ex : déjeuner boulangerie"}
-        style={{ width: "100%", boxSizing: "border-box", fontSize: ".75rem" }} />
+      {/* ── Date : boutons + « Autre… » → calendrier ── */}
+      <DateField date={date} onChange={setDate} />
 
-      <div style={lbl}>Date</div>
-      <div style={{ display: "flex", gap: 6, marginBottom: showCal || !isShortcut ? 6 : 0 }}>
-        {shortcuts.map(([l, v]) => <button key={v} type="button" onClick={() => { setDate(v); setShowCal(false); }} style={{ ...chip(date === v && !showCal), flex: 1 }}>{l}</button>)}
-        <button type="button" onClick={() => setShowCal(v => !v)} style={chip(showCal || !isShortcut)}>📅</button>
+      {/* ── Note ── */}
+      <div style={{ marginBottom: 10 }}>
+        <input type="text" value={note} onChange={e => setNote(e.target.value)}
+          placeholder={isRecharge ? (neg ? "Ex : écart avec la carte…" : "Ex : septembre — 23 jours × 8 €") : "Note (optionnel)…"}
+          style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
       </div>
-      {(showCal || !isShortcut) && (
-        <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginBottom: 4 }} />
-      )}
 
-      <div style={{ marginTop: 10 }}>
-        <NumPad value={amount} onChange={setAmount} type={isRecharge ? "income" : "expense"} variant={isRecharge ? "recharge" : "tr"} />
+      {isRecharge && neg && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "-4px 0 10px", lineHeight: 1.5 }}>La correction retire ce montant du solde, sans compter comme une dépense.</div>}
+      {!isRecharge && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "-4px 0 10px", lineHeight: 1.5 }}>Hors compte : n'affecte ni ton solde bancaire ni le rapprochement.</div>}
+
+      {/* ── Boutons Annuler / Enregistrer (comme la saisie) ── */}
+      <div className="grid-2" style={{ marginBottom: 0 }}>
+        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
+        <button className="btn" onClick={handleSave} style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          background: accent, color: isRecharge && !neg ? "#06121c" : "#1a1405", border: "none", fontWeight: 800,
+        }}>
+          <span>{isRecharge ? "💳" : (st?.icon || "🎫")}</span><span>Enregistrer</span>
+        </button>
       </div>
-      {isRecharge && (
-        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-          <button type="button" onClick={() => setNeg(false)} style={{ ...chip(!neg, "var(--success)"), flex: 1 }}>＋ Rechargement</button>
-          <button type="button" onClick={() => setNeg(true)}  style={{ ...chip(neg, "var(--danger)"), flex: 1 }}>－ Correction</button>
-        </div>
-      )}
-      {isRecharge && neg && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.5 }}>Retire ce montant du solde — utile s'il ne correspond plus à ta carte.</div>}
-      {err && <div style={{ color: "var(--danger)", fontSize: ".65rem", marginTop: 8 }}>{err}</div>}
-
-      <button type="button" onClick={handleSave} style={{
-        width: "100%", marginTop: 12, padding: 13, borderRadius: 12, border: "none", cursor: "pointer",
-        background: isRecharge ? "var(--success)" : "var(--tr)", color: "#1a1405", fontWeight: 800, fontSize: ".78rem",
-      }}>{isRecharge ? "💳 Enregistrer le rechargement" : "🎫 Enregistrer"}</button>
 
       {entry && onDelete && (
         confirmDel ? (

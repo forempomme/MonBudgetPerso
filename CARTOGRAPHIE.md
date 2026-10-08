@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.44.2**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.45.0**.
 
 ---
 
@@ -23,11 +23,12 @@ src/
 ├── views/
 │   ├── shared.jsx         composants partagés entre vues (TagsModal, EmptyIllustration, SectionTitle, sha256hex…)
 │   ├── AccueilView.jsx    ├── CagnottesView.jsx   ├── HistoriqueView.jsx
+│   ├── BalanceBreakdownSheet.jsx  panneau « Calcul du solde estimé » (v1.45.0)
 │   ├── FixesView.jsx      ├── RapportView.jsx     ├── OptionsView.jsx
 │   └── LockScreen.jsx
 └── components/
     ├── index.jsx          Delta, ItemRow, Modal, ToastContainer
-    ├── modals.jsx         tous les formulaires modaux + NumPad + SideAmountsPicker
+    ├── modals.jsx         tous les formulaires modaux + NumPad + briques communes (TypeButtons, TextField, IconNameField, CategoryField, DateField, MonthField, OptionsField, FormActions)
     └── charts.jsx         ChartSVG, PatrimoineSVG
 ```
 
@@ -110,8 +111,8 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | `isActiveForMonth(f, ym)` | Un frais/revenu fixe est-il actif ce mois-là ? Gère **à la fois** `startYM` et la pause (`paused`/`pausedFrom`/`pausedUntil`) | Tout filtrage de frais/revenu fixe par mois |
 | `isIncomeDirection(t)` | Le sens d'une transaction (+ ou −). Respecte `adjSign` pour une opération d'équilibre (qui peut être + ou −), sinon retombe sur `isIncome(t.type)` | Tout endroit qui affiche/calcule un signe, une couleur, un total net |
 | `isPointable(type)` | `true` sauf `decagnottage`/`transfer` (mouvements internes, absents d'un relevé) | Rapprochement bancaire, filtres Historique |
-| `useReconciliation(txs, fixedExpenses, fixedIncomes)` | LA seule source pour `soldePointe`/`soldeAttente`/`nbPointed`/`totalPointable`. Inclut les frais ET revenus fixes avec leur propre `pointedMonths` | Accueil (rapprochement + base du solde estimé) |
-| `useBalanceWithRecurring(...)` | Solde estimé = `soldePointe + soldeAttente` moins les récurrentes/programmées pas encore confirmées. **Ne recompte jamais un frais fixe non pointé une 2e fois** (déjà dans `soldeAttente`) | Le gros chiffre "Solde bancaire estimé" |
+| `computeReconciliation(...)` / `useReconciliation(txs, fixedExpenses, fixedIncomes)` | LA seule source (le hook n'est qu'un `useMemo` autour de la fonction pure, qui garde aussi le détail des lignes en attente) pour `soldePointe`/`soldeAttente`/`nbPointed`/`totalPointable`. Inclut les frais ET revenus fixes avec leur propre `pointedMonths` | Accueil (rapprochement + base du solde estimé) |
+| `computeBalanceBreakdown(...)` / `useBalanceBreakdown` / `useBalanceWithRecurring(...)` | Solde estimé = `soldePointe + soldeAttente` ± récurrentes pas encore confirmées − programmées échues, **avec le détail de chaque ligne** (chèques non encaissés séparés). `useBalanceWithRecurring` renvoie juste `.total`. **Ne recompte jamais un frais fixe non pointé une 2e fois** (déjà dans `soldeAttente`) | Le gros chiffre "Solde bancaire estimé" ET le panneau « Calcul du solde estimé » (v1.45.0) — même fonction, ne peuvent pas diverger |
 | `pendingCheques(txs)` | Chèques non pointés avec âge, date limite (1 an + 8 j) et niveau `recent`/`old`/`veryold`/`expired` | Bandeau + liste chèques (Accueil) |
 | `recurringRefDate(t)` (utils.js) | `issuedDate || date` : date qui décide quel mois une opération confirme pour les récurrentes. **À utiliser pour toute vérification « récurrente déjà confirmée ce mois »** | hooks, Accueil, Historique, App |
 | `computeWallets(types, offEntries, txs, ym)` | Porte-monnaie par type suivi : solde = rechargements − dépenses hors compte − montants à part en complément ; rechargé/dépensé du mois (corrections exclues) ; mouvements | Mini-carte hero + panneau porte-monnaie (Accueil) |
@@ -130,7 +131,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 
 | Fonctionnalité | Fichier(s) | Composant / fonction |
 |---|---|---|
-| Saisie d'une opération | `modals.jsx` | `TransModal` (+ `NumPad` partagé). Depuis 1.44.0 : doit tenir **sans défilement sur un Pixel 8** (≈ 412 × 860 px) ; tout champ optionnel va dans le menu « Options » (superposé), jamais en ligne |
+| Saisie d'une opération | `modals.jsx` | `TransModal` (+ `NumPad`, `CategoryField`, `DateField` partagés avec `OffAccountModal` — toute évolution de la catégorie ou de la date se fait dans ces composants, une seule fois). Depuis 1.44.0 : doit tenir **sans défilement sur un Pixel 8** (≈ 412 × 860 px) ; tout champ optionnel va dans le menu « Options » (superposé), jamais en ligne |
 | Récurrentes | `modals.jsx` (saisie) + `store.js` (`SAVE_RECURRING`, `DEL_RECURRING`) + `hooks.js`/`views.jsx` (`upcomingRecurring`) | — |
 | Frais/revenus fixes | `modals.jsx` (`FixedModal`, `FixedIncomeModal`) + `views.jsx` (`FixesView`) | — |
 | Pause d'un frais/revenu fixe | `hooks.js` (`isActiveForMonth`), `modals.jsx` (toggle + champ `pausedUntil`), `views.jsx` (`FixesView` badge + tooltip) | — |
@@ -141,7 +142,8 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | Tags | `store.js` (`SAVE_TAG`, `DELETE_TAG`) + `modals.jsx` (sélection dans `TransModal`) + `views.jsx` (`TagsModal`, affichage + filtre Historique, vue Rapport) | — |
 | Arrondi automatique | `store.js` (reducer `SAVE_TRANSACTION`) + `views.jsx` (`OptionsView`) | — |
 | Rapprochement bancaire | `hooks.js` (`useReconciliation`) + `views.jsx` (Accueil : cumulé / Historique : par mois affiché, calcul local) | — |
-| Solde estimé + sparkline hero card | `hooks.js` (`useBalanceWithRecurring`) + `views.jsx` (`AccueilView`, le point du mois en cours = `balance` directement) | — |
+| Solde estimé + sparkline hero card | `hooks.js` (`useBalanceBreakdown`) + `AccueilView` (le point du mois en cours = `balance` directement) ; toucher le montant → `BalanceBreakdownSheet` | — |
+| Formulaires de saisie (tous) | `modals.jsx` — depuis 1.45.0 tous bâtis avec les mêmes briques que `TransModal` ; `FixedModal`/`FixedIncomeModal` sont deux portes d'entrée vers un unique `FixedFormModal` (bascule frais ↔ revenu à la création, via `onSaveIncome`/`onSaveExpense` passés par App.jsx). Montants lus avec `amountOf()` (évalue « 12+3 ») | — |
 | Projection 3 mois | `hooks.js` (`useBalanceProjection`, `useVariableCashflowMedian`, `useProjectionAccuracy`) + `views.jsx` (`AccueilView`, carte carrousel) | — |
 | Historique — liste/filtres/calendrier | `views.jsx` | `HistoriqueView`, `SwipeRow`, `PointRow` |
 | Rapport | `views.jsx` | `RapportView`, `RapportDonut`, `AnalysteLocal`, `SuiviModal`, `CategoryDetailModal` |
@@ -157,6 +159,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Toujours bumper la version à 3 endroits** : `utils.js` (`APP_VERSION`), `package.json`, `README.md` — et **l'annoncer** à la fin de chaque réponse contenant une modif de code (patch pour un fix, minor pour une nouvelle fonctionnalité).
 - **Demander confirmation avant toute suppression** de code, même identifié comme "mort" — et vérifier l'usage dans tout le dépôt connu, pas seulement les fichiers en main.
 - **Mockup avant implémentation** pour tout ce qui touche à une interaction ou un visuel nouveau (l'utilisateur valide toujours un mockup HTML autonome — fond sombre, cadre téléphone, variables CSS du vrai thème — avant le code réel).
+- **Tout nouveau formulaire** se construit avec les briques de `modals.jsx` (`TypeButtons`, `TextField`, `NumPad`, `CategoryField`, `DateField`/`MonthField`, `OptionsField`, `FormActions`) et doit tenir sans défilement sur un Pixel 8. Un montant se lit avec `amountOf()`, jamais `parseAmt()` (qui ignore « +3 »).
 - **Tout bouton qui réagit au relâcher du doigt (`onTouchEnd`) doit commencer par `if (touchMoved()) return;`** (utils.js) — sinon un défilement démarré sur ce bouton le déclenche (bug corrigé en v1.44.2).
 - **Dates toujours en heure locale**, jamais `toISOString()` (bug UTC déjà rencontré et corrigé à de nombreux endroits).
 - **Préserver les champs non gérés par un formulaire lors d'une édition** — un `{ ...old, ...payload }` naïf écrase silencieusement un champ que le formulaire ne connaît pas (ex : `templateId` effacé lors de l'édition d'une opération récurrente → double comptage ; corrigé en v1.44.1 : le reducer fait `templateId: tx.templateId ?? t.templateId`). Vérifier ce risque à chaque nouveau champ optionnel ajouté à `transactions`/`fixedExpenses`/`fixedIncomes`.
@@ -172,6 +175,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Montants à part génériques** (remplace l'ancien champ unique `mealVoucherAmount`) — v1.39.32
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
+- **Formulaires unifiés + détail du solde estimé** — v1.45.0
 - **Info-bulles ⓘ dans Options** — v1.39.35, repositionnées dans le flux normal (au lieu d'un survol) en v1.39.36 pour éviter d'être coupées par les coins arrondis des cartes
 
 ---
