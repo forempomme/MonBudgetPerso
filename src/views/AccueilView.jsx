@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceBreakdown, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 
@@ -135,6 +135,8 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
   const breakdown = useBalanceBreakdown(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || []);
   const balance   = breakdown.total;
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+  // v1.46.0 : budget courses restant — informatif, jamais déduit du solde
+  const grocery = useGroceryBudget(transactions, data.categories, data.groceryBudget);
 
   // v1.39.10 : projection du solde sur les prochains mois (médiane des
   // dépenses courantes + fixes/récurrentes/programmées déjà connus)
@@ -473,6 +475,22 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                     <span style={{ fontSize: ".58rem", fontWeight: 700, color: "var(--accent)", border: "1px solid rgba(112,184,224,.45)",
                       borderRadius: 10, padding: "2px 7px", background: "rgba(112,184,224,.1)", whiteSpace: "nowrap", letterSpacing: 0 }}>ⓘ calcul</span>
                   </div>
+                  {grocery && (
+                    <div role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+                      style={{ order: 3, flexBasis: "100%", display: "flex" }}>
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
+                        padding: "3px 9px", borderRadius: 10,
+                        color: grocery.over > 0 ? "var(--danger)" : "var(--coral)",
+                        background: grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)",
+                        border: `1px solid ${grocery.over > 0 ? "rgba(200,112,112,.35)" : "rgba(224,136,112,.3)"}`,
+                      }}>
+                        🛒 {grocery.over > 0
+                          ? `Budget courses dépassé de ${fmt(grocery.over)}`
+                          : grocery.remaining > 0 ? `${fmt(grocery.remaining)} de courses à prévoir ce mois` : "Budget courses du mois atteint"}
+                      </span>
+                    </div>
+                  )}
                   {deltaPct !== null && (
                     <div style={{
                       display:"flex", flexDirection:"column", gap:1,
@@ -877,7 +895,7 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
       {breakdownOpen && (
-        <BalanceBreakdownSheet breakdown={breakdown} categories={data.categories || []} cagnottes={cagnottes}
+        <BalanceBreakdownSheet breakdown={breakdown} grocery={grocery} categories={data.categories || []} cagnottes={cagnottes}
           onClose={() => setBreakdownOpen(false)} />
       )}
 

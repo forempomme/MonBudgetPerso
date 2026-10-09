@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved } from "../utils.js";
 import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
+import { useGroceryBudget, groceryCategoryIds } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  SideAmountTypesModal — v1.39.32
@@ -172,7 +173,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [infoOpenId,    setInfoOpenId]    = useState(null);
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
@@ -284,6 +285,10 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const sideAmountTypesCount = (data.sideAmountTypes||[]).length;
   const tagsCount = (data.tags||[]).length;
   const last        = (data.backupHistory||[])[0];
+  // Budget courses (v1.46.0) — informatif
+  const groceryCfg  = data.groceryBudget || { enabled: true, categoryIds: null, months: 2 };
+  const grocery     = useGroceryBudget(data.transactions, data.categories, groceryCfg);
+  const groceryCats = groceryCategoryIds(data.categories, groceryCfg);
 
   const GROUPS = [
     {
@@ -314,6 +319,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: alertOn,
           hint: "Aucune alerte de solde définie",
           desc: "Prévient sur l'accueil quand ton solde estimé passe sous un seuil choisi." },
+        { id:"grocery", icon:"🛒", label:"Budget courses",
+          badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${Math.round(grocery.average)} €/mois` : "Actif",
+          configured: groceryCfg.enabled !== false && groceryCats.length > 0,
+          hint: "Choisis la catégorie de tes courses",
+          desc: "Affiche ce qu'il te reste à dépenser en courses ce mois (moyenne des derniers mois), sans toucher au solde estimé." },
       ]
     },
     {
@@ -688,6 +698,73 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             </div>
           </div>
         )}
+      </Sheet>
+
+      {/* 🛒 Budget courses (v1.46.0) */}
+      <Sheet open={openSheet==="grocery"} onClose={close} title="🛒 Budget courses">
+        {(() => {
+          const on = groceryCfg.enabled !== false;
+          const save = patch => onSaveGroceryBudget?.(patch);
+          const expCats = data.categories.filter(c => c.type === "expense" || !c.type);
+          const months = parseInt(groceryCfg.months, 10) || 2;
+          return (
+            <>
+              <div onClick={() => save({ enabled: !on })}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:on?"rgba(224,136,112,.07)":"var(--surface2)", border:`1px solid ${on?"rgba(224,136,112,.3)":"var(--border)"}`, borderRadius:10, marginBottom:on?12:0, cursor:"pointer", touchAction:"manipulation" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:".76rem", fontWeight:700, color:on?"var(--coral)":"var(--text2)" }}>Budget courses {on?"affiché":"masqué"}</div>
+                  <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Pastille sur l'accueil + détail dans le calcul du solde. N'est jamais déduit du solde estimé.</div>
+                </div>
+                <div style={{ width:40, height:22, borderRadius:11, background:on?"var(--coral)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
+                  <div style={{ position:"absolute", top:3, left:on?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+                </div>
+              </div>
+              {on && (
+                <>
+                  <div style={{ fontSize:".6rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"4px 0 6px" }}>Catégories comptées comme courses</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:12 }}>
+                    {expCats.map(c => {
+                      const sel = groceryCats.includes(c.id);
+                      return (
+                        <button key={c.id} type="button"
+                          onClick={() => save({ categoryIds: sel ? groceryCats.filter(id => id !== c.id) : [...groceryCats, c.id] })}
+                          style={{ padding:"6px 10px", borderRadius:14, fontSize:".66rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation",
+                            border:`1px solid ${sel?"var(--purple)":"var(--border)"}`, color:sel?"var(--purple)":"var(--text2)", background:sel?"rgba(176,144,224,.14)":"transparent" }}>
+                          {c.icon} {c.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize:".6rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", marginBottom:6 }}>Moyenne calculée sur</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginBottom:12 }}>
+                    {[1,2,3].map(n => (
+                      <button key={n} type="button" onClick={() => save({ months: n })}
+                        style={{ padding:"8px 2px", borderRadius:20, fontSize:".66rem", cursor:"pointer", touchAction:"manipulation",
+                          border:`1.5px solid ${months===n?"var(--accent)":"var(--border)"}`, color:months===n?"var(--accent)":"var(--text2)",
+                          background:months===n?"rgba(112,184,224,.14)":"transparent", fontWeight:months===n?700:400 }}>
+                        {n} mois{n===2?" (défaut)":""}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ padding:"10px 12px", borderRadius:10, background:"rgba(224,136,112,.07)", border:"1px solid rgba(224,136,112,.3)", fontSize:".68rem", color:"var(--text2)", lineHeight:1.7 }}>
+                    {groceryCats.length === 0
+                      ? "Choisis au moins une catégorie ci-dessus."
+                      : !grocery
+                        ? "Pas encore assez d'historique : il faut au moins un mois complet d'opérations."
+                        : <>Moyenne : <b style={{ color:"var(--text)" }}>{fmt(grocery.average)}</b> / mois{grocery.months.length < months ? ` (sur ${grocery.months.length} mois disponible${grocery.months.length>1?"s":""})` : ""}<br/>
+                            Déjà dépensé ce mois : <b style={{ color:"var(--text)" }}>{fmt(grocery.spent)}</b><br/>
+                            {grocery.over > 0
+                              ? <>Dépassé de : <b style={{ color:"var(--danger)" }}>{fmt(grocery.over)}</b></>
+                              : <>Reste à prévoir : <b style={{ color:"var(--coral)" }}>{fmt(grocery.remaining)}</b></>}</>}
+                  </div>
+                  <div style={{ fontSize:".58rem", color:"var(--text3)", lineHeight:1.5, marginTop:8 }}>
+                    Seule la part payée par la banque compte (tickets resto et hors compte exclus). Les récurrentes et arrondis ne sont pas comptés.
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
       </Sheet>
 
       {/* 🏷️ Gestion catégories */}

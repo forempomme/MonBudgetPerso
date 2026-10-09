@@ -724,6 +724,7 @@ export default function App() {
         tags={data.tags || []}
         onSaveTag={saveTag}
         onDeleteTag={deleteTag}
+        onSaveGroceryBudget={settings => dispatch({ type: A.SAVE_GROCERY_BUDGET, settings })}
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
         onSaveMonthNote={saveMonthNote}

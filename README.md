@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.45.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.46.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.45.1
+└── package.json         — version: 1.46.0
 ```
 
 ---
@@ -341,6 +341,9 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.46.0** | minor | Budget courses (informatif, **n'impacte pas le solde estimé**) : reste à dépenser ce mois = moyenne des 2 derniers mois complets (1 ou 3 au choix) − déjà dépensé ce mois, dans la catégorie « Courses » (ou celles choisies). Pastille corail sous le solde de la hero card (« 142,30 € de courses à prévoir ce mois » / « budget dépassé de X € ») ; section « Pour information · non déduit » sous le total du panneau « Calcul du solde estimé » (mois, moyenne, déjà dépensé, barre de progression, solde après courses prévues) ; réglage Options → Épargne → Budget courses. Seule la part payée par la banque compte ; récurrentes et arrondis exclus ; calcul unique `computeGroceryBudget()` |
+| **1.45.3** | patch | Nettoyage code mort (validé) : méthode `closeType` de `useSideAmounts`, plus utilisée depuis la suppression de `SideAmountsPicker` |
+| **1.45.2** | patch | Nettoyage code mort (validé) : `SideAmountsPicker` (ancien sélecteur de montants à part, remplacé par le menu « Options ») et `Field` (ancien champ avec libellé), plus utilisés depuis 1.45.0 |
 | **1.45.1** | patch | Fix pause des frais/revenus fixes : réactiver un fixe effaçait la période de pause → les mois en pause redevenaient « à payer » (en attente) dans le solde estimé. Chaque pause terminée est maintenant archivée (`pauseHistory`, fait dans le reducer : bouton ▶️ et formulaire) et reste exclue partout via `isActiveForMonth` ; nouvelle rubrique « Pauses passées » dans les Options du formulaire pour ajouter/retirer une période (réparation des pauses effacées avant cette version) |
 | **1.45.0** | minor | Tous les formulaires de saisie sur le modèle de la saisie d'une dépense (boutons de type, montant au clavier de l'app, champs colorés, menus déroulants, Annuler / Enregistrer) : frais/revenu fixe (un seul formulaire, bascule à la création, mois de début en boutons, pause dans « Options »), cagnotte (type en boutons, objectif + déjà épargné au clavier), transfert (cagnottes en menus déroulants), programmée (raccourcis Demain / +1 sem. / le 1er), catégorie et template (icône + nom, aperçu), saisie rapide (même ordre que la saisie normale, montants à part dans « Options ») ; **détail du solde estimé** : toucher le montant de la hero card ouvre « Calcul du solde estimé » (pointé, en attente avec chèques non encaissés à part et périmés signalés, frais/revenus fixes non pointés regroupés, récurrentes pas encore passées, programmées échues) — calcul unique `computeBalanceBreakdown()` qui produit aussi le chiffre de la carte ; fix : un montant tapé « 12+3 » sans appuyer sur « = » était enregistré 12 € au lieu de 15 € |
 | **1.44.3** | patch | Formulaire hors compte aligné sur la saisie d'une dépense : boutons « Payé avec » au style des boutons de type, montant + clavier de l'app en haut, catégorie en menu déroulant (grille), date avec « Autre… » → calendrier, note, boutons Annuler / Enregistrer ; catégorie et date sont désormais des composants partagés (`CategoryField`, `DateField`) entre les deux formulaires |

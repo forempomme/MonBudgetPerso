@@ -102,6 +102,7 @@ export const A = /** @type {const} */ ({
   SAVE_OFF_ACCOUNT:         "SAVE_OFF_ACCOUNT",
   DELETE_OFF_ACCOUNT:       "DELETE_OFF_ACCOUNT",
   CASH_CHEQUE:              "CASH_CHEQUE",
+  SAVE_GROCERY_BUDGET:      "SAVE_GROCERY_BUDGET",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
@@ -142,6 +143,9 @@ export function withPauseHistory(old, next, curYM = currentYM()) {
 // ─────────────────────────────────────────────────────────────────
 /** @type {AppData} */
 export const DEFAULT_DATA = {
+  // Budget courses (v1.46.0) — informatif, n'entre dans aucun solde.
+  // categoryIds null = catégories nommées « Courses ».
+  groceryBudget: { enabled: true, categoryIds: null, months: 2 },
   transactions: [],
   categories: [
     { id: "1", name: "Loyer",   icon: "🏠", type: "expense" },
@@ -245,6 +249,7 @@ export function normalizeData(saved) {
       // Le type TR historique suit son solde par défaut (porte-monnaie)
       .map(st => st.id === "tr" && st.trackBalance === undefined ? { ...st, trackBalance: true } : st),
     offAccountEntries: src.offAccountEntries || [],
+    groceryBudget: { ...DEFAULT_DATA.groceryBudget, ...(src.groceryBudget || {}) },
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -617,6 +622,9 @@ export function reducer(state, action) {
       };
 
     // Encaissement d'un chèque à une date choisie (v1.43.0)
+    case A.SAVE_GROCERY_BUDGET:
+      return { ...state, groceryBudget: { ...(state.groceryBudget || DEFAULT_DATA.groceryBudget), ...action.settings } };
+
     case A.CASH_CHEQUE:
       return {
         ...state,

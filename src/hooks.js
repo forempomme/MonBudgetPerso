@@ -694,3 +694,64 @@ export function pendingCheques(transactions, today = todayISO()) {
     })
     .sort((a, b) => b.age - a.age);
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  computeGroceryBudget — v1.46.0
+//  Budget courses restant ce mois = moyenne des N derniers mois complets
+//  (2 par défaut) − déjà dépensé ce mois, dans la ou les catégories
+//  « courses ». PUREMENT INFORMATIF : n'entre dans AUCUN solde (décision
+//  de Julien) — affiché en pastille sur la hero card et dans le panneau
+//  « Calcul du solde estimé », sous le total.
+//  • Seule la part payée par la banque compte (dépenses `expense`) : les
+//    tickets resto (sideAmounts) et le hors compte ne sont pas lus.
+//  • Récurrentes (templateId) et arrondis (isRounding) exclus, comme pour
+//    la projection.
+//  • Seuls les mois depuis la 1ʳᵉ opération enregistrée sont pris en
+//    compte (un mois avant l'utilisation de l'app ne vaut pas 0 €).
+//  Catégories : settings.categoryIds, ou à défaut celles nommées
+//  « Courses » (insensible à la casse/accents).
+// ─────────────────────────────────────────────────────────────────
+const normName = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+export function groceryCategoryIds(categories, settings) {
+  const valid = new Set((categories || []).map(c => c.id));
+  if (Array.isArray(settings?.categoryIds)) return settings.categoryIds.filter(id => valid.has(id));
+  return (categories || []).filter(c => normName(c.name) === "courses").map(c => c.id);
+}
+
+export function computeGroceryBudget(transactions, categories, settings, now = new Date()) {
+  if (settings && settings.enabled === false) return null;
+  const catIds = groceryCategoryIds(categories, settings);
+  if (catIds.length === 0) return null;
+  const cats = new Set(catIds);
+  const ymOf = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const curYM = ymOf(now);
+  const txs = transactions || [];
+  const firstYM = txs.length ? txs.reduce((m, t) => (t.date < m ? t.date : m), txs[0].date).slice(0, 7) : curYM;
+  const isGrocery = t => t.type === "expense" && cats.has(t.categoryId) && !t.templateId && !t.isRounding;
+  const sumMonth = ym => {
+    let total = 0, count = 0;
+    txs.forEach(t => { if (isGrocery(t) && t.date.startsWith(ym)) { total += parseFloat(t.amount) || 0; count++; } });
+    return { ym, total: Math.round(total * 100) / 100, count };
+  };
+
+  const n = Math.max(1, Math.min(3, parseInt(settings?.months, 10) || 2));
+  const months = [];
+  for (let i = 1; i <= n; i++) {
+    const ym = ymOf(new Date(now.getFullYear(), now.getMonth() - i, 1));
+    if (ym >= firstYM) months.push(sumMonth(ym));
+  }
+  if (months.length === 0) return null;          // pas encore un mois complet d'historique
+  months.reverse();                              // ordre chronologique
+
+  const average = Math.round(months.reduce((s, m) => s + m.total, 0) / months.length * 100) / 100;
+  const current = sumMonth(curYM);
+  const remaining = Math.max(0, Math.round((average - current.total) * 100) / 100);
+  const over      = Math.max(0, Math.round((current.total - average) * 100) / 100);
+  return { catIds, months, monthsWanted: n, average, spent: current.total, count: current.count, remaining, over, curYM };
+}
+
+export function useGroceryBudget(transactions, categories, settings) {
+  return useMemo(() => computeGroceryBudget(transactions, categories, settings),
+    [transactions, categories, settings]);
+}

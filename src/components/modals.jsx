@@ -50,17 +50,6 @@ function FieldError({ msg }) {
   return <div className="field-error">⚠ {msg}</div>;
 }
 
-// ─── Field wrapper (conservé pour les autres modals) ─────────────
-function Field({ label, error, children }) {
-  return (
-    <div className="form-group">
-      <label>{label}</label>
-      {children}
-      <FieldError msg={error} />
-    </div>
-  );
-}
-
 // ─── Section label compact (style app) ───────────────────────────
 function SectionLabel({ children, color }) {
   return (
@@ -238,10 +227,6 @@ function useSideAmounts(initial) {
     vals, open,
     openType:  id => setOpen(prev => new Set(prev).add(id)),
     setVal:    (id, v) => setVals(prev => ({ ...prev, [id]: v.replace(/[^0-9,.]/g, "") })),
-    closeType: id => {
-      setVals(prev => { const n = { ...prev }; delete n[id]; return n; });
-      setOpen(prev => { const n = new Set(prev); n.delete(id); return n; });
-    },
     /** Objet { [typeId]: montant } prêt à enregistrer, ou undefined si vide */
     toPayload: () => {
       const out = {};
@@ -249,50 +234,6 @@ function useSideAmounts(initial) {
       return Object.keys(out).length > 0 ? out : undefined;
     },
   };
-}
-
-function SideAmountsPicker({ types, side, showHint = true }) {
-  if (types.length === 0) return null;
-  const closed = types.filter(st => !side.open.has(st.id));
-  return (
-    <div>
-      {closed.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {closed.map(st => (
-            <button key={st.id} type="button" onClick={() => side.openType(st.id)}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px",
-                borderRadius: 20, background: "var(--tr-glow)", border: "1.5px dashed var(--tr-border)",
-                color: "var(--tr)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer",
-              }}>
-              {st.icon} {st.label}
-            </button>
-          ))}
-        </div>
-      )}
-      {[...side.open].map(k => {
-        const st = types.find(s => s.id === k);
-        if (!st) return null;
-        return (
-          <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", background: "var(--tr-glow)", border: "1px solid var(--tr-border)", borderRadius: 12, marginTop: 6 }}>
-            <span style={{ fontSize: ".85rem" }}>{st.icon}</span>
-            <input type="text" inputMode="decimal" placeholder={`Montant en ${st.label.toLowerCase()}`} autoFocus
-              value={side.vals[k] || ""}
-              onChange={e => side.setVal(k, e.target.value)}
-              style={{ flex: 1, boxSizing: "border-box", fontSize: ".75rem", background: "var(--surface3)" }}
-            />
-            <button type="button" onClick={() => side.closeType(k)}
-              style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
-          </div>
-        );
-      })}
-      {showHint && side.open.size > 0 && (
-        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, lineHeight: 1.5 }}>
-          Juste une indication de ton budget réel — n'affecte pas ton solde.
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────

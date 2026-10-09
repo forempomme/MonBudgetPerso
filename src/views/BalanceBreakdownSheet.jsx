@@ -69,8 +69,56 @@ function Line({ icon, title, sub, value, color, open, onToggle, children }) {
   );
 }
 
-export function BalanceBreakdownSheet({ breakdown, categories = [], cagnottes = [], onClose }) {
-  const [open, setOpen] = useState({});
+
+const monthName = ym => new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1).toLocaleDateString("fr-FR", { month: "long" });
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** Budget courses (v1.46.0) — affiché SOUS le total : information seulement, jamais déduite */
+function GrocerySection({ grocery: g, total, categories, open, onToggle }) {
+  const catLbl = g.catIds.map(id => categories.find(c => c.id === id)?.name).filter(Boolean).join(", ");
+  const pct = g.average > 0 ? Math.min(100, (g.spent / g.average) * 100) : 100;
+  const isOver = g.over > 0;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ fontSize: ".58rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)", margin: "0 0 6px 2px" }}>
+        Pour information · non déduit
+      </div>
+      <Line icon="🛒" title="Courses restantes ce mois"
+        sub={isOver ? "Moyenne déjà dépassée ce mois" : g.remaining > 0 ? `Estimation · moyenne ${g.months.length > 1 ? `des ${g.months.length} derniers mois` : "du dernier mois"}` : "Moyenne atteinte ce mois"}
+        value={-g.remaining} color={isOver ? "var(--danger)" : "var(--coral)"} open={open} onToggle={onToggle}>
+        {g.months.map(m => (
+          <div key={m.ym} style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text2)", padding: "3px 0" }}>
+            <span>🛒 {cap(monthName(m.ym))} ({catLbl})</span><span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(m.total)}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text)", padding: "3px 0", fontWeight: 700 }}>
+          <span>= Moyenne mensuelle</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(g.average)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text2)", padding: "3px 0" }}>
+          <span>Déjà dépensé en {monthName(g.curYM)} ({g.count} achat{g.count > 1 ? "s" : ""})</span>
+          <span style={{ fontWeight: 700, color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>−{fmt(g.spent)}</span>
+        </div>
+        <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", margin: "6px 0 3px" }}>
+          <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: isOver ? "var(--danger)" : "var(--coral)" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".62rem", color: "var(--text2)" }}>
+          <span>{g.average > 0 ? `${Math.round((g.spent / g.average) * 100)} % de la moyenne utilisé` : "Pas de dépense de courses les mois précédents"}</span>
+          <span style={{ fontWeight: 700, color: isOver ? "var(--danger)" : "var(--coral)" }}>{isOver ? `dépassé de ${fmt(g.over)}` : `reste ${fmt(g.remaining)}`}</span>
+        </div>
+      </Line>
+      {g.remaining > 0 && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", borderRadius: 11,
+          border: "1px dashed rgba(224,136,112,.45)", fontSize: ".7rem", color: "var(--text2)" }}>
+          <span>Solde après courses prévues</span>
+          <span style={{ fontSize: ".9rem", fontWeight: 800, color: "var(--coral)", fontVariantNumeric: "tabular-nums" }}>{fmt(total - g.remaining)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function BalanceBreakdownSheet({ breakdown, grocery = null, categories = [], cagnottes = [], onClose }) {
+  const [open, setOpen] = useState({ g: true });
   const tg = k => setOpen(o => ({ ...o, [k]: !o[k] }));
   const { pointed, pending, recurring, scheduled, total } = breakdown;
   const today = todayISO();
@@ -148,9 +196,11 @@ export function BalanceBreakdownSheet({ breakdown, categories = [], cagnottes = 
           <span style={{ fontSize: ".78rem", fontWeight: 800 }}>= Solde bancaire estimé</span>
           <span style={{ fontSize: "1.25rem", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: total < 0 ? "var(--danger)" : "var(--text)" }}>{fmt(total)}</span>
         </div>
+        {grocery && <GrocerySection grocery={grocery} total={total} categories={categories} open={open.g} onToggle={() => tg("g")} />}
+
         <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginTop: 10, padding: "8px 10px", borderRadius: 9, background: "var(--surface2)" }}>
           ℹ️ Les frais fixes non pointés sont déjà dans « En attente » : ils ne sont <b style={{ color: "var(--text2)" }}>jamais comptés deux fois</b>.
-          Un chèque reste déduit tant qu'il n'est pas annulé, même périmé. Le porte-monnaie (tickets resto) et les dépenses hors compte n'entrent pas dans ce calcul.
+          Un chèque reste déduit tant qu'il n'est pas annulé, même périmé. Le porte-monnaie (tickets resto) et les dépenses hors compte n'entrent pas dans ce calcul{grocery ? ", ni le budget courses (seulement indiqué)" : ""}.
         </div>
       </div>
     </div>,

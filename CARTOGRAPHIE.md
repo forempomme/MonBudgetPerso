@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.45.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.46.0**.
 
 ---
 
@@ -143,6 +143,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | Arrondi automatique | `store.js` (reducer `SAVE_TRANSACTION`) + `views.jsx` (`OptionsView`) | — |
 | Rapprochement bancaire | `hooks.js` (`useReconciliation`) + `views.jsx` (Accueil : cumulé / Historique : par mois affiché, calcul local) | — |
 | Solde estimé + sparkline hero card | `hooks.js` (`useBalanceBreakdown`) + `AccueilView` (le point du mois en cours = `balance` directement) ; toucher le montant → `BalanceBreakdownSheet` | — |
+| Budget courses | `hooks.js` (`computeGroceryBudget`, `useGroceryBudget`, `groceryCategoryIds`) + `store.js` (`groceryBudget`, `SAVE_GROCERY_BUDGET`) + `AccueilView` (pastille) + `BalanceBreakdownSheet` (`GrocerySection`, sous le total) + `OptionsView` (feuille « grocery ») | — |
 | Formulaires de saisie (tous) | `modals.jsx` — depuis 1.45.0 tous bâtis avec les mêmes briques que `TransModal` ; `FixedModal`/`FixedIncomeModal` sont deux portes d'entrée vers un unique `FixedFormModal` (bascule frais ↔ revenu à la création, via `onSaveIncome`/`onSaveExpense` passés par App.jsx). Montants lus avec `amountOf()` (évalue « 12+3 ») | — |
 | Projection 3 mois | `hooks.js` (`useBalanceProjection`, `useVariableCashflowMedian`, `useProjectionAccuracy`) + `views.jsx` (`AccueilView`, carte carrousel) | — |
 | Historique — liste/filtres/calendrier | `views.jsx` | `HistoriqueView`, `SwipeRow`, `PointRow` |
@@ -176,6 +177,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **Budget courses** (`groceryBudget` {enabled, categoryIds (null = catégories nommées « Courses »), months}, `computeGroceryBudget`) — v1.46.0. **Purement informatif : ne jamais l'ajouter au solde estimé** (décision de Julien) ; affiché en pastille hero card + section sous le total du panneau de calcul + réglage Options.
 - **Pauses terminées archivées** (`pauseHistory` [{from, until}], rempli par `withPauseHistory` dans le reducer à chaque réactivation ; éditable dans Options du formulaire « Pauses passées ») — v1.45.1. Ne jamais remettre `pausedFrom` à null sans archiver la période.
 - **Info-bulles ⓘ dans Options** — v1.39.35, repositionnées dans le flux normal (au lieu d'un survol) en v1.39.36 pour éviter d'être coupées par les coins arrondis des cartes
 
