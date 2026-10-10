@@ -84,13 +84,21 @@ function GrocerySection({ grocery: g, total, categories, open, onToggle }) {
         Pour information · non déduit
       </div>
       <Line icon="🛒" title="Courses restantes ce mois"
-        sub={isOver ? "Moyenne déjà dépassée ce mois" : g.remaining > 0 ? `Estimation · moyenne ${g.months.length > 1 ? `des ${g.months.length} derniers mois` : "du dernier mois"}` : "Moyenne atteinte ce mois"}
+        sub={isOver ? "Moyenne déjà dépassée ce mois" : g.remaining > 0 ? `Estimation · ${g.months.length > 1 ? `${g.months.length} derniers mois` : "dernier mois"} + ${monthName(g.curYM)} au prorata` : "Moyenne atteinte ce mois"}
         value={-g.remaining} color={isOver ? "var(--danger)" : "var(--coral)"} open={open} onToggle={onToggle}>
         {g.months.map(m => (
           <div key={m.ym} style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text2)", padding: "3px 0" }}>
             <span>🛒 {cap(monthName(m.ym))} ({catLbl})</span><span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(m.total)}</span>
           </div>
         ))}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".68rem", color: "var(--text2)", padding: "3px 0" }}>
+          <span>🛒 {cap(monthName(g.curYM))} (au {g.day})
+            <span style={{ fontSize: ".55rem", fontWeight: 800, padding: "1px 6px", borderRadius: 6, background: "rgba(112,184,224,.15)", color: "var(--accent)", marginLeft: 5 }}>
+              poids {g.day}/{g.daysInMonth}
+            </span>
+          </span>
+          <span style={{ fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmt(g.spent)}</span>
+        </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text)", padding: "3px 0", fontWeight: 700 }}>
           <span>= Moyenne mensuelle</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(g.average)}</span>
         </div>

@@ -323,7 +323,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${Math.round(grocery.average)} €/mois` : "Actif",
           configured: groceryCfg.enabled !== false && groceryCats.length > 0,
           hint: "Choisis la catégorie de tes courses",
-          desc: "Affiche ce qu'il te reste à dépenser en courses ce mois (moyenne des derniers mois), sans toucher au solde estimé." },
+          desc: "Affiche ce qu'il te reste à dépenser en courses ce mois (moyenne des derniers mois + le mois en cours au prorata), sans toucher au solde estimé." },
       ]
     },
     {
@@ -735,14 +735,14 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                       );
                     })}
                   </div>
-                  <div style={{ fontSize:".6rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", marginBottom:6 }}>Moyenne calculée sur</div>
+                  <div style={{ fontSize:".6rem", fontWeight:700, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", marginBottom:6 }}>Moyenne : derniers mois complets + mois en cours (au prorata)</div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:6, marginBottom:12 }}>
                     {[1,2,3].map(n => (
                       <button key={n} type="button" onClick={() => save({ months: n })}
                         style={{ padding:"8px 2px", borderRadius:20, fontSize:".66rem", cursor:"pointer", touchAction:"manipulation",
                           border:`1.5px solid ${months===n?"var(--accent)":"var(--border)"}`, color:months===n?"var(--accent)":"var(--text2)",
                           background:months===n?"rgba(112,184,224,.14)":"transparent", fontWeight:months===n?700:400 }}>
-                        {n} mois{n===2?" (défaut)":""}
+                        {n} mois + en cours
                       </button>
                     ))}
                   </div>

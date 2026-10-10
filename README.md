@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.46.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.46.1`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.46.0
+└── package.json         — version: 1.46.1
 ```
 
 ---
@@ -341,6 +341,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.46.1** | patch | Budget courses : la moyenne inclut maintenant le mois en cours **au prorata** de la part du mois écoulée — (N derniers mois complets + dépensé ce mois) ÷ (N + jour/nb de jours du mois). En début de mois ≈ moyenne des mois passés, le dernier jour = moyenne simple des N+1 mois. Ligne « Octobre (au 10) · poids 10/31 » ajoutée au détail ; réglage « N mois + en cours » |
 | **1.46.0** | minor | Budget courses (informatif, **n'impacte pas le solde estimé**) : reste à dépenser ce mois = moyenne des 2 derniers mois complets (1 ou 3 au choix) − déjà dépensé ce mois, dans la catégorie « Courses » (ou celles choisies). Pastille corail sous le solde de la hero card (« 142,30 € de courses à prévoir ce mois » / « budget dépassé de X € ») ; section « Pour information · non déduit » sous le total du panneau « Calcul du solde estimé » (mois, moyenne, déjà dépensé, barre de progression, solde après courses prévues) ; réglage Options → Épargne → Budget courses. Seule la part payée par la banque compte ; récurrentes et arrondis exclus ; calcul unique `computeGroceryBudget()` |
 | **1.45.3** | patch | Nettoyage code mort (validé) : méthode `closeType` de `useSideAmounts`, plus utilisée depuis la suppression de `SideAmountsPicker` |
 | **1.45.2** | patch | Nettoyage code mort (validé) : `SideAmountsPicker` (ancien sélecteur de montants à part, remplacé par le menu « Options ») et `Field` (ancien champ avec libellé), plus utilisés depuis 1.45.0 |

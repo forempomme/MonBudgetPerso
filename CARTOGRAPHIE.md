@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.46.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.46.1**.
 
 ---
 
@@ -177,7 +177,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
-- **Budget courses** (`groceryBudget` {enabled, categoryIds (null = catégories nommées « Courses »), months}, `computeGroceryBudget`) — v1.46.0. **Purement informatif : ne jamais l'ajouter au solde estimé** (décision de Julien) ; affiché en pastille hero card + section sous le total du panneau de calcul + réglage Options.
+- **Budget courses** (`groceryBudget` {enabled, categoryIds (null = catégories nommées « Courses »), months}, `computeGroceryBudget`) — v1.46.0 ; moyenne = (N mois complets + mois en cours) ÷ (N + jour/nbJours) depuis v1.46.1 (mois en cours au prorata, validé par Julien). **Purement informatif : ne jamais l'ajouter au solde estimé** (décision de Julien) ; affiché en pastille hero card + section sous le total du panneau de calcul + réglage Options.
 - **Pauses terminées archivées** (`pauseHistory` [{from, until}], rempli par `withPauseHistory` dans le reducer à chaque réactivation ; éditable dans Options du formulaire « Pauses passées ») — v1.45.1. Ne jamais remettre `pausedFrom` à null sans archiver la période.
 - **Info-bulles ⓘ dans Options** — v1.39.35, repositionnées dans le flux normal (au lieu d'un survol) en v1.39.36 pour éviter d'être coupées par les coins arrondis des cartes
 

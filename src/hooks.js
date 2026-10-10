@@ -698,7 +698,8 @@ export function pendingCheques(transactions, today = todayISO()) {
 // ─────────────────────────────────────────────────────────────────
 //  computeGroceryBudget — v1.46.0
 //  Budget courses restant ce mois = moyenne des N derniers mois complets
-//  (2 par défaut) − déjà dépensé ce mois, dans la ou les catégories
+//  (2 par défaut) + le mois en cours au prorata (v1.46.1) − déjà dépensé
+//  ce mois, dans la ou les catégories
 //  « courses ». PUREMENT INFORMATIF : n'entre dans AUCUN solde (décision
 //  de Julien) — affiché en pastille sur la hero card et dans le panneau
 //  « Calcul du solde estimé », sous le total.
@@ -744,11 +745,19 @@ export function computeGroceryBudget(transactions, categories, settings, now = n
   if (months.length === 0) return null;          // pas encore un mois complet d'historique
   months.reverse();                              // ordre chronologique
 
-  const average = Math.round(months.reduce((s, m) => s + m.total, 0) / months.length * 100) / 100;
+  // v1.46.1 : le mois en cours entre aussi dans la moyenne, AU PRORATA de
+  // la part du mois écoulée (le 10 octobre il pèse 10/31 d'un mois, le 31
+  // un mois entier). Sans ça, en début de mois un octobre presque vide
+  // tirerait la moyenne vers le bas. Le dernier jour, cela revient à la
+  // moyenne simple des N mois + le mois en cours.
   const current = sumMonth(curYM);
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const weight = Math.min(1, now.getDate() / daysInMonth);
+  const average = Math.round((months.reduce((s, m) => s + m.total, 0) + current.total) / (months.length + weight) * 100) / 100;
   const remaining = Math.max(0, Math.round((average - current.total) * 100) / 100);
   const over      = Math.max(0, Math.round((current.total - average) * 100) / 100);
-  return { catIds, months, monthsWanted: n, average, spent: current.total, count: current.count, remaining, over, curYM };
+  return { catIds, months, monthsWanted: n, average, spent: current.total, count: current.count, remaining, over, curYM,
+           day: now.getDate(), daysInMonth, weight };
 }
 
 export function useGroceryBudget(transactions, categories, settings) {
