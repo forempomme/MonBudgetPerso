@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.46.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.47.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.46.1
+└── package.json         — version: 1.47.0
 ```
 
 ---
@@ -341,6 +341,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.47.0** | minor | **Historique « Par type »** (vue par défaut) : blocs dépliants Dépenses / Revenus / Frais & revenus fixes / Cagnottes / Équilibres / Hors compte avec total et nombre à pointer, puis sous-blocs par semaine ; **sous-catégories** (`parentId`, un niveau) : saisie avec ▸ « Toute la catégorie » / sous-catégories, champ « Transport › Carburant », arbre dans Options (＋ sous), Rapport, seuils et budget courses additionnent les sous-catégories dans la principale ; liaisons inchangées ; **suppression protégée** des catégories (liste de tout ce qui est rattaché + déplacer vers / laisser sans catégorie — plus d'opérations orphelines) ; **aperçu avant import** (fichier vs données actuelles, alerte opérations perdues, sauvegarde préalable cochée par défaut ; la version de l'app est désormais notée dans les sauvegardes) ; **clôture du mois** (« Octobre en bref » affiché automatiquement le 1er du mois, une seule fois, + Rapport → Bilans mensuels) ; **projets avec échéance** (onglet Cagnottes : cagnotte + tag liés, avance/retard, € par mois, versement auto en un tap). Fix : le réglage Options → Budget courses n'était pas enregistré (callback branché sur le Rapport au lieu des Options depuis 1.46.0) |
+| **1.46.2** | patch | 3 correctifs : (1) projection 3 mois — les frais/revenus fixes en pause (y compris pauses passées) ou pas encore commencés (`startYM`) étaient quand même projetés → passe désormais par `isActiveForMonth` ; (2) badge % et petite courbe de la hero card — les opérations d'équilibre (+/−) étaient ignorées dans les soldes des mois passés ; (3) notification « Récurrentes à confirmer » — annonçait le nombre total de modèles au lieu de celles qui tombent vraiment le mois suivant (terminées exclues, annuelles seulement en janvier) |
 | **1.46.1** | patch | Budget courses : la moyenne inclut maintenant le mois en cours **au prorata** de la part du mois écoulée — (N derniers mois complets + dépensé ce mois) ÷ (N + jour/nb de jours du mois). En début de mois ≈ moyenne des mois passés, le dernier jour = moyenne simple des N+1 mois. Ligne « Octobre (au 10) · poids 10/31 » ajoutée au détail ; réglage « N mois + en cours » |
 | **1.46.0** | minor | Budget courses (informatif, **n'impacte pas le solde estimé**) : reste à dépenser ce mois = moyenne des 2 derniers mois complets (1 ou 3 au choix) − déjà dépensé ce mois, dans la catégorie « Courses » (ou celles choisies). Pastille corail sous le solde de la hero card (« 142,30 € de courses à prévoir ce mois » / « budget dépassé de X € ») ; section « Pour information · non déduit » sous le total du panneau « Calcul du solde estimé » (mois, moyenne, déjà dépensé, barre de progression, solde après courses prévues) ; réglage Options → Épargne → Budget courses. Seule la part payée par la banque compte ; récurrentes et arrondis exclus ; calcul unique `computeGroceryBudget()` |
 | **1.45.3** | patch | Nettoyage code mort (validé) : méthode `closeType` de `useSideAmounts`, plus utilisée depuis la suppression de `SideAmountsPicker` |

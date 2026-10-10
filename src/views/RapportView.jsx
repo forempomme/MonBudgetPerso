@@ -1,8 +1,9 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
-import { fmt, currentYM, isIncome, PALETTE, touchMoved } from "../utils.js";
-import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory } from "../hooks.js";
+import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, touchMoved } from "../utils.js";
+import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap } from "../hooks.js";
+import { MonthRecapSheet } from "./MonthRecapSheet.jsx";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -275,15 +276,20 @@ function SuiviModal({ onClose, categories, transactions, fixedExpenses, threshol
     const map = {};
     transactions
       .filter(t => t.date.startsWith(curYM) && t.type === "expense")
-      .forEach(t => { map[t.categoryId] = (map[t.categoryId] || 0) + (parseFloat(t.amount) || 0); });
+      .forEach(t => add(t.categoryId, parseFloat(t.amount) || 0));
     fixedExpenses.forEach(f => {
       if (!isActiveForMonth(f, curYM)) return;
       const ov = f.monthlyOverrides?.[curYM];
-      const a  = (ov?.amount ?? f.amount) || 0;
-      map[f.categoryId] = (map[f.categoryId] || 0) + a;
+      add(f.categoryId, (ov?.amount ?? f.amount) || 0);
     });
     return map;
-  }, [transactions, fixedExpenses, curYM]);
+    // v1.47.0 : une dépense en sous-catégorie compte aussi dans le seuil de sa catégorie principale
+    function add(id, a) {
+      map[id] = (map[id] || 0) + a;
+      const root = catRootId(categories, id);
+      if (root && root !== id) map[root] = (map[root] || 0) + a;
+    }
+  }, [transactions, fixedExpenses, curYM, categories]);
 
   const tracked = categories.filter(c => thresholds[c.id] > 0);
 
@@ -489,6 +495,8 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   const [selCatId, setSelCatId] = useState(categories[0]?.id || "");
 
   const cat = categories.find(c => c.id === selCatId);
+  // v1.47.0 : une catégorie principale inclut ses sous-catégories
+  const fam = useMemo(() => catFamilyIds(categories, selCatId), [categories, selCatId]);
 
   // Catégories liées à celle sélectionnée
   const linkedCats = categories.filter(c => c.linkedToId === selCatId);
@@ -507,10 +515,10 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
       const ym     = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const inRange = ym >= startYM && ym <= curYM;
       const exp    = transactions
-        .filter(t => t.date.startsWith(ym) && t.type === "expense" && t.categoryId === selCatId)
+        .filter(t => t.date.startsWith(ym) && t.type === "expense" && fam.includes(t.categoryId))
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
       const fixExp = inRange ? fixedExpenses
-        .filter(f => f.categoryId === selCatId && isActiveForMonth(f, ym))
+        .filter(f => fam.includes(f.categoryId) && isActiveForMonth(f, ym))
         .reduce((s, f) => { const ov = f.monthlyOverrides?.[ym]; return s + ((ov?.amount ?? f.amount) || 0); }, 0) : 0;
       const inc    = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
       const total  = exp + fixExp;
@@ -522,10 +530,10 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   const yearStr       = now.getFullYear().toString();
   const monthsElapsed = now.getMonth() + 1;
   const yearExp    = transactions
-    .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && t.categoryId === selCatId)
+    .filter(t => t.date.startsWith(yearStr) && t.type === "expense" && fam.includes(t.categoryId))
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
   const yearFixExp = fixedExpenses
-    .filter(f => f.categoryId === selCatId)
+    .filter(f => fam.includes(f.categoryId))
     .reduce((s, f) => {
       let total = 0;
       for (let m = 1; m <= monthsElapsed; m++) {
@@ -540,14 +548,14 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
   const yearTotal  = yearExp + yearFixExp;
   const yearInc    = getLinkedIncomeForCat(selCatId, categories, transactions, yearStr);
   const yearNet    = Math.max(0, yearTotal - yearInc);
-  const txCount    = transactions.filter(t => t.date.startsWith(yearStr) && t.categoryId === selCatId).length;
+  const txCount    = transactions.filter(t => t.date.startsWith(yearStr) && fam.includes(t.categoryId)).length;
   const fixBaseAmount = fixedExpenses
-    .filter(f => f.categoryId === selCatId)
+    .filter(f => fam.includes(f.categoryId))
     .reduce((s, f) => s + (f.amount || 0), 0);
 
   // Top 5 transactions récentes
   const recent = [...transactions]
-    .filter(t => t.categoryId === selCatId)
+    .filter(t => fam.includes(t.categoryId))
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 5);
 
@@ -594,7 +602,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses 
             ))}
           </div>
           {yearFixExp > 0 && (() => {
-            const fixes = fixedExpenses.filter(f => f.categoryId === selCatId);
+            const fixes = fixedExpenses.filter(f => fam.includes(f.categoryId));
             // Nombre de mois propre à CHAQUE frais (peut différer d'un frais à l'autre
             // dans la même catégorie si l'un a démarré plus tard que l'autre)
             const monthsForFix = (f) => Array.from({ length: monthsElapsed }, (_, i) => {
@@ -740,6 +748,14 @@ function RapportDonut({ inc, exp, sav }) {
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
 export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onPushBack, onPopBack }) {
+  const [recapYM, setRecapYM] = useState(null);   // v1.47.0 : bilan mensuel ouvert
+  const recapOpen = !!recapYM;
+  useEffect(() => {   // bouton retour Android ferme le bilan
+    if (!recapOpen) return;
+    onPushBack?.(() => setRecapYM(null));
+    return () => onPopBack?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recapOpen]);
   const { transactions, categories, fixedExpenses } = data;
   // Carte « Payé hors banque par catégorie » (v1.42.0)
   const [sideCatType,   setSideCatType]   = useState("tr");
@@ -792,7 +808,8 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
     transactions
       .filter(t => t.date.startsWith(yearStr) && t.type === "expense")
       .forEach(t => {
-        const k = t.categoryId || "__other__";
+        // v1.47.0 : une sous-catégorie est comptée dans sa catégorie principale
+        const k = (t.categoryId && catRootId(categories, t.categoryId)) || "__other__";
         expMap[k] = (expMap[k] || 0) + (parseFloat(t.amount) || 0);
       });
     // Revenus de même catégorie OU catégorie liée = déductions
@@ -801,10 +818,12 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
       .forEach(t => {
         const a   = parseFloat(t.amount)||0;
         const cat = categories.find(c => c.id === t.categoryId);
-        if (cat?.linkedToId && expMap[cat.linkedToId]) {
-          incMap[cat.linkedToId] = (incMap[cat.linkedToId]||0) + a;
-        } else if (t.categoryId && expMap[t.categoryId]) {
-          incMap[t.categoryId] = (incMap[t.categoryId]||0) + a;
+        const lk = cat?.linkedToId ? catRootId(categories, cat.linkedToId) : null;
+        const own = t.categoryId ? catRootId(categories, t.categoryId) : null;
+        if (lk && expMap[lk]) {
+          incMap[lk] = (incMap[lk]||0) + a;
+        } else if (own && expMap[own]) {
+          incMap[own] = (incMap[own]||0) + a;
         }
       });
     // Coût net par catégorie
@@ -815,7 +834,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
     const entries = Object.entries(netMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const total   = Object.values(netMap).reduce((s, v) => s + v, 0) || 1;
     return { top5: entries, topTotal: total };
-  }, [transactions, fixedExpenses, currentYear]);
+  }, [transactions, fixedExpenses, currentYear, categories]);
 
   const compRows = [
     { label: "💰 Revenus",   v1: yInc,  v0: prevY.inc,             color: "var(--success)", higherIsBetter: true  },
@@ -832,6 +851,24 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
         <span style={{ fontFamily: "var(--display)", fontSize: "1.3rem", fontWeight: 800 }}>{currentYear}</span>
         <button className="year-nav-btn" onClick={() => setCurrentYear(y => Math.min(y + 1, new Date().getFullYear()))}>▶</button>
       </div>
+
+      {/* ── Bilans mensuels (v1.47.0) : clôture du mois, consultable à tout moment ── */}
+      <button onClick={() => setRecapYM(getPrevMonth(currentYM()))}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", marginBottom: 10, borderRadius: "var(--radius)",
+          background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+        <span style={{ fontSize: "1.1rem" }}>📊</span>
+        <span style={{ flex: 1 }}>
+          <span style={{ display: "block", fontSize: ".78rem", fontWeight: 700 }}>Bilans mensuels</span>
+          <span style={{ display: "block", fontSize: ".6rem", color: "var(--text3)" }}>Le résumé de chaque mois terminé</span>
+        </span>
+        <span style={{ color: "var(--text3)" }}>›</span>
+      </button>
+      {recapYM && (
+        <MonthRecapSheet recap={computeMonthRecap(data, recapYM)} categories={data.categories}
+          onClose={() => setRecapYM(null)}
+          onPrevMonth={() => setRecapYM(ym => getPrevMonth(ym))}
+          onNextMonth={recapYM < getPrevMonth(currentYM()) ? () => setRecapYM(ym => { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }) : null} />
+      )}
 
       {/* ── Tabs internes ── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
@@ -859,10 +896,11 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           const alerts = data.categories.filter(c => {
             const limit = categoryThresholds[c.id];
             if (!limit) return false;
+            const fam = catFamilyIds(data.categories, c.id);
             const spent = data.transactions
-              .filter(t => t.date.startsWith(curYM) && t.type === "expense" && t.categoryId === c.id)
+              .filter(t => t.date.startsWith(curYM) && t.type === "expense" && fam.includes(t.categoryId))
               .reduce((s, t) => s + (parseFloat(t.amount)||0), 0)
-              + data.fixedExpenses.filter(f=>f.categoryId===c.id && isActiveForMonth(f, curYM))
+              + data.fixedExpenses.filter(f=>fam.includes(f.categoryId) && isActiveForMonth(f, curYM))
                   .reduce((s,f)=>{ const ov=f.monthlyOverrides?.[curYM]; return s+((ov?.amount??f.amount)||0); }, 0);
             return spent >= limit * 0.8;
           });

@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.46.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.47.0**.
 
 ---
 
@@ -24,6 +24,7 @@ src/
 │   ├── shared.jsx         composants partagés entre vues (TagsModal, EmptyIllustration, SectionTitle, sha256hex…)
 │   ├── AccueilView.jsx    ├── CagnottesView.jsx   ├── HistoriqueView.jsx
 │   ├── BalanceBreakdownSheet.jsx  panneau « Calcul du solde estimé » (v1.45.0)
+│   ├── MonthRecapSheet.jsx        « Clôture du mois » / bilans mensuels (v1.47.0)
 │   ├── FixesView.jsx      ├── RapportView.jsx     ├── OptionsView.jsx
 │   └── LockScreen.jsx
 └── components/
@@ -143,6 +144,12 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | Arrondi automatique | `store.js` (reducer `SAVE_TRANSACTION`) + `views.jsx` (`OptionsView`) | — |
 | Rapprochement bancaire | `hooks.js` (`useReconciliation`) + `views.jsx` (Accueil : cumulé / Historique : par mois affiché, calcul local) | — |
 | Solde estimé + sparkline hero card | `hooks.js` (`useBalanceBreakdown`) + `AccueilView` (le point du mois en cours = `balance` directement) ; toucher le montant → `BalanceBreakdownSheet` | — |
+| Sous-catégories | `hooks.js` (`catRootId`, `catFamilyIds`) + `store.js` (`SAVE_CATEGORY` : un seul niveau) + `modals.jsx` (`CategoryField` : ▸ et « Toute la catégorie », `CatModal` : « Rattacher à ») + `OptionsView` (arbre) + `RapportView` (agrégation top 5, seuils, détail) | — |
+| Suppression protégée d'une catégorie | `hooks.js` (`categoryUsage`) + `modals.jsx` (`DeleteCategoryModal`) + `store.js` (`DELETE_CATEGORY` {id, moveTo} : déplace transactions, fixes, récurrentes, programmées, templates, hors compte, prévisionnels, seuil, budget courses, liaisons, sous-catégories) | — |
+| Aperçu avant import | `App.jsx` (`handleImportFile` → `importPreview`, `handleExport` renvoie true/false) + `modals.jsx` (`ImportPreviewModal`, `summarizeData`) | — |
+| Clôture du mois | `hooks.js` (`computeMonthRecap`) + `views/MonthRecapSheet.jsx` + `App.jsx` (affichage auto le 1er, `lastMonthRecapShown` / `MARK_MONTH_RECAP`) + `RapportView` (« Bilans mensuels ») | — |
+| Projets avec échéance | `store.js` (`projects`, `SAVE_PROJECT` crée cagnotte/tag au besoin, `DELETE_PROJECT`) + `hooks.js` (`computeProjectStatus`) + `modals.jsx` (`ProjectModal`) + `CagnottesView` (`ProjectCard`) | — |
+| Historique « Par type » | `HistoriqueView` (`viewMode` = "type" par défaut, `openTypes`, `closedWeeks`, `renderOffRow`, `renderFixesCard`, `renderIncomesCard`) | — |
 | Budget courses | `hooks.js` (`computeGroceryBudget`, `useGroceryBudget`, `groceryCategoryIds`) + `store.js` (`groceryBudget`, `SAVE_GROCERY_BUDGET`) + `AccueilView` (pastille) + `BalanceBreakdownSheet` (`GrocerySection`, sous le total) + `OptionsView` (feuille « grocery ») | — |
 | Formulaires de saisie (tous) | `modals.jsx` — depuis 1.45.0 tous bâtis avec les mêmes briques que `TransModal` ; `FixedModal`/`FixedIncomeModal` sont deux portes d'entrée vers un unique `FixedFormModal` (bascule frais ↔ revenu à la création, via `onSaveIncome`/`onSaveExpense` passés par App.jsx). Montants lus avec `amountOf()` (évalue « 12+3 ») | — |
 | Projection 3 mois | `hooks.js` (`useBalanceProjection`, `useVariableCashflowMedian`, `useProjectionAccuracy`) + `views.jsx` (`AccueilView`, carte carrousel) | — |
@@ -160,6 +167,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Toujours bumper la version à 3 endroits** : `utils.js` (`APP_VERSION`), `package.json`, `README.md` — et **l'annoncer** à la fin de chaque réponse contenant une modif de code (patch pour un fix, minor pour une nouvelle fonctionnalité).
 - **Demander confirmation avant toute suppression** de code, même identifié comme "mort" — et vérifier l'usage dans tout le dépôt connu, pas seulement les fichiers en main.
 - **Mockup avant implémentation** pour tout ce qui touche à une interaction ou un visuel nouveau (l'utilisateur valide toujours un mockup HTML autonome — fond sombre, cadre téléphone, variables CSS du vrai thème — avant le code réel).
+- **Tout nouveau callback passé à une vue** : vérifier qu'il est branché sur la BONNE vue dans App.jsx (bug 1.46.0 : `onSaveGroceryBudget` posé sur RapportView au lieu d'OptionsView). Un script compare les props `on*` déclarées par chaque vue et celles passées par App.
 - **Tout nouveau formulaire** se construit avec les briques de `modals.jsx` (`TypeButtons`, `TextField`, `NumPad`, `CategoryField`, `DateField`/`MonthField`, `OptionsField`, `FormActions`) et doit tenir sans défilement sur un Pixel 8. Un montant se lit avec `amountOf()`, jamais `parseAmt()` (qui ignore « +3 »).
 - **Tout bouton qui réagit au relâcher du doigt (`onTouchEnd`) doit commencer par `if (touchMoved()) return;`** (utils.js) — sinon un défilement démarré sur ce bouton le déclenche (bug corrigé en v1.44.2).
 - **Dates toujours en heure locale**, jamais `toISOString()` (bug UTC déjà rencontré et corrigé à de nombreux endroits).
@@ -177,6 +185,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **Historique par type, sous-catégories, suppression protégée, aperçu d'import, clôture du mois, projets** — v1.47.0
 - **Budget courses** (`groceryBudget` {enabled, categoryIds (null = catégories nommées « Courses »), months}, `computeGroceryBudget`) — v1.46.0 ; moyenne = (N mois complets + mois en cours) ÷ (N + jour/nbJours) depuis v1.46.1 (mois en cours au prorata, validé par Julien). **Purement informatif : ne jamais l'ajouter au solde estimé** (décision de Julien) ; affiché en pastille hero card + section sous le total du panneau de calcul + réglage Options.
 - **Pauses terminées archivées** (`pauseHistory` [{from, until}], rempli par `withPauseHistory` dans le reducer à chaque réactivation ; éditable dans Options du formulaire « Pauses passées ») — v1.45.1. Ne jamais remettre `pausedFrom` à null sans archiver la période.
 - **Info-bulles ⓘ dans Options** — v1.39.35, repositionnées dans le flux normal (au lieu d'un survol) en v1.39.36 pour éviter d'être coupées par les coins arrondis des cartes

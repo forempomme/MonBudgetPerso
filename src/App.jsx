@@ -1,13 +1,14 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM, recurringRefDate, chequeExpiryISO } from "./utils.js";
-import { useBalanceWithRecurring } from "./hooks.js";
+import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
+import { useBalanceWithRecurring, categoryUsage, computeMonthRecap } from "./hooks.js";
+import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
-  ScheduledModal,
+  ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
   QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal,
 } from "./components/modals.jsx";
@@ -151,8 +152,20 @@ export default function App() {
       const tomorrowAt = h => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d; };
       const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget" });
 
-      if (ns.recurring && (data.recurringTemplates||[]).length > 0) {
-        push(1, "🔄 Récurrentes à confirmer", `${data.recurringTemplates.length} modèle(s) à confirmer ce mois`,
+      // v1.46.2 : ne compte que les récurrentes qui tomberont vraiment le mois
+      // prochain (avant : le nombre total de modèles, même terminés)
+      if (ns.recurring) {
+        const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        const curYMn = currentYM();
+        const due = (data.recurringTemplates || []).filter(tpl => {
+          if (!(parseFloat(tpl.amount) > 0)) return false;
+          if (tpl.frequency === "yearly") return nextMonth.getMonth() === 0;   // revient en janvier
+          const confirmed = (data.transactions || []).filter(t => t.templateId === tpl.id);
+          const doneThisMonth = confirmed.some(t => recurringRefDate(t).startsWith(curYMn));
+          const effective = confirmed.length + (doneThisMonth ? 0 : 1);       // ce mois-ci compte comme fait
+          return tpl.occurrences == null || effective < tpl.occurrences;
+        }).length;
+        if (due > 0) push(1, "🔄 Récurrentes à confirmer", `${due} récurrente${due > 1 ? "s" : ""} à confirmer ce mois`,
           at9(now.getFullYear(), now.getMonth() + 1, 1));
       }
       // Prochaine occurrence : ce mois-ci si le jour n'est pas passé, sinon le
@@ -354,6 +367,10 @@ export default function App() {
     if (cagHistModal)  { setCagHistModal(null);   return; }
     if (monthModal)    { setMonthModal(null);     return; }
     if (detailModal)   { setDetailModal(null);    return; }
+    if (deleteCatId)   { setDeleteCatId(null);    return; }
+    if (importPreview) { setImportPreview(null);  return; }
+    if (recapYM)       { setRecapYM(null);        return; }
+    if (projectModal)  { setProjectModal(null);   return; }
     if (catModal)      { setCatModal(null);       return; }
     if (transferModal) { setTransferModal(false); return; }
     if (cagModal)      { setCagModal(null);       return; }
@@ -407,7 +424,11 @@ export default function App() {
   const [fixedIncomeModal, setFixedIncomeModal] = useState(null); // null | { editingIdx: number|null }
   const [cagModal,      setCagModal]      = useState(null); // null | { editingId: string|null }
   const [transferModal, setTransferModal] = useState(false);
-  const [catModal,      setCatModal]      = useState(null); // null | Category object (or {})
+  const [catModal,      setCatModal]      = useState(null); // null | Category object (or {}) | { parentId } pour une sous-catégorie
+  const [deleteCatId,   setDeleteCatId]   = useState(null); // v1.47.0
+  const [importPreview, setImportPreview] = useState(null); // v1.47.0 : { fileName, data }
+  const [recapYM,       setRecapYM]       = useState(null); // v1.47.0 : clôture du mois affichée
+  const [projectModal,  setProjectModal]  = useState(null); // v1.47.0 : {} (nouveau) | projet
   const [confirmModal,  setConfirmModal]  = useState(null); // null | { title, msg, onConfirm }
   const [detailModal,   setDetailModal]   = useState(null); // null | { type, period }
   const [monthModal,    setMonthModal]    = useState(null); // null | { year, monthIdx }
@@ -549,21 +570,16 @@ export default function App() {
     dispatch({ type: A.SAVE_CATEGORY, cat });
   }
 
+  // v1.47.0 : suppression protégée (liste ce qui est rattaché + choix déplacer / sans catégorie)
   function deleteCat(id) {
-    setConfirmModal({
-      title: "Supprimer cette catégorie ?",
-      msg:   "Les opérations liées perdront leur catégorie.",
-      onConfirm: () => {
-        dispatch({ type: A.DELETE_CATEGORY, id });
-        addToast("Catégorie supprimée", "error");
-      },
-    });
+    setDeleteCatId(id);
   }
 
   // ── Export / Import ──────────────────────────────────────────
   async function handleExport() {
     const newDate  = new Date().toISOString();
-    const snapshot = { ...data, lastBackupDate: newDate };
+    // v1.47.0 : la version de l'app est notée dans le fichier (affichée à l'import)
+    const snapshot = { ...data, lastBackupDate: newDate, appVersion: APP_VERSION };
     const json     = JSON.stringify(snapshot, null, 2);
     const fileName = `budget_backup_${newDate.slice(0, 10)}.json`;
     const sizeKo   = Math.round(json.length / 1024 * 10) / 10;
@@ -581,12 +597,13 @@ export default function App() {
         await Share.share({ title: "Budget Pro — Sauvegarde", url: uri, dialogTitle: "Enregistrer la sauvegarde" });
         dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
         addToast("✓ Sauvegarde exportée");
+        return true;
       } catch (err) {
         if (!err?.message?.includes("canceled") && err?.name !== "AbortError") {
           addToast(`Erreur export : ${err?.message ?? err}`, "error");
         }
+        return false;
       }
-      return;
     }
 
     // ── Web / desktop ────────────────────────────────────────────
@@ -599,8 +616,10 @@ export default function App() {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
       addToast(`✓ Export : ${fileName}`);
+      return true;
     } catch {
       addToast("Erreur lors de l'export", "error");
+      return false;
     }
   }
 
@@ -615,8 +634,8 @@ export default function App() {
           addToast("Fichier invalide — structure incorrecte", "error");
           return;
         }
-        dispatch({ type: A.IMPORT_DATA, data: imported });
-        addToast(`✓ Import réussi — ${imported.transactions.length} opération(s) chargée(s)`);
+        // v1.47.0 : aperçu + comparaison avant de remplacer quoi que ce soit
+        setImportPreview({ fileName: file.name, data: imported });
       } catch {
         addToast("Fichier invalide — JSON malformé", "error");
       }
@@ -672,6 +691,17 @@ export default function App() {
         onDeleteCag={deleteCag}
         onTransfer={()  => setTransferModal(true)}
         onShowCagHistory={id => setCagHistModal(id)}
+        onNewProject={() => setProjectModal({})}
+        onEditProject={p => setProjectModal(p)}
+        onDeleteProject={p => setConfirmModal({
+          title: `Supprimer le projet « ${p.name} » ?`,
+          msg: "La cagnotte et le tag liés sont conservés (argent et historique intacts).",
+          onConfirm: () => { dispatch({ type: A.DELETE_PROJECT, id: p.id }); addToast("Projet supprimé", "error"); },
+        })}
+        onProjectAutoSaving={(p, amount, plan) => {
+          dispatch({ type: A.SAVE_AUTO_SAVING, plan: plan ? { ...plan, amount } : { cagnotteId: p.cagId, amount, dayOfMonth: 1, enabled: true } });
+          addToast(plan ? `Versement auto ajusté à ${amount.toFixed(2).replace(".", ",")} €` : `Versement auto créé : ${amount.toFixed(2).replace(".", ",")} € le 1ᵉʳ du mois (modifiable dans Options)`);
+        }}
       />
   );
   case "historique": return (
@@ -724,7 +754,6 @@ export default function App() {
         tags={data.tags || []}
         onSaveTag={saveTag}
         onDeleteTag={deleteTag}
-        onSaveGroceryBudget={settings => dispatch({ type: A.SAVE_GROCERY_BUDGET, settings })}
         onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
         onSaveMonthNote={saveMonthNote}
@@ -744,7 +773,7 @@ export default function App() {
           }
         }}
         onDeleteCat={deleteCat}
-        onNewCat={()   => setCatModal({})}
+        onNewCat={parentId => setCatModal(typeof parentId === "string" ? { parentId } : {})}
         onExport={handleExport}
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
@@ -754,6 +783,7 @@ export default function App() {
         onDeleteSideAmountType={deleteSideAmountType}
         onSaveTag={saveTag}
         onDeleteTag={deleteTag}
+        onSaveGroceryBudget={settings => dispatch({ type: A.SAVE_GROCERY_BUDGET, settings })}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
@@ -790,6 +820,24 @@ export default function App() {
     notifReplannedRef.current = true;
     const t = setTimeout(() => scheduleNotifications(data.notifSettings, { silent: true }), 4000);
     return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locked]);
+
+  // ── Clôture du mois (v1.47.0) ─────────────────────────────────
+  // Le 1er de chaque mois, au premier démarrage de la journée (après
+  // déverrouillage), on affiche le bilan du mois écoulé — une seule fois :
+  // le mois est noté dès l'affichage (même si l'app est rouverte ensuite).
+  useEffect(() => {
+    if (locked) return;
+    const now = new Date();
+    if (now.getDate() !== 1) return;
+    const cur = currentYM();
+    if (data.lastMonthRecapShown === cur) return;
+    const prev = getPrevMonth(cur);
+    if (!(data.transactions || []).some(t => (t.date || "") < `${cur}-01`)) return; // pas d'historique
+    dispatch({ type: A.MARK_MONTH_RECAP, ym: cur });
+    const id = setTimeout(() => setRecapYM(prev), 600);
+    return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
@@ -1072,8 +1120,47 @@ export default function App() {
       {catModal && (
         <CatModal
           editingCat={catModal?.id ? catModal : null}
+          categories={data.categories}
+          defaultParentId={catModal?.parentId || null}
           onSave={cat => { saveCat(cat); setCatModal(null); }}
           onClose={() => setCatModal(null)}
+        />
+      )}
+      {projectModal && (
+        <ProjectModal project={projectModal.id ? projectModal : null} cagnottes={data.cagnottes} tags={data.tags || []}
+          onSave={payload => { dispatch({ type: A.SAVE_PROJECT, ...payload }); setProjectModal(null); }}
+          onClose={() => setProjectModal(null)} />
+      )}
+      {recapYM && (
+        <MonthRecapSheet recap={computeMonthRecap(data, recapYM)} categories={data.categories}
+          onClose={() => setRecapYM(null)}
+          onOpenRapport={() => { setRecapYM(null); navigateTo("rapport"); }}
+          onGoUnpointed={() => { setRecapYM(null); goToHistoriqueWithFilter("unpointed"); }} />
+      )}
+      {importPreview && (
+        <ImportPreviewModal fileName={importPreview.fileName} fileData={importPreview.data} currentData={data} appVersion={APP_VERSION}
+          onConfirm={async backupFirst => {
+            if (backupFirst) {
+              const ok = await handleExport();
+              if (!ok) { addToast("Import annulé : la sauvegarde de tes données actuelles n'a pas été faite", "error"); return; }
+            }
+            dispatch({ type: A.IMPORT_DATA, data: importPreview.data });
+            addToast(`✓ Import réussi — ${importPreview.data.transactions.length} opération(s) chargée(s)`);
+            setImportPreview(null);
+          }}
+          onClose={() => setImportPreview(null)} />
+      )}
+      {deleteCatId && data.categories.some(c => c.id === deleteCatId) && (
+        <DeleteCategoryModal
+          category={data.categories.find(c => c.id === deleteCatId)}
+          categories={data.categories}
+          usage={categoryUsage(data, deleteCatId)}
+          onConfirm={moveTo => {
+            dispatch({ type: A.DELETE_CATEGORY, id: deleteCatId, moveTo });
+            addToast(moveTo ? "Catégorie supprimée — éléments déplacés" : "Catégorie supprimée", "error");
+            setDeleteCatId(null);
+          }}
+          onClose={() => setDeleteCatId(null)}
         />
       )}
       {confirmModal && (

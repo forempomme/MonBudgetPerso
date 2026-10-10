@@ -2,6 +2,7 @@
 import { useState, useMemo } from "react";
 import { fmt, currentYM } from "../utils.js";
 import { EmptyIllustration } from "./shared.jsx";
+import { computeProjectStatus } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
 const CAG_TYPES_MAP = {
@@ -11,7 +12,74 @@ const CAG_TYPES_MAP = {
   investissement: { icon:"📈", label:"Investissement", color:"var(--success)" },
 };
 
-export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory }) {
+
+// ─────────────────────────────────────────────────────────────────
+//  ProjectCard — v1.47.0 : projet avec échéance
+// ─────────────────────────────────────────────────────────────────
+const PROJECT_STATUS = {
+  done:            ["ATTEINT",         "var(--success)"],
+  ahead:           ["EN AVANCE",       "var(--success)"],
+  ontrack:         ["DANS LES TEMPS",  "var(--accent)"],
+  behind:          ["EN RETARD",       "var(--danger)"],
+  "late-deadline": ["ÉCHÉANCE PASSÉE", "var(--warning)"],
+};
+function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
+  const st = computeProjectStatus(p, data);
+  const [label, col] = PROJECT_STATUS[st.status];
+  const dl = new Date(p.deadline + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const plan = (data.autoSavings || []).find(a => a.cagnotteId === p.cagId && a.enabled);
+  const bar = (pct, color, marker) => (
+    <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", position: "relative", margin: "4px 0 3px" }}>
+      <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: color }} />
+      {marker != null && <span style={{ position: "absolute", top: -3, left: `calc(${marker}% - 1px)`, width: 2, height: 14, background: "#fff", opacity: .8 }} />}
+    </div>
+  );
+  const btn = { background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 8, padding: "8px 10px", color: "var(--text2)", fontSize: ".66rem", fontWeight: 700, cursor: "pointer" };
+  return (
+    <div className="card" style={{ marginBottom: 10, borderColor: "rgba(176,144,224,.35)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <span style={{ fontSize: "1.4rem" }}>{p.icon}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: ".85rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)" }}>Objectif {fmt(st.target)} · pour le {dl}{st.status !== "late-deadline" && st.status !== "done" ? ` · ${st.monthsLeft} mois restant${st.monthsLeft > 1 ? "s" : ""}` : ""}</div>
+        </div>
+        <span style={{ fontSize: ".55rem", fontWeight: 800, padding: "3px 8px", borderRadius: 9, color: col, background: `color-mix(in srgb, ${col} 14%, transparent)`, whiteSpace: "nowrap" }}>{label}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".66rem", color: "var(--text2)" }}>
+        <span>🐷 Mis de côté{st.cag ? ` (« ${st.cag.name} »)` : " — cagnotte supprimée"}</span><b style={{ color: "var(--purple)" }}>{fmt(st.saved)}</b>
+      </div>
+      {bar(st.savedPct, "var(--purple)", st.status === "done" ? null : st.expectedPct)}
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>
+        <span>{Math.round(st.savedPct)} %</span>{st.status !== "done" && <span>prévu à ce jour : {fmt(st.expected)} (trait blanc)</span>}
+      </div>
+      {st.tag && <>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".66rem", color: "var(--text2)" }}>
+          <span>{st.tag.icon} Déjà dépensé (tag « {st.tag.name} »)</span><b style={{ color: "var(--coral)" }}>{fmt(st.spent)}</b>
+        </div>
+        {bar(st.spentPct, "var(--coral)")}
+        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>{Math.round(st.spentPct)} % du budget · {st.spentCount} achat{st.spentCount > 1 ? "s" : ""}</div>
+      </>}
+      {st.remaining > 0 && st.status !== "late-deadline" && (
+        <div style={{ padding: "8px 10px", borderRadius: 10, fontSize: ".66rem", color: "var(--text2)", background: "var(--purple-glow)", border: "1px solid rgba(176,144,224,.3)", marginBottom: 8 }}>
+          💡 Reste à mettre de côté : <b style={{ color: "var(--text)" }}>{fmt(st.remaining)}</b> → <b style={{ color: "var(--purple)" }}>{fmt(st.perMonth)} / mois</b>
+          {st.status === "behind" ? " pour rattraper le retard" : ` pendant ${Math.max(1, st.monthsLeft)} mois`}
+          {plan && <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 3 }}>Versement auto actuel : {fmt(plan.amount)} le {plan.dayOfMonth} du mois</div>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <button style={btn} onClick={() => onEdit(p)}>✏️</button>
+        <button style={{ ...btn, color: "var(--danger)" }} onClick={() => onDelete(p)}>🗑</button>
+        {st.cag && st.perMonth > 0 && st.status !== "late-deadline" && (!plan || Math.abs(plan.amount - st.perMonth) > 0.009) && (
+          <button style={{ ...btn, flex: 1, background: "var(--purple)", border: "none", color: "#fff" }} onClick={() => onAutoSaving(p, st.perMonth, plan)}>
+            🎯 {plan ? `Ajuster le versement auto à ${fmt(st.perMonth)}` : `Versement auto ${fmt(st.perMonth)} / mois`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving }) {
   const { cagnottes, transactions } = data;
   const curM = currentYM();
   const curY = new Date().getFullYear().toString();
@@ -65,6 +133,19 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
           </div>
         ))}
       </div>
+
+      {/* ── Projets avec échéance (v1.47.0) ── */}
+      {onNewProject && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em", margin: "4px 0 6px 2px" }}>🎯 Projets</div>
+          {(data.projects || []).map(p => (
+            <ProjectCard key={p.id} project={p} data={data} onEdit={onEditProject} onDelete={onDeleteProject} onAutoSaving={onProjectAutoSaving} />
+          ))}
+          <button onClick={onNewProject} style={{ width: "100%", padding: 11, borderRadius: 12, border: "1.5px dashed var(--border)", background: "none", color: "var(--text2)", fontSize: ".72rem", fontWeight: 700, cursor: "pointer" }}>
+            ＋ Nouveau projet
+          </button>
+        </div>
+      )}
 
       {/* ── Boutons ── */}
       <div className="grid-2" style={{ marginBottom: 12 }}>

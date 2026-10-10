@@ -480,11 +480,15 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
       const d  = new Date(now.getFullYear(), now.getMonth() + i, 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
+      // v1.46.2 : respecte début (startYM), pause en cours et pauses passées
+      // — comme partout ailleurs (avant : un frais en pause restait projeté)
       const fixExp = (fixedExpenses || []).reduce((s, f) => {
+        if (!isActiveForMonth(f, ym)) return s;
         const ov = f.monthlyOverrides?.[ym];
         return s + ((ov?.amount ?? f.amount) || 0);
       }, 0);
       const fixInc = (fixedIncomes || []).reduce((s, f) => {
+        if (!isActiveForMonth(f, ym)) return s;
         const ov = f.monthlyOverrides?.[ym];
         return s + ((ov?.amount ?? f.amount) || 0);
       }, 0);
@@ -716,8 +720,13 @@ const normName = n => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/
 
 export function groceryCategoryIds(categories, settings) {
   const valid = new Set((categories || []).map(c => c.id));
-  if (Array.isArray(settings?.categoryIds)) return settings.categoryIds.filter(id => valid.has(id));
-  return (categories || []).filter(c => normName(c.name) === "courses").map(c => c.id);
+  const base = Array.isArray(settings?.categoryIds)
+    ? settings.categoryIds.filter(id => valid.has(id))
+    : (categories || []).filter(c => normName(c.name) === "courses").map(c => c.id);
+  // v1.47.0 : une catégorie choisie inclut ses sous-catégories (Courses › Drive…)
+  const out = new Set(base);
+  (categories || []).forEach(c => { if (c.parentId && out.has(c.parentId)) out.add(c.id); });
+  return [...out];
 }
 
 export function computeGroceryBudget(transactions, categories, settings, now = new Date()) {
@@ -763,4 +772,179 @@ export function computeGroceryBudget(transactions, categories, settings, now = n
 export function useGroceryBudget(transactions, categories, settings) {
   return useMemo(() => computeGroceryBudget(transactions, categories, settings),
     [transactions, categories, settings]);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Sous-catégories — v1.47.0
+//  Une catégorie peut avoir un parentId (un seul niveau). Les opérations
+//  gardent leur categoryId (parent OU sous-catégorie) ; les totaux par
+//  catégorie additionnent les sous-catégories dans leur parent.
+// ─────────────────────────────────────────────────────────────────
+/** Id de la catégorie principale (elle-même si pas de parent valide) */
+export function catRootId(categories, id) {
+  const c = (categories || []).find(x => x.id === id);
+  if (c?.parentId && (categories || []).some(x => x.id === c.parentId)) return c.parentId;
+  return id;
+}
+/** [id, ...ids de ses sous-catégories] */
+export function catFamilyIds(categories, id) {
+  return [id, ...(categories || []).filter(c => c.parentId === id).map(c => c.id)];
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  categoryUsage — v1.47.0 : tout ce qui est rattaché à une catégorie,
+//  affiché AVANT sa suppression (protection contre les orphelins).
+// ─────────────────────────────────────────────────────────────────
+export function categoryUsage(data, id) {
+  const cnt = list => (list || []).filter(x => x.categoryId === id).length;
+  const fixes = (data.fixedExpenses || []).filter(f => f.categoryId === id);
+  return {
+    transactions:  cnt(data.transactions),
+    fixedExpenses: fixes.length,
+    fixedNames:    fixes.map(f => f.name),
+    fixedIncomes:  cnt(data.fixedIncomes),
+    recurring:     cnt(data.recurringTemplates),
+    scheduled:     cnt(data.scheduledTransactions),
+    quickTemplates: cnt(data.quickTemplates),
+    offAccount:    cnt(data.offAccountEntries),
+    provisional:   cnt(data.provisionalExpenses),
+    threshold:     (data.categoryThresholds || {})[id] || 0,
+    grocery:       Array.isArray(data.groceryBudget?.categoryIds) && data.groceryBudget.categoryIds.includes(id),
+    linked:        (data.categories || []).filter(c => c.linkedToId === id).map(c => c.name),
+    children:      (data.categories || []).filter(c => c.parentId === id),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  computeMonthRecap — v1.47.0 : « Clôture du mois »
+//  Bilan d'un mois terminé (ym) : dépenses/revenus/épargne comparés à la
+//  moyenne des 3 mois précédents, solde de fin de mois, catégories qui
+//  ont le plus bougé, budgets (courses, tags), ce qui reste à pointer.
+//  Dépenses/revenus = opérations du mois + frais/revenus fixes actifs.
+// ─────────────────────────────────────────────────────────────────
+function prevYMs(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(y, m - 2 - i, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+}
+function monthFlows(data, ym) {
+  const txs = (data.transactions || []).filter(t => (t.date || "").startsWith(ym));
+  const sum = f => txs.filter(f).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const exp = sum(t => t.type === "expense") + effectiveFixesForMonth(data.fixedExpenses || [], ym);
+  const inc = sum(t => t.type === "income") + effectiveIncomesForMonth(data.fixedIncomes || [], ym);
+  const sav = sum(t => t.type === "epargne") - sum(t => t.type === "decagnottage");
+  return { exp, inc, sav, txs };
+}
+function catSpend(data, ym) {
+  const map = {};
+  const add = (id, a) => { const k = id ? catRootId(data.categories, id) : "__none__"; map[k] = (map[k] || 0) + a; };
+  (data.transactions || []).forEach(t => { if (t.type === "expense" && (t.date || "").startsWith(ym)) add(t.categoryId, parseFloat(t.amount) || 0); });
+  (data.fixedExpenses || []).forEach(f => {
+    if (!isActiveForMonth(f, ym)) return;
+    add(f.categoryId, (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+  });
+  return map;
+}
+/** Solde « brut » au dernier jour du mois (même logique que la courbe de la hero card) */
+function endOfMonthBalance(data, ym) {
+  const end = `${ym}-31`;
+  const txs = data.transactions || [];
+  let bal = 0;
+  txs.forEach(t => {
+    if (!t.date || t.date > end) return;
+    const a = parseFloat(t.amount) || 0;
+    if (isIncome(t.type)) bal += a;
+    else if (t.type === "expense" || t.type === "epargne") bal -= a;
+    else if (t.type === "balance_adjustment") bal += isIncomeDirection(t) ? a : -a;
+  });
+  if (txs.length) {
+    const start = txs.reduce((m, t) => (t.date < m ? t.date : m), txs[0].date).slice(0, 7);
+    monthRange(start, ym).forEach(m => {
+      bal -= effectiveFixesForMonth(data.fixedExpenses || [], m);
+      bal += effectiveIncomesForMonth(data.fixedIncomes || [], m);
+    });
+  }
+  return bal;
+}
+
+export function computeMonthRecap(data, ym) {
+  const cur = monthFlows(data, ym);
+  const firstYM = (data.transactions || []).reduce((m, t) => (t.date && t.date < m ? t.date : m), "9999").slice(0, 7);
+  const prev = prevYMs(ym, 3).filter(m => m >= firstYM);
+  const prevFlows = prev.map(m => monthFlows(data, m));
+  const avg = k => prevFlows.length ? prevFlows.reduce((s, f) => s + f[k], 0) / prevFlows.length : null;
+  const pct = (v, a) => (a && a > 0 ? Math.round((v - a) / a * 100) : null);
+
+  // Catégories qui ont le plus bougé (vs moyenne des mois précédents, ≥ 15 € d'écart)
+  const curCats = catSpend(data, ym);
+  const prevCats = prev.map(m => catSpend(data, m));
+  const keys = new Set([...Object.keys(curCats), ...prevCats.flatMap(o => Object.keys(o))]);
+  const movers = [...keys].filter(k => k !== "__none__").map(k => {
+    const a = prevCats.length ? prevCats.reduce((s, o) => s + (o[k] || 0), 0) / prevCats.length : 0;
+    const v = curCats[k] || 0;
+    return { catId: k, amount: v, avg: a, diff: v - a, pct: a > 0 ? Math.round((v - a) / a * 100) : null };
+  }).filter(x => Math.abs(x.diff) >= 15 && (x.avg > 0 || x.amount > 0))
+    .sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff)).slice(0, 3);
+
+  const [y, m] = ym.split("-").map(Number);
+  const lastDay = new Date(y, m, 0);
+  const grocery = computeGroceryBudget(data.transactions, data.categories, data.groceryBudget, lastDay);
+  const tagBudgets = computeTagBudgets(data.tags, data.transactions, ym).filter(b => b.period === "month");
+
+  const unpointedTx = cur.txs.filter(t => isPointable(t.type) && !t.pointed).length;
+  const unpointedFix = (data.fixedExpenses || []).filter(f => isActiveForMonth(f, ym) && !f.pointedMonths?.[ym]).length
+                     + (data.fixedIncomes || []).filter(f => isActiveForMonth(f, ym) && !f.pointedMonths?.[ym]).length;
+  const cheques = pendingCheques(data.transactions);
+  const endBal = endOfMonthBalance(data, ym);
+  const prevYM = prevYMs(ym, 1)[0];
+  const startBal = prevYM >= firstYM ? endOfMonthBalance(data, prevYM) : null;
+
+  return {
+    ym, monthsCompared: prev.length,
+    expenses: cur.exp, expensesAvg: avg("exp"), expensesPct: pct(cur.exp, avg("exp")),
+    incomes: cur.inc, incomesAvg: avg("inc"), incomesPct: pct(cur.inc, avg("inc")),
+    savings: cur.sav,
+    savingsCags: new Set(cur.txs.filter(t => t.type === "epargne").map(t => t.targetCagId)).size,
+    endBalance: endBal, balanceDelta: startBal == null ? null : endBal - startBal,
+    movers, grocery, tagBudgets,
+    unpointed: unpointedTx + unpointedFix,
+    cheques: cheques.length, oldestChequeDays: cheques[0]?.age ?? null,
+    hasData: cur.txs.length > 0 || cur.exp > 0 || cur.inc > 0,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  computeProjectStatus — v1.47.0 : projet avec échéance
+//  Mis de côté = solde de la cagnotte liée ; dépensé = dépenses portant
+//  le tag lié. Rythme régulier entre la création et l'échéance : le
+//  « prévu à ce jour » sert à dire en avance / dans les temps / en retard.
+// ─────────────────────────────────────────────────────────────────
+export function computeProjectStatus(p, data, today = todayISO()) {
+  const cag = (data.cagnottes || []).find(c => c.id === p.cagId) || null;
+  const tag = (data.tags || []).find(t => t.id === p.tagId) || null;
+  const target = parseFloat(p.target) || 0;
+  const saved = cag ? (parseFloat(cag.current) || 0) : 0;
+  const tagTx = tag ? (data.transactions || []).filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id)) : [];
+  const spent = tagTx.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const start = p.createdAt || today;
+  const deadline = p.deadline || today;
+  const totalDays = Math.max(1, daysBetweenISO(start, deadline));
+  const elapsed = Math.min(totalDays, Math.max(0, daysBetweenISO(start, today)));
+  const startSaved = Math.min(target, parseFloat(p.startSaved) || 0);
+  const expected = Math.round((startSaved + (target - startSaved) * elapsed / totalDays) * 100) / 100;
+  const [ty, tm] = deadline.split("-").map(Number);
+  const [ny, nm] = today.split("-").map(Number);
+  const monthsLeft = (ty - ny) * 12 + (tm - nm);
+  const remaining = Math.max(0, Math.round((target - saved) * 100) / 100);
+  const perMonth = remaining > 0 ? Math.ceil(remaining / Math.max(1, monthsLeft) * 100) / 100 : 0;
+  const tol = target * 0.02;
+  const status = saved >= target ? "done"
+    : today > deadline ? "late-deadline"
+    : saved >= expected + tol ? "ahead"
+    : saved >= expected - tol ? "ontrack" : "behind";
+  return { cag, tag, target, saved, spent, spentCount: tagTx.length, expected, monthsLeft: Math.max(0, monthsLeft), remaining, perMonth, status,
+    savedPct: target > 0 ? Math.min(100, saved / target * 100) : 0, expectedPct: target > 0 ? Math.min(100, expected / target * 100) : 0,
+    spentPct: target > 0 ? Math.min(100, spent / target * 100) : 0 };
 }

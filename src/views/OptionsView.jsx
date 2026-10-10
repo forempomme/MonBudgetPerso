@@ -773,32 +773,53 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l])=>(
             <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={()=>setCatFilter(k)}>{l}</div>
           ))}
-          <button onClick={onNewCat} style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:4, background:"var(--accent)", border:"none", borderRadius:20, padding:"6px 14px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation" }}>
+          <button onClick={() => onNewCat()} style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:4, background:"var(--accent)", border:"none", borderRadius:20, padding:"6px 14px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation" }}>
             ＋ Créer
           </button>
         </div>
-        <div className="cat-grid">
-          {filtered.length === 0
-            ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" style={{ gridColumn:"1/-1" }} />
-            : filtered.map(c => {
-                const usage    = catUsage[c.id] || 0;
+        {/* v1.47.0 : arbre catégories principales → sous-catégories */}
+        {filtered.length === 0
+          ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" />
+          : (() => {
+              const isTop = c => !c.parentId || !data.categories.some(p => p.id === c.parentId);
+              const kids  = id => filtered.filter(c => c.parentId === id);
+              const btn = { background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"6px 9px", color:"var(--text2)", fontSize:".66rem", cursor:"pointer", touchAction:"manipulation", flexShrink:0 };
+              const row = (c, child) => {
+                const own = catUsage[c.id] || 0;
+                const total = own + (child ? 0 : kids(c.id).reduce((s, k) => s + (catUsage[k.id] || 0), 0));
+                const nk = child ? 0 : kids(c.id).length;
                 const linkedTo = data.categories.find(x => x.id === c.linkedToId);
                 return (
-                  <div key={c.id} className="cat-card-opt" onClick={() => onEditCat(c.id)}>
-                    <div style={{ position:"absolute", top:5, left:5, width:6, height:6, borderRadius:"50%", background:c.type==="expense"?"var(--danger)":"var(--success)" }} />
-                    <div style={{ position:"absolute", top:4, right:4, fontSize:".48rem", fontWeight:800, lineHeight:1, color:usage===0?"var(--danger)":"var(--text3)", background:usage===0?"var(--danger-glow)":"var(--surface3)", padding:"2px 4px", borderRadius:4 }}>
-                      {usage===0?"✕":usage}
-                    </div>
-                    <span style={{ fontSize:"1.05rem", lineHeight:1, marginTop:6 }}>{c.icon}</span>
-                    <span style={{ fontSize:".6rem", fontWeight:700, wordBreak:"break-word", whiteSpace:"normal", textAlign:"center", lineHeight:1.3, width:"100%", padding:"0 3px" }}>{c.name}</span>
-                    {linkedTo && <span style={{ fontSize:".46rem", color:"var(--success)", background:"rgba(104,212,152,.1)", padding:"1px 4px", borderRadius:3, fontWeight:700, lineHeight:1.6 }}>🔗</span>}
-                    <button className="btn-action btn-del" style={{ fontSize:".68rem", padding:"2px 6px", marginTop:2, lineHeight:1.4, minWidth:24, minHeight:24 }}
-                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteCat(c.id);}} onClick={e=>e.stopPropagation()}>✕</button>
+                  <div key={c.id} style={{ display:"flex", alignItems:"center", gap:9, padding: child ? "9px 12px 9px 30px" : "11px 12px",
+                    borderTop:"1px solid var(--border-soft)", background: child ? "rgba(176,144,224,.03)" : "transparent" }}>
+                    {child && <span style={{ color:"var(--text3)", fontSize:".7rem", marginLeft:-14 }}>└</span>}
+                    <span style={{ width:7, height:7, borderRadius:"50%", background:c.type==="expense"?"var(--danger)":"var(--success)", flexShrink:0 }} />
+                    <span style={{ fontSize: child ? ".95rem" : "1.1rem" }}>{c.icon}</span>
+                    <span style={{ flex:1, minWidth:0 }}>
+                      <span style={{ display:"block", fontSize: child ? ".72rem" : ".78rem", fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {c.name}{linkedTo && <span style={{ fontSize:".55rem", color:"var(--success)", marginLeft:5 }}>🔗</span>}
+                      </span>
+                      <span style={{ display:"block", fontSize:".58rem", color: total === 0 ? "var(--danger)" : "var(--text3)" }}>
+                        {total === 0 ? "Jamais utilisée" : `${total} opération${total > 1 ? "s" : ""}`}{nk ? ` · ${nk} sous-catégorie${nk > 1 ? "s" : ""}` : ""}
+                      </span>
+                    </span>
+                    {!child && <button style={btn} onClick={() => onNewCat(c.id)}>＋ sous</button>}
+                    <button style={btn} onClick={() => onEditCat(c.id)}>✏️</button>
+                    <button style={{ ...btn, color:"var(--danger)" }}
+                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteCat(c.id);}}
+                      onClick={()=>{ if (!("ontouchstart" in window)) onDeleteCat(c.id); }}>🗑</button>
                   </div>
                 );
-              })
-          }
-        </div>
+              };
+              return (
+                <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
+                  {filtered.filter(isTop).map(c => (
+                    <div key={c.id}>{row(c, false)}{kids(c.id).map(k => row(k, true))}</div>
+                  ))}
+                </div>
+              );
+            })()
+        }
       </Sheet>
 
       {/* 🔗 Liaisons */}

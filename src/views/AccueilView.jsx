@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceBreakdown, useGroceryBudget, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 
@@ -401,6 +401,8 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
               if (isIncome(t.type))          balPrev += a;
               else if (t.type === "expense") balPrev -= a;
               else if (t.type === "epargne") balPrev -= a;
+              // v1.46.2 : opération d'équilibre (+/−) comptée comme dans le solde actuel
+              else if (t.type === "balance_adjustment") balPrev += isIncomeDirection(t) ? a : -a;
             });
             // Soustraire les fixes et ajouter les revenus fixes pour chaque mois
             // jusqu'au mois précédent inclus (même logique que useBalance, via
@@ -446,6 +448,7 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                 if (isIncome(t.type))          bal += a;
                 else if (t.type === "expense") bal -= a;
                 else if (t.type === "epargne") bal -= a;
+                else if (t.type === "balance_adjustment") bal += isIncomeDirection(t) ? a : -a;
               });
               if (transactions.length > 0) {
                 const earliest = transactions.reduce((mn, t) => t.date < mn ? t.date : mn, transactions[0].date);

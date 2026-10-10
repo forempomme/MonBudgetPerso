@@ -103,6 +103,9 @@ export const A = /** @type {const} */ ({
   DELETE_OFF_ACCOUNT:       "DELETE_OFF_ACCOUNT",
   CASH_CHEQUE:              "CASH_CHEQUE",
   SAVE_GROCERY_BUDGET:      "SAVE_GROCERY_BUDGET",
+  MARK_MONTH_RECAP:         "MARK_MONTH_RECAP",
+  SAVE_PROJECT:             "SAVE_PROJECT",
+  DELETE_PROJECT:           "DELETE_PROJECT",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
   RESET:               "RESET",
 });
@@ -143,6 +146,8 @@ export function withPauseHistory(old, next, curYM = currentYM()) {
 // ─────────────────────────────────────────────────────────────────
 /** @type {AppData} */
 export const DEFAULT_DATA = {
+  // Projets avec échéance (v1.47.0) : relient une cagnotte et un tag
+  projects: [],
   // Budget courses (v1.46.0) — informatif, n'entre dans aucun solde.
   // categoryIds null = catégories nommées « Courses ».
   groceryBudget: { enabled: true, categoryIds: null, months: 2 },
@@ -250,6 +255,7 @@ export function normalizeData(saved) {
       .map(st => st.id === "tr" && st.trackBalance === undefined ? { ...st, trackBalance: true } : st),
     offAccountEntries: src.offAccountEntries || [],
     groceryBudget: { ...DEFAULT_DATA.groceryBudget, ...(src.groceryBudget || {}) },
+    projects: src.projects || [],
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -552,7 +558,16 @@ export function reducer(state, action) {
 
     // ── Categories ────────────────────────────────────────────────
     case A.SAVE_CATEGORY: {
-      const { cat } = action;
+      // v1.47.0 : un seul niveau de sous-catégories — une catégorie qui a
+      // déjà des sous-catégories ne peut pas devenir elle-même sous-catégorie.
+      let { cat } = action;
+      if ("parentId" in cat) {
+        const hasChildren = cat.id && state.categories.some(c => c.parentId === cat.id);
+        const parent = state.categories.find(c => c.id === cat.parentId);
+        if (!cat.parentId || hasChildren || !parent || parent.parentId || parent.id === cat.id) {
+          const { parentId, ...rest } = cat; cat = { ...rest, parentId: undefined };
+        }
+      }
       if (cat.id) {
         return {
           ...state,
@@ -567,11 +582,55 @@ export function reducer(state, action) {
       };
     }
 
-    case A.DELETE_CATEGORY:
+    case A.DELETE_CATEGORY: {
+      // v1.47.0 : suppression protégée — tout ce qui est rattaché est
+      // déplacé vers `moveTo` (ou laissé sans catégorie si moveTo absent).
+      // Avant : seules la catégorie disparaissait, les opérations gardaient
+      // un categoryId orphelin.
+      const { id } = action;
+      const cats = state.categories || [];
+      const target = action.moveTo && action.moveTo !== id ? cats.find(c => c.id === action.moveTo) : null;
+      const to = target ? target.id : "";
+      const fix = list => (list || []).map(x => x.categoryId === id ? { ...x, categoryId: to } : x);
+      // Les sous-catégories suivent : elles passent sous la catégorie principale
+      // de la cible, ou redeviennent principales sans cible.
+      const newParent = target ? (target.parentId && target.parentId !== id ? target.parentId : target.id) : null;
+      const categories = cats.filter(c => c.id !== id).map(c => {
+        let n = c;
+        if (c.parentId === id) {
+          n = { ...n };
+          if (newParent && newParent !== c.id) n.parentId = newParent; else delete n.parentId;
+        }
+        if (c.linkedToId === id) {
+          n = { ...n };
+          if (to && to !== c.id) n.linkedToId = to; else delete n.linkedToId;
+        }
+        return n;
+      });
+      const thresholds = { ...(state.categoryThresholds || {}) };
+      if (thresholds[id]) {
+        if (to && !thresholds[to]) thresholds[to] = thresholds[id];
+        delete thresholds[id];
+      }
+      const gb = state.groceryBudget;
+      const groceryBudget = gb && Array.isArray(gb.categoryIds) && gb.categoryIds.includes(id)
+        ? { ...gb, categoryIds: [...new Set(gb.categoryIds.map(x => x === id ? to : x).filter(Boolean))] }
+        : gb;
       return {
         ...state,
-        categories: state.categories.filter(c => c.id !== action.id),
+        categories,
+        transactions:          fix(state.transactions),
+        fixedExpenses:         fix(state.fixedExpenses),
+        fixedIncomes:          fix(state.fixedIncomes),
+        recurringTemplates:    fix(state.recurringTemplates),
+        scheduledTransactions: fix(state.scheduledTransactions),
+        quickTemplates:        fix(state.quickTemplates),
+        offAccountEntries:     fix(state.offAccountEntries),
+        provisionalExpenses:   fix(state.provisionalExpenses),
+        categoryThresholds:    thresholds,
+        groceryBudget,
       };
+    }
 
     // ── Provisional expenses ──────────────────────────────────────
     case A.SAVE_PROVISIONAL: {
@@ -622,6 +681,36 @@ export function reducer(state, action) {
       };
 
     // Encaissement d'un chèque à une date choisie (v1.43.0)
+    case A.SAVE_PROJECT: {
+      // v1.47.0 : crée au besoin la cagnotte et/ou le tag du projet (newCag /
+      // newTag) et les relie au projet dans la même action.
+      let { project, newCag, newTag } = action;
+      let cagnottes = state.cagnottes, tags = state.tags || [];
+      if (newCag) {
+        const id = uid("cg");
+        cagnottes = [...cagnottes, { ...newCag, id }];
+        project = { ...project, cagId: id };
+      }
+      if (newTag) {
+        const id = uid("tag");
+        tags = [...tags, { ...newTag, id }];
+        project = { ...project, tagId: id };
+      }
+      const list = state.projects || [];
+      const projects = project.id && list.some(p => p.id === project.id)
+        ? list.map(p => p.id === project.id ? { ...p, ...project } : p)
+        : [...list, { ...project, id: uid("pj") }];
+      return { ...state, cagnottes, tags, projects };
+    }
+
+    case A.DELETE_PROJECT:
+      // La cagnotte et le tag sont conservés (l'argent et l'historique restent)
+      return { ...state, projects: (state.projects || []).filter(p => p.id !== action.id) };
+
+    case A.MARK_MONTH_RECAP:
+      // v1.47.0 : mois (YYYY-MM) où la clôture a déjà été affichée → une seule fois
+      return { ...state, lastMonthRecapShown: action.ym };
+
     case A.SAVE_GROCERY_BUDGET:
       return { ...state, groceryBudget: { ...(state.groceryBudget || DEFAULT_DATA.groceryBudget), ...action.settings } };
 

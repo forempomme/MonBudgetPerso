@@ -191,7 +191,9 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
   const [filter,   setFilter]   = useState("all");
   const [sort,     setSort]     = useState("date");
   const [catId,    setCatId]    = useState("");
-  const [viewMode, setViewMode] = useState("list");
+  const [viewMode, setViewMode] = useState("type");   // v1.47.0 : « Par type » par défaut
+  const [openTypes, setOpenTypes] = useState({ expense: true });
+  const [closedWeeks, setClosedWeeks] = useState({});
   const [calSelectedDay, setCalSelectedDay] = useState(null);
   const [minAmt,   setMinAmt]   = useState("");
   const [maxAmt,   setMaxAmt]   = useState("");
@@ -381,6 +383,121 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
 
+  // Cartes frais fixes / revenus fixes du mois — partagées par Liste et Par type
+  const renderFixesCard = () => (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--warning)", textTransform: "uppercase", letterSpacing: ".08em" }}>📌 Frais fixes du mois</div>
+              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils débitent sur ton compte</div>
+            </div>
+            <span style={{ fontSize: ".62rem", color: monthFixes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
+              {monthFixes.filter(f => f.pointedMonths?.[month]).length}/{monthFixes.length}
+            </span>
+          </div>
+          {(pointFilter === "unpointed"
+            ? monthFixes.filter(f => !f.pointedMonths?.[month])
+            : monthFixes
+          ).length === 0 && pointFilter === "unpointed"
+            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les frais fixes sont pointés</div>
+            : (pointFilter === "unpointed"
+                ? monthFixes.filter(f => !f.pointedMonths?.[month])
+                : monthFixes
+              ).map(f => {
+            const cat = (data.categories || []).find(c => c.id === f.categoryId);
+            const ov  = f.monthlyOverrides?.[month];  // override du mois si existe
+            return (
+              <PointRow key={f.id}
+                item={{
+                  ...f,
+                  name:        ov?.name   ?? f.name,
+                  amount:      ov?.amount ?? f.amount,
+                  cat,
+                  date:        null,
+                  pointed:     !!f.pointedMonths?.[month],
+                  isOverridden: !!ov,
+                }}
+                onToggle={handleTogglePointFix}
+                onEditFixed={handleOverrideFix}
+                isFixed={true} />
+            );
+          })}
+          <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
+            <span style={{ color: "var(--text3)" }}>Total fixes</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+(f.amount||0), 0))}</span>
+          </div>
+        </div>
+  );
+  const renderIncomesCard = () => (
+        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--success)", textTransform: "uppercase", letterSpacing: ".08em" }}>💰 Revenus fixes du mois</div>
+              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils créditent sur ton compte</div>
+            </div>
+            <span style={{ fontSize: ".62rem", color: monthIncomes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
+              {monthIncomes.filter(f => f.pointedMonths?.[month]).length}/{monthIncomes.length}
+            </span>
+          </div>
+          {(pointFilter === "unpointed"
+            ? monthIncomes.filter(f => !f.pointedMonths?.[month])
+            : monthIncomes
+          ).length === 0 && pointFilter === "unpointed"
+            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les revenus fixes sont pointés</div>
+            : (pointFilter === "unpointed"
+                ? monthIncomes.filter(f => !f.pointedMonths?.[month])
+                : monthIncomes
+              ).map(f => {
+            const cat = (data.categories || []).find(c => c.id === f.categoryId);
+            const ov  = f.monthlyOverrides?.[month];
+            return (
+              <PointRow key={f.id}
+                item={{
+                  ...f,
+                  type:        "income",
+                  name:        ov?.name   ?? f.name,
+                  amount:      ov?.amount ?? f.amount,
+                  cat,
+                  date:        null,
+                  pointed:     !!f.pointedMonths?.[month],
+                  isOverridden: !!ov,
+                }}
+                onToggle={handleTogglePointIncome}
+                isFixed={true} />
+            );
+          })}
+          <div style={{ padding: "8px 14px", background: "rgba(104,212,152,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
+            <span style={{ color: "var(--text3)" }}>Total revenus fixes</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)" }}>+{fmt(monthIncomes.reduce((s,f) => s+((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0))}</span>
+          </div>
+        </div>
+  );
+
+  // Ligne « hors compte » (v1.42.0) — partagée par les vues Liste et Par type
+  const renderOffRow = e => {
+                      const cat = categories.find(c => c.id === e.categoryId);
+                      const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
+                      return (
+                        <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{
+                          display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer",
+                          borderBottom: "1px solid var(--border-soft)", background: "var(--tr-glow)",
+                          borderLeft: "2px dashed var(--tr-border)",
+                        }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{cat?.icon || st?.icon || "🎫"}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: ".76rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
+                            <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 2 }}>
+                              <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>{cat?.name ?? "—"} · {e.date.slice(8)}/{e.date.slice(5, 7)}</span>
+                              <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 8, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)", border: "1px solid var(--tr-border)" }}>{st?.icon || "🎫"} Hors compte</span>
+                            </div>
+                          </div>
+                          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</div>
+                        </div>
+                      );
+  };
+
+
+
   return (
     <div>
       {/* ── 5. Navigation mois ── */}
@@ -469,7 +586,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
         {(() => {
           const activeCount = [
             filter !== "all", pointFilter !== "all", tagFilter !== "", hideOff,
-            sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "list",
+            sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "type",
           ].filter(Boolean).length;
           const activePills = [
             filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
@@ -478,8 +595,9 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
             tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
             sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
             (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
-            viewMode !== "list"    && { label: "📊 Catégories", clear: () => setViewMode("list") },
-            viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("list") },
+            viewMode === "list"     && { label: "📋 Liste", clear: () => setViewMode("type") },
+            viewMode === "cats"     && { label: "📊 Catégories", clear: () => setViewMode("type") },
+            viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("type") },
           ].filter(Boolean);
 
           return (
@@ -625,8 +743,8 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                   {/* Vue */}
                   <div>
                     <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Vue</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
-                      {[["list","📋 Liste"],["cats","📊 Catégories"],["calendar","📅 Calendrier"]].map(([k,l]) => (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+                      {[["type","🗂️ Par type"],["list","📋 Liste"],["cats","📊 Catégories"],["calendar","📅 Calendrier"]].map(([k,l]) => (
                         <button key={k} onClick={() => setViewMode(k)} style={{
                           background: viewMode===k ? "var(--accent-glow)" : "transparent",
                           border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
@@ -647,7 +765,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
       {/* ── 6. Vue Catégories ── */}
       {viewMode === "cats" && (
         <CatBreakdown txs={filtered} allTxs={transactions.filter(t => t.date.startsWith(month))} categories={categories}
-          onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("list"); }} />
+          onSelectCat={id => { setCatId(id); setFilter("expense"); setViewMode("type"); }} />
       )}
 
       {/* ── 6b. Vue Calendrier ── */}
@@ -772,7 +890,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
       })()}
 
       {/* ── Filtre catégorie actif ── */}
-      {viewMode === "list" && catId && (() => {
+      {(viewMode === "list" || viewMode === "type") && catId && (() => {
         const activeCat = categories.find(c => c.id === catId);
         return activeCat ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)" }}>
@@ -780,6 +898,102 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
             <button onClick={() => setCatId("")} style={{ background: "transparent", border: "none", color: "var(--accent)", fontSize: ".8rem", cursor: "pointer" }}>✕</button>
           </div>
         ) : null;
+      })()}
+
+      {/* ── Vue « Par type » (v1.47.0, variante B) : type → semaine ── */}
+      {viewMode === "type" && (() => {
+        const rowsOf = list => pointFilter === "all"
+          ? list.map(t => (
+              <SwipeRow key={t.id} t={t} categories={categories} cagnottes={cagnottes}
+                onEdit={onEditTrans} onDelete={onDeleteTrans} onTogglePoint={onTogglePointTx} onDuplicate={onDuplicateTrans}
+                allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []} />
+            ))
+          : list.map(t => (
+              <PointRow key={t.id}
+                item={{ ...t, name: txLabel(t, categories, cagnottes), cat: categories.find(c => c.id === t.categoryId) }}
+                onToggle={onTogglePointTx} onEdit={id => onEditTrans(id)} onDelete={id => onDeleteTrans(id)} />
+            ));
+        const signed = t => (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0);
+        const mLbl = MONTHS_FR[monthIdx].slice(0, 3).toLowerCase() + (MONTHS_FR[monthIdx].length > 4 ? "." : "");
+        const lastDay = new Date(year, monthIdx + 1, 0).getDate();
+        const weekOf = d => { const n = parseInt((d || "").slice(8, 10), 10) || 1; return n <= 7 ? 0 : n <= 14 ? 1 : n <= 21 ? 2 : 3; };
+        const weekLbl = w => [`1–7 ${mLbl}`, `8–14 ${mLbl}`, `15–21 ${mLbl}`, `22–${lastDay} ${mLbl}`][w];
+        const fixesCount = (pointFilter !== "pointed" ? monthFixes.length + monthIncomes.length : 0);
+        const fixesNet = monthIncomes.reduce((s, f) => s + ((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0)
+                       - monthFixes.reduce((s, f) => s + ((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0);
+        const fixesToPoint = monthFixes.filter(f => !f.pointedMonths?.[month]).length + monthIncomes.filter(f => !f.pointedMonths?.[month]).length;
+        const SECTIONS = [
+          { k: "expense", icon: "💸", label: "Dépenses",  color: "var(--danger)",  list: filtered.filter(t => t.type === "expense") },
+          { k: "income",  icon: "💰", label: "Revenus",   color: "var(--success)", list: filtered.filter(t => t.type === "income" || t.type === "dissolution_cagnotte") },
+          { k: "fixed",   icon: "📌", label: "Frais & revenus fixes", color: "#e8944a", fixed: true },
+          { k: "savings", icon: "🐷", label: "Cagnottes", color: "var(--purple)",  list: filtered.filter(t => ["epargne", "decagnottage", "transfer"].includes(t.type)) },
+          { k: "adjust",  icon: "⚖️", label: "Équilibres", color: "var(--sapin)",  list: filtered.filter(t => t.type === "balance_adjustment") },
+          { k: "off",     icon: "🎫", label: "Hors compte", color: "var(--tr)",    off: filteredOff },
+        ];
+        const visible = SECTIONS.filter(sec => sec.fixed ? fixesCount > 0 : sec.off ? sec.off.length > 0 : sec.list.length > 0);
+        if (visible.length === 0) return <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />;
+        return (
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
+              <button onClick={() => setOpenTypes(o => Object.values(o).some(Boolean) ? {} : Object.fromEntries(visible.map(v => [v.k, true])))}
+                style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", fontSize: ".62rem", cursor: "pointer" }}>
+                {Object.values(openTypes).some(Boolean) ? "⊟ Tout replier" : "⊞ Tout déplier"}
+              </button>
+            </div>
+            {visible.map(sec => {
+              const open = !!openTypes[sec.k];
+              const items = sec.fixed ? [] : sec.off ? sec.off : sec.list;
+              const count = sec.fixed ? fixesCount : items.length;
+              const total = sec.fixed ? fixesNet : sec.off ? -items.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : items.reduce((s, t) => s + signed(t), 0);
+              const toPoint = sec.fixed ? fixesToPoint : sec.off ? 0 : items.filter(t => isPointable(t.type) && !t.pointed).length;
+              return (
+                <div key={sec.k} style={{ borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--surface)", marginBottom: 8, overflow: "hidden" }}>
+                  <div role="button"
+                    onTouchEnd={e => { if (touchMoved()) return; e.preventDefault(); setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
+                    onClick={() => { if (!("ontouchstart" in window)) setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", borderLeft: `4px solid ${sec.color}`, cursor: "pointer", touchAction: "manipulation" }}>
+                    <span style={{ fontSize: "1.1rem" }}>{sec.icon}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: ".82rem", fontWeight: 700 }}>{sec.label}</span>
+                      <span style={{ display: "block", fontSize: ".6rem", color: "var(--text3)" }}>
+                        {count} opération{count > 1 ? "s" : ""}{toPoint > 0 ? ` · ${toPoint} à pointer` : ""}{sec.off ? " · hors solde" : ""}
+                      </span>
+                    </span>
+                    <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".88rem", color: sec.color, fontVariantNumeric: "tabular-nums" }}>{total >= 0 ? "+" : "−"}{fmt(Math.abs(total))}</span>
+                    <span style={{ fontSize: ".65rem", color: "var(--text3)", transform: open ? "rotate(180deg)" : "none", transition: "transform .2s" }}>▾</span>
+                  </div>
+                  {open && sec.fixed && (
+                    <div style={{ borderTop: "1px solid var(--border-soft)", padding: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {monthFixes.length > 0 && renderFixesCard()}
+                      {monthIncomes.length > 0 && renderIncomesCard()}
+                    </div>
+                  )}
+                  {open && !sec.fixed && [0, 1, 2, 3].map(w => {
+                    const wItems = items.filter(x => weekOf(x.date) === w);
+                    if (wItems.length === 0) return null;
+                    const wk = `${sec.k}-${w}`;
+                    const wOpen = !closedWeeks[wk];
+                    const wTotal = sec.off ? -wItems.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : wItems.reduce((s, t) => s + signed(t), 0);
+                    return (
+                      <div key={w} style={{ borderTop: "1px solid var(--border-soft)" }}>
+                        <div role="button"
+                          onTouchEnd={e => { if (touchMoved()) return; e.preventDefault(); setClosedWeeks(o => ({ ...o, [wk]: !o[wk] })); }}
+                          onClick={() => { if (!("ontouchstart" in window)) setClosedWeeks(o => ({ ...o, [wk]: !o[wk] })); }}
+                          style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px 7px 18px", background: "var(--surface2)", cursor: "pointer", touchAction: "manipulation" }}>
+                          <span style={{ flex: 1, fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Semaine du {weekLbl(w)}</span>
+                          <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{wItems.length} op.</span>
+                          <span style={{ fontSize: ".66rem", fontWeight: 700, fontFamily: "var(--mono)", color: sec.color }}>{wTotal >= 0 ? "+" : "−"}{fmt(Math.abs(wTotal))}</span>
+                          <span style={{ fontSize: ".6rem", color: "var(--text3)", transform: wOpen ? "rotate(180deg)" : "none" }}>▾</span>
+                        </div>
+                        {wOpen && (sec.off ? wItems.map(renderOffRow) : rowsOf(wItems))}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
       })()}
 
       {/* ── Liste avec pointage ── */}
@@ -829,27 +1043,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                             onDelete={id => onDeleteTrans(id)} />
                         ))
                     }
-                    {dayOff.map(e => {
-                      const cat = categories.find(c => c.id === e.categoryId);
-                      const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
-                      return (
-                        <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{
-                          display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer",
-                          borderBottom: "1px solid var(--border-soft)", background: "var(--tr-glow)",
-                          borderLeft: "2px dashed var(--tr-border)",
-                        }}>
-                          <div style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{cat?.icon || st?.icon || "🎫"}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: ".76rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
-                            <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 2 }}>
-                              <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>{cat?.name ?? "—"} · {e.date.slice(8)}/{e.date.slice(5, 7)}</span>
-                              <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 8, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)", border: "1px solid var(--tr-border)" }}>{st?.icon || "🎫"} Hors compte</span>
-                            </div>
-                          </div>
-                          <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</div>
-                        </div>
-                      );
-                    })}
+                    {dayOff.map(renderOffRow)}
                   </div>
                 );
               })}
@@ -859,7 +1053,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
 
       {/* ── Section récurrentes en attente ── */}
       {/* ── Versements auto à confirmer ── */}
-      {viewMode === "list" && !globalSearch && autoSavingsPending.length > 0 && (
+      {(viewMode === "list" || viewMode === "type") && !globalSearch && autoSavingsPending.length > 0 && (
         <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
             <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--purple)", textTransform:"uppercase", letterSpacing:".08em" }}>🎯 Épargnes à confirmer</div>
@@ -893,7 +1087,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
       )}
 
       {/* ── Programmées en attente ce mois ── */}
-      {viewMode === "list" && !globalSearch && scheduledPending.length > 0 && (
+      {(viewMode === "list" || viewMode === "type") && !globalSearch && scheduledPending.length > 0 && (
         <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
             <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--warning)", textTransform:"uppercase", letterSpacing:".08em" }}>📅 Programmées ce mois</div>
@@ -976,95 +1170,10 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
         </div>
 
       {/* ── Section frais fixes ── */}
-      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && (        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--warning)", textTransform: "uppercase", letterSpacing: ".08em" }}>📌 Frais fixes du mois</div>
-              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils débitent sur ton compte</div>
-            </div>
-            <span style={{ fontSize: ".62rem", color: monthFixes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
-              {monthFixes.filter(f => f.pointedMonths?.[month]).length}/{monthFixes.length}
-            </span>
-          </div>
-          {(pointFilter === "unpointed"
-            ? monthFixes.filter(f => !f.pointedMonths?.[month])
-            : monthFixes
-          ).length === 0 && pointFilter === "unpointed"
-            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les frais fixes sont pointés</div>
-            : (pointFilter === "unpointed"
-                ? monthFixes.filter(f => !f.pointedMonths?.[month])
-                : monthFixes
-              ).map(f => {
-            const cat = (data.categories || []).find(c => c.id === f.categoryId);
-            const ov  = f.monthlyOverrides?.[month];  // override du mois si existe
-            return (
-              <PointRow key={f.id}
-                item={{
-                  ...f,
-                  name:        ov?.name   ?? f.name,
-                  amount:      ov?.amount ?? f.amount,
-                  cat,
-                  date:        null,
-                  pointed:     !!f.pointedMonths?.[month],
-                  isOverridden: !!ov,
-                }}
-                onToggle={handleTogglePointFix}
-                onEditFixed={handleOverrideFix}
-                isFixed={true} />
-            );
-          })}
-          <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
-            <span style={{ color: "var(--text3)" }}>Total fixes</span>
-            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+(f.amount||0), 0))}</span>
-          </div>
-        </div>
-      )}
+      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && renderFixesCard()}
 
       {/* ── Section revenus fixes ── */}
-      {viewMode === "list" && monthIncomes.length > 0 && pointFilter !== "pointed" && (
-        <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-          <div style={{ padding: "8px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--success)", textTransform: "uppercase", letterSpacing: ".08em" }}>💰 Revenus fixes du mois</div>
-              <div style={{ fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Pointe-les quand ils créditent sur ton compte</div>
-            </div>
-            <span style={{ fontSize: ".62rem", color: monthIncomes.every(f => f.pointedMonths?.[month]) ? "var(--success)" : "var(--warning)", fontWeight: 800 }}>
-              {monthIncomes.filter(f => f.pointedMonths?.[month]).length}/{monthIncomes.length}
-            </span>
-          </div>
-          {(pointFilter === "unpointed"
-            ? monthIncomes.filter(f => !f.pointedMonths?.[month])
-            : monthIncomes
-          ).length === 0 && pointFilter === "unpointed"
-            ? <div style={{ padding:"12px 14px", fontSize:".7rem", color:"var(--success)", textAlign:"center" }}>✅ Tous les revenus fixes sont pointés</div>
-            : (pointFilter === "unpointed"
-                ? monthIncomes.filter(f => !f.pointedMonths?.[month])
-                : monthIncomes
-              ).map(f => {
-            const cat = (data.categories || []).find(c => c.id === f.categoryId);
-            const ov  = f.monthlyOverrides?.[month];
-            return (
-              <PointRow key={f.id}
-                item={{
-                  ...f,
-                  type:        "income",
-                  name:        ov?.name   ?? f.name,
-                  amount:      ov?.amount ?? f.amount,
-                  cat,
-                  date:        null,
-                  pointed:     !!f.pointedMonths?.[month],
-                  isOverridden: !!ov,
-                }}
-                onToggle={handleTogglePointIncome}
-                isFixed={true} />
-            );
-          })}
-          <div style={{ padding: "8px 14px", background: "rgba(104,212,152,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
-            <span style={{ color: "var(--text3)" }}>Total revenus fixes</span>
-            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)" }}>+{fmt(monthIncomes.reduce((s,f) => s+((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0))}</span>
-          </div>
-        </div>
-      )}
+      {viewMode === "list" && monthIncomes.length > 0 && pointFilter !== "pointed" && renderIncomesCard()}
     </div>
   );
 }

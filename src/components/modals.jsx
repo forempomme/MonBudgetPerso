@@ -241,9 +241,16 @@ function useSideAmounts(initial) {
 //  Champs partagés par la saisie d'une dépense ET la saisie hors compte,
 //  pour qu'ils restent identiques (même menu, mêmes couleurs, mêmes gestes).
 // ─────────────────────────────────────────────────────────────────
-function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", label = "Catégorie", allowNone = true, emptyLabel = "Aucune catégorie", error }) {
+function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", label = "Catégorie", allowNone = true, emptyLabel = "Aucune catégorie", noneLabel = "⊘ Aucune", error }) {
   const [catOpen, setCatOpen] = useState(false);
+  const [drill, setDrill] = useState(null);   // v1.47.0 : catégorie principale dont on affiche les sous-catégories
   const catTouchRef = useRef({ startY: 0, startX: 0, moved: false });
+  // Sous-catégories (v1.47.0) : la grille montre les catégories principales ;
+  // celles qui ont des sous-catégories portent un ▸ et s'ouvrent au tap.
+  const isTop    = c => !c.parentId || !cats.some(p => p.id === c.parentId);
+  const kidsOf   = id => cats.filter(c => c.parentId === id);
+  const drillCat = drill ? cats.find(c => c.id === drill) : null;
+  const shown    = drillCat ? kidsOf(drillCat.id) : cats.filter(isTop);
   return (
     <div style={{ marginBottom: 10 }}>
           <SectionLabel color="var(--purple)">{label}</SectionLabel>
@@ -252,8 +259,8 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
           {/* Trigger */}
           <button
             onTouchStart={e => e.stopPropagation()}
-            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setCatOpen(o => !o); }}
-            onClick={() => { if (!('ontouchstart' in window)) setCatOpen(o => !o); }}
+            onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setDrill(null); setCatOpen(o => !o); }}
+            onClick={() => { if (!('ontouchstart' in window)) { setDrill(null); setCatOpen(o => !o); } }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
               background: catId ? "rgba(176,144,224,.1)" : "rgba(176,144,224,.05)",
@@ -266,6 +273,8 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
             }}>
             {(() => {
               const cat = cats.find(c => c.id === catId);
+              const par = cat?.parentId ? cats.find(p => p.id === cat.parentId) : null;
+              if (cat && par) return <><span style={{ fontSize: "1rem" }}>{par.icon}</span><span style={{ color: "var(--text2)" }}>{par.name}</span><span style={{ color: "var(--text3)" }}>›</span><span style={{ fontSize: "1rem" }}>{cat.icon}</span><span style={{ flex: 1, textAlign: "left" }}>{cat.name}</span></>;
               return cat
                 ? <><span style={{ fontSize: "1rem" }}>{cat.icon}</span><span style={{ flex: 1, textAlign: "left" }}>{cat.name}{cat.sub && <span style={{ color: "var(--text3)", marginLeft: 6 }}>({cat.sub})</span>}</span></>
                 : <span style={{ flex: 1, textAlign: "left", color: "var(--text3)" }}>{emptyLabel}</span>;
@@ -311,7 +320,10 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                 {/* En-tête */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
-                    {label}
+                    {drillCat
+                      ? <><span onClick={() => setDrill(null)} onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setDrill(null); }}
+                          style={{ color: "var(--accent)", cursor: "pointer" }}>‹ {label}</span> › {drillCat.icon} {drillCat.name}</>
+                      : label}
                   </span>
                   <button
                     onTouchStart={e => e.stopPropagation()}
@@ -330,7 +342,21 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
 
                   {/* Aucune */}
-                  {allowNone && <button
+                  {drillCat && (
+                    <button
+                      onTouchStart={e => { e.stopPropagation(); catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false }; }}
+                      onTouchMove={e => { const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY); const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX); if (dy > 6 || dx > 6) catTouchRef.current.moved = true; }}
+                      onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); if (!catTouchRef.current.moved) { document.activeElement?.blur(); onChange(drillCat.id); setCatOpen(false); } }}
+                      onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); onChange(drillCat.id); setCatOpen(false); } }}
+                      style={{
+                        gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 9,
+                        border: `1.5px solid ${catId === drillCat.id ? accentColor : "var(--border)"}`,
+                        background: catId === drillCat.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                        color: catId === drillCat.id ? accentColor : "var(--text2)",
+                        fontSize: ".7rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
+                      }}>{drillCat.icon} Toute la catégorie « {drillCat.name} »</button>
+                  )}
+                  {allowNone && !drillCat && <button
                     onTouchStart={e => {
                       e.stopPropagation();
                       catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false };
@@ -351,9 +377,12 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                       background: !catId ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
                       color: !catId ? accentColor : "var(--text3)",
                       fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
-                    }}>⊘ Aucune</button>}
+                    }}>{noneLabel}</button>}
 
-                  {cats.map(c => (
+                  {shown.map(c => { const hasKids = !drillCat && kidsOf(c.id).length > 0;
+                    const selHere = catId === c.id || (hasKids && kidsOf(c.id).some(k => k.id === catId));
+                    const pick = () => { if (hasKids) { setDrill(c.id); return; } document.activeElement?.blur(); onChange(c.id); setCatOpen(false); };
+                    return (
                     <button key={c.id}
                       onTouchStart={e => {
                         e.stopPropagation();
@@ -366,26 +395,27 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                       }}
                       onTouchEnd={e => {
                         e.stopPropagation(); e.preventDefault();
-                        if (!catTouchRef.current.moved) { document.activeElement?.blur(); onChange(c.id); setCatOpen(false); }
+                        if (!catTouchRef.current.moved) pick();
                       }}
-                      onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); onChange(c.id); setCatOpen(false); } }}
+                      onClick={() => { if (!('ontouchstart' in window)) pick(); }}
                       style={{
                         display: "flex", flexDirection: "column", alignItems: "center",
                         padding: "8px 4px", gap: 4, borderRadius: 10,
-                        border: `1.5px solid ${catId === c.id ? accentColor : "var(--border)"}`,
-                        background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
-                        cursor: "pointer", touchAction: "pan-y",
+                        border: `1.5px solid ${selHere ? accentColor : "var(--border)"}`,
+                        background: selHere ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "var(--surface2)",
+                        cursor: "pointer", touchAction: "pan-y", position: "relative",
                       }}>
+                      {hasKids && <span style={{ position: "absolute", top: 3, right: 5, fontSize: ".55rem", fontWeight: 800, color: accentColor }}>▸</span>}
                       <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
                       <span style={{
                         fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
-                        color: catId === c.id ? accentColor : "var(--text3)",
-                        fontWeight: catId === c.id ? 700 : 400,
+                        color: selHere ? accentColor : "var(--text3)",
+                        fontWeight: selHere ? 700 : 400,
                         maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>{c.name}</span>
                       {c.sub && <span style={{ fontSize: ".5rem", color: "var(--text3)", whiteSpace: "nowrap" }}>{c.sub}</span>}
                     </button>
-                  ))}
+                  ); })}
                 </div>
               </div>
             </>
@@ -1465,13 +1495,20 @@ function CategoryPreview({ icon, name, color }) {
 // ─────────────────────────────────────────────────────────────────
 //  Category modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
-export function CatModal({ editingCat, onSave, onClose }) {
+export function CatModal({ editingCat, categories = [], defaultParentId = null, onSave, onClose }) {
   const toast  = useToast();
+  const presetParent = categories.find(c => c.id === (editingCat?.parentId || defaultParentId));
   const [name,   setName]   = useState(editingCat?.name || "");
   const [icon,   setIcon]   = useState(editingCat?.icon || "");
-  const [type,   setType]   = useState(editingCat?.type || "expense");
+  const [type,   setType]   = useState(editingCat?.type || presetParent?.type || "expense");
+  const [parentId, setParentId] = useState(presetParent?.id || "");
   const [errors, setErrors] = useState({});
   const color = type === "income" ? "var(--success)" : "var(--danger)";
+  // v1.47.0 : sous-catégorie — un seul niveau ; une catégorie qui a déjà des
+  // sous-catégories ne peut pas être rattachée à une autre.
+  const hasChildren = !!editingCat?.id && categories.some(c => c.parentId === editingCat.id);
+  const parentChoices = categories.filter(c => c.type === type && !c.parentId && c.id !== editingCat?.id);
+  const parent = categories.find(c => c.id === parentId);
 
   function handleSave() {
     const e = {};
@@ -1479,21 +1516,260 @@ export function CatModal({ editingCat, onSave, onClose }) {
     if (!name.trim()) e.name = "Nom requis";
     setErrors(e);
     if (Object.keys(e).length) return;
-    onSave({ id: editingCat?.id || null, name: name.trim(), icon: icon.trim(), type });
-    toast(editingCat ? "Catégorie modifiée" : "Catégorie créée");
+    onSave({ id: editingCat?.id || null, name: name.trim(), icon: icon.trim(), type, parentId: hasChildren ? null : (parentId || null) });
+    toast(editingCat ? "Catégorie modifiée" : parentId ? "Sous-catégorie créée" : "Catégorie créée");
   }
 
   return (
-    <Modal onClose={onClose} title={editingCat ? "Modifier la catégorie" : "Nouvelle catégorie"}>
-      <TypeButtons value={type} onChange={setType} options={[
+    <Modal onClose={onClose} title={editingCat ? "Modifier la catégorie" : parentId ? "Nouvelle sous-catégorie" : "Nouvelle catégorie"}>
+      <TypeButtons value={type} locked={!!parentId} onChange={k => { setType(k); setParentId(""); }} options={[
         { k: "expense", emoji: "💸", label: "Dépense", color: "var(--danger)"  },
         { k: "income",  emoji: "💰", label: "Revenu",  color: "var(--success)" },
       ]} />
       <IconNameField icon={icon} name={name} errors={errors} namePlaceholder="Ex : Animaux" iconPlaceholder="🐶"
         onIcon={v => { setIcon(v); setErrors(x => ({ ...x, icon: "" })); }}
         onName={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
-      <CategoryPreview icon={icon} name={name} color={color} />
+      {hasChildren
+        ? <InfoNote>🗂️ Cette catégorie a des sous-catégories : elle reste une catégorie principale.</InfoNote>
+        : <CategoryField label="Rattacher à (optionnel)" cats={parentChoices} catId={parentId} onChange={setParentId}
+            emptyLabel="Aucune — catégorie principale" />}
+      <CategoryPreview icon={icon} name={parent ? `${parent.name} › ${name}` : name} color={color} />
       <FormActions onCancel={onClose} onSave={handleSave} emoji="✓" />
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Suppression protégée d'une catégorie — v1.47.0
+//  Liste tout ce qui y est rattaché et impose un choix : déplacer vers
+//  une autre catégorie (par défaut) ou laisser sans catégorie.
+// ─────────────────────────────────────────────────────────────────
+export function DeleteCategoryModal({ category, categories = [], usage, onConfirm, onClose }) {
+  const sameType = categories.filter(c => c.id !== category.id && c.type === category.type && c.parentId !== category.id);
+  // Pas de cible présélectionnée (évite un déplacement par erreur), sauf pour une
+  // sous-catégorie : sa catégorie principale est la cible logique.
+  const suggested = category.parentId && sameType.some(c => c.id === category.parentId) ? category.parentId : "";
+  const [mode, setMode] = useState("move");
+  const [target, setTarget] = useState(suggested);
+  const u = usage;
+  const lines = [
+    ["💸", "Opérations", u.transactions],
+    ["📌", "Frais fixes", u.fixedExpenses, u.fixedNames.join(", ")],
+    ["💰", "Revenus fixes", u.fixedIncomes],
+    ["🔄", "Récurrentes", u.recurring],
+    ["📅", "Programmées", u.scheduled],
+    ["⚡", "Templates rapides", u.quickTemplates],
+    ["🎫", "Hors compte", u.offAccount],
+    ["🧾", "Frais prévisionnels", u.provisional],
+    ["⚠️", "Seuil d'alerte", u.threshold ? fmt(u.threshold) : 0],
+    ["🛒", "Budget courses", u.grocery ? "oui" : 0],
+    ["🔗", "Liaisons", u.linked.length, u.linked.join(", ")],
+    ["🗂️", "Sous-catégories", u.children.length, u.children.map(c => c.name).join(", ")],
+  ].filter(l => l[2]);
+  const used = lines.length > 0;
+  const tgt = categories.find(c => c.id === target);
+  const radio = on => ({ width: 16, height: 16, borderRadius: "50%", flexShrink: 0, marginTop: 1, boxSizing: "border-box",
+    border: on ? "5px solid var(--accent)" : "2px solid var(--border)" });
+  const optStyle = on => ({ display: "flex", gap: 10, alignItems: "flex-start", padding: 10, borderRadius: 11, marginBottom: 7, cursor: "pointer",
+    border: `1.5px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(112,184,224,.08)" : "transparent" });
+  const canConfirm = !used || mode === "none" || !!tgt;
+
+  return (
+    <Modal onClose={onClose} title={`🗑 Supprimer « ${category.name} » ?`}>
+      {!used
+        ? <InfoNote>Cette catégorie n'est utilisée nulle part : elle peut être supprimée sans risque.</InfoNote>
+        : <>
+            <div style={{ fontSize: ".7rem", color: "var(--text2)", marginBottom: 8 }}>Cette catégorie est utilisée. Voici ce qui y est rattaché :</div>
+            {lines.map(([ic, lbl, n, detail]) => (
+              <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", marginBottom: 5, fontSize: ".72rem" }}>
+                <span>{ic}</span><span>{lbl}</span>
+                {detail && <span style={{ fontSize: ".6rem", color: "var(--text3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{detail}</span>}
+                <b style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>{n}</b>
+              </div>
+            ))}
+            <SectionLabel>Que faire de ces éléments ?</SectionLabel>
+            <div style={optStyle(mode === "move")} onClick={() => setMode("move")}>
+              <span style={radio(mode === "move")} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: ".76rem", fontWeight: 700 }}>Tout déplacer vers…</div>
+                <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "2px 0 7px" }}>
+                  {u.children.length ? "Les sous-catégories suivent et passent sous la catégorie choisie." : "Tout est rattaché à la catégorie choisie."}
+                </div>
+                {mode === "move" && (sameType.length
+                  ? <CategoryField label="" cats={sameType} catId={target} onChange={setTarget} allowNone={false} emptyLabel="Choisir une catégorie" />
+                  : <div style={{ fontSize: ".64rem", color: "var(--danger)" }}>Aucune autre catégorie de ce type.</div>)}
+              </div>
+            </div>
+            <div style={optStyle(mode === "none")} onClick={() => setMode("none")}>
+              <span style={radio(mode === "none")} />
+              <div>
+                <div style={{ fontSize: ".76rem", fontWeight: 700 }}>Laisser sans catégorie</div>
+                <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 2 }}>
+                  {u.transactions ? `Les ${u.transactions} opérations restent mais n'auront plus de catégorie.` : "Les éléments restent sans catégorie."}
+                  {u.children.length ? " Les sous-catégories deviennent des catégories principales." : ""}
+                </div>
+              </div>
+            </div>
+          </>}
+      <div className="grid-2" style={{ marginBottom: 0, marginTop: 10 }}>
+        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
+        <button className="btn" disabled={!canConfirm}
+          style={{ width: "100%", background: "var(--danger)", color: "#fff", opacity: canConfirm ? 1 : .4 }}
+          onClick={() => { if (canConfirm) onConfirm(used && mode === "move" ? target : null); }}>
+          🗑 {used && mode === "move" ? "Déplacer et supprimer" : "Supprimer"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Aperçu avant import — v1.47.0
+//  Montre le contenu du fichier à côté des données actuelles, alerte si
+//  des opérations du téléphone ne sont pas dans le fichier, et propose
+//  (coché par défaut) de sauvegarder les données actuelles d'abord.
+// ─────────────────────────────────────────────────────────────────
+export function summarizeData(d) {
+  const txs = d?.transactions || [];
+  const dates = txs.map(t => t.date).filter(Boolean).sort();
+  return {
+    tx: txs.length,
+    first: dates[0] || null,
+    last: dates[dates.length - 1] || null,
+    fixes: (d?.fixedExpenses || []).length + (d?.fixedIncomes || []).length,
+    cags: (d?.cagnottes || []).length,
+    cats: (d?.categories || []).length,
+    backup: d?.lastBackupDate || null,
+    version: d?.appVersion || null,
+  };
+}
+
+export function ImportPreviewModal({ fileName, fileData, currentData, appVersion, onConfirm, onClose }) {
+  const [backupFirst, setBackupFirst] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const F = summarizeData(fileData), C = summarizeData(currentData);
+  const fileIds = new Set((fileData.transactions || []).map(t => t.id));
+  const lost = (currentData.transactions || []).filter(t => !fileIds.has(t.id)).length;
+  const older = F.last && C.last && F.last < C.last;
+  const dfr = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—";
+  const mfr = iso => iso ? new Date(iso.slice(0, 7) + "-15").toLocaleDateString("fr-FR", { month: "short", year: "numeric" }) : "—";
+  const Col = ({ title, d, ver, dateLbl, dateVal, accent }) => (
+    <div style={{ flex: 1, minWidth: 0, borderRadius: 11, padding: "9px 10px", background: "var(--surface2)", border: `1px solid ${accent ? "rgba(112,184,224,.45)" : "var(--border)"}`, fontSize: ".66rem", lineHeight: 1.75, color: "var(--text2)" }}>
+      <div style={{ fontSize: ".55rem", fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text3)", marginBottom: 3 }}>{title}</div>
+      <div>📅 {dateLbl} <b style={{ color: "var(--text)" }}>{dateVal}</b></div>
+      <div>📱 Version {ver || "inconnue"}</div>
+      <div>💸 <b style={{ color: "var(--text)" }}>{d.tx}</b> opérations</div>
+      <div>🗓️ {mfr(d.first)} → {mfr(d.last)}</div>
+      <div>📌 {d.fixes} fixes · 🐷 {d.cags} cagnottes</div>
+      <div>🏷️ {d.cats} catégories</div>
+    </div>
+  );
+  return (
+    <Modal onClose={onClose} title="📥 Importer cette sauvegarde ?">
+      <div style={{ fontSize: ".62rem", color: "var(--text3)", margin: "-10px 0 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName}</div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <Col title="Le fichier" d={F} ver={F.version} dateLbl="Sauvegardé le" dateVal={F.backup ? dfr(F.backup.slice(0, 10)) : "?"} />
+        <Col title="Tes données actuelles" d={C} ver={appVersion} dateLbl="Dernière opération" dateVal={dfr(C.last)} accent />
+      </div>
+      {lost > 0 ? (
+        <div style={{ padding: "9px 11px", borderRadius: 10, fontSize: ".68rem", lineHeight: 1.5, marginBottom: 10, background: "rgba(200,112,112,.1)", border: "1px solid rgba(200,112,112,.4)", color: "var(--text)" }}>
+          ⚠️ {older ? <>Ce fichier est <b>plus ancien</b> que tes données : </> : null}<b>{lost} opération{lost > 1 ? "s" : ""}</b> de ton téléphone {lost > 1 ? "ne sont" : "n'est"} pas dans ce fichier et {lost > 1 ? "seront perdues" : "sera perdue"}.
+        </div>
+      ) : (
+        <InfoNote>✅ Toutes les opérations de ton téléphone sont aussi dans ce fichier.</InfoNote>
+      )}
+      <div onClick={() => setBackupFirst(v => !v)}
+        style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 10, borderRadius: 11, marginBottom: 10, cursor: "pointer",
+          border: `1.5px solid ${backupFirst ? "var(--accent)" : "var(--border)"}`, background: backupFirst ? "rgba(112,184,224,.08)" : "transparent" }}>
+        <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".7rem",
+          border: `2px solid ${backupFirst ? "var(--accent)" : "var(--border)"}`, background: backupFirst ? "var(--accent)" : "transparent", color: "#06121c" }}>{backupFirst ? "✓" : ""}</span>
+        <div>
+          <div style={{ fontSize: ".74rem", fontWeight: 700 }}>Sauvegarder mes données actuelles d'abord</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 2 }}>Crée un fichier de secours (partage) avant de remplacer. Si tu l'annules, l'import est annulé.</div>
+        </div>
+      </div>
+      <div className="grid-2" style={{ marginBottom: 0 }}>
+        <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
+        <button className="btn" disabled={busy} style={{ width: "100%", background: "var(--danger)", color: "#fff", opacity: busy ? .5 : 1 }}
+          onClick={async () => { setBusy(true); try { await onConfirm(backupFirst); } finally { setBusy(false); } }}>
+          {busy ? "…" : "Remplacer"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  ProjectModal — v1.47.0 : projet avec échéance (cagnotte + tag)
+//  « __new__ » = créer la cagnotte / le tag au nom du projet.
+// ─────────────────────────────────────────────────────────────────
+export function ProjectModal({ project = null, cagnottes = [], tags = [], onSave, onClose }) {
+  const toast = useToast();
+  const [icon, setIcon]   = useState(project?.icon || "");
+  const [name, setName]   = useState(project?.name || "");
+  const [amt, setAmt]     = useState(toPadStr(project?.target));
+  const endOfMonthIn = n => { const d = new Date(); const e = new Date(d.getFullYear(), d.getMonth() + n + 1, 0);
+    return `${e.getFullYear()}-${String(e.getMonth() + 1).padStart(2, "0")}-${String(e.getDate()).padStart(2, "0")}`; };
+  const [deadline, setDeadline] = useState(project?.deadline || endOfMonthIn(12));
+  const [cagId, setCagId] = useState(project?.cagId || "__new__");
+  const [tagId, setTagId] = useState(project ? (project.tagId || "") : "__new__");
+  const [errors, setErrors] = useState({});
+  const target = amountOf(amt);
+  const cagItems = [{ id: "__new__", icon: "＋", name: "Nouvelle cagnotte" },
+    ...cagnottes.map(c => ({ id: c.id, icon: CAG_TYPES.find(t => t.id === c.cagType)?.icon || "🐷", name: c.name, sub: fmt(c.current) }))];
+  const tagItems = [{ id: "__new__", icon: "＋", name: "Nouveau tag" }, ...tags.map(t => ({ id: t.id, icon: t.icon, name: t.name }))];
+  const savedNow = cagId !== "__new__" ? (parseFloat(cagnottes.find(c => c.id === cagId)?.current) || 0) : 0;
+  const months = (() => { const [ty, tm] = (deadline || "").split("-").map(Number); const n = new Date();
+    return Math.max(1, (ty - n.getFullYear()) * 12 + (tm - 1 - n.getMonth())); })();
+  const perMonth = target > savedNow ? Math.ceil((target - savedNow) / months * 100) / 100 : 0;
+
+  function handleSave() {
+    const e = {};
+    if (!icon.trim()) e.icon = "Icône requise";
+    if (!name.trim()) e.name = "Nom requis";
+    if (!amt || isNaN(target) || target <= 0) e.amt = "Objectif requis";
+    if (!deadline || deadline <= todayISO()) e.date = "L'échéance doit être dans le futur";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    const nm = name.trim(), ic = icon.trim();
+    const base = {
+      id: project?.id || null, icon: ic, name: nm, target, deadline,
+      cagId: cagId === "__new__" ? null : cagId,
+      tagId: tagId === "__new__" || !tagId ? null : tagId,
+      createdAt: project?.createdAt || todayISO(),
+      // Point de départ du rythme régulier : ce qui était déjà dans la cagnotte
+      startSaved: project ? (project.startSaved || 0) : savedNow,
+    };
+    onSave({
+      project: base,
+      newCag: cagId === "__new__" ? { name: nm, current: 0, target, targetDate: deadline, cagType: "projet" } : null,
+      newTag: tagId === "__new__" ? { name: nm, icon: ic, color: "#e48bb8" } : null,
+    });
+    toast(project ? "Projet modifié" : "Projet créé");
+  }
+
+  return (
+    <Modal onClose={onClose} title={project ? "Modifier le projet" : "Nouveau projet"}>
+      <IconNameField icon={icon} name={name} errors={errors} namePlaceholder="Ex : Travaux salle de bain" iconPlaceholder="🛠️"
+        onIcon={v => { setIcon(v); setErrors(x => ({ ...x, icon: "" })); }}
+        onName={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
+      <div style={{ marginBottom: 10 }}>
+        {errors.amt && <FieldError msg={errors.amt} />}
+        <div style={{ borderRadius: 12, padding: "7px 12px", marginBottom: 8, background: "var(--purple-glow)", border: "1px solid rgba(176,144,224,.3)" }}>
+          <div style={{ fontSize: ".55rem", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--purple)" }}>🎯 Objectif</div>
+          <div style={{ fontFamily: "var(--mono)", fontSize: "1.5rem", fontWeight: 800, color: "var(--purple)", lineHeight: 1.2 }}>{amt || "0"} €</div>
+        </div>
+        <NumPad value={amt} type="income" hideDisplay
+          onChange={v => { setAmt(p => typeof v === "function" ? v(p) : v); setErrors(x => ({ ...x, amt: "" })); }} />
+      </div>
+      <DateField label="Échéance" date={deadline} error={errors.date} min={plusDaysISO(1)}
+        onChange={d => { setDeadline(d); setErrors(x => ({ ...x, date: "" })); }}
+        shortcuts={[["Dans 6 mois", endOfMonthIn(6)], ["Dans 1 an", endOfMonthIn(12)], ["Dans 2 ans", endOfMonthIn(24)]]} />
+      <CategoryField label="Cagnotte (argent mis de côté)" cats={cagItems} catId={cagId} onChange={setCagId} allowNone={false} />
+      <CategoryField label="Tag (dépenses du projet)" cats={tagItems} catId={tagId} onChange={setTagId}
+        noneLabel="⊘ Pas de suivi des dépenses" emptyLabel="Pas de suivi des dépenses" accentColor="#e48bb8" />
+      {target > 0 && <InfoNote color="var(--purple)">💡 À mettre de côté : <b>{fmt(perMonth)} / mois</b> pendant {months} mois{savedNow > 0 ? ` (déjà ${fmt(savedNow)} dans la cagnotte)` : ""}</InfoNote>}
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="🎯" />
     </Modal>
   );
 }
