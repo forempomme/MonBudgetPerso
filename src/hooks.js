@@ -79,67 +79,31 @@ export function useTotalFixes(fixedExpenses, ym = null) {
 //  Returns { inc, exp, expVar, decag, net }
 // ─────────────────────────────────────────────────────────────────
 export function useMonthStats(transactions, fixedExpenses, ym, fixedIncomes) {
-  return useMemo(() => {
-    const isCur = ym === currentYM();
-    let inc = 0, exp = 0, decag = 0;
-
-    transactions
-      .filter(t => t.date.startsWith(ym))
-      .forEach(t => {
-        const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))               inc   += a;
-        else if (t.type === "expense")      exp   += a;
-        else if (t.type === "decagnottage") decag += a;
-      });
-
-    const fixContrib = isCur ? effectiveFixesForMonth(fixedExpenses, ym) : 0;
-    exp += fixContrib;
-
-    return {
-      inc,
-      exp,
-      expVar: exp - fixContrib,
-      decag,
-      net: inc - exp,
-    };
-  }, [transactions, fixedExpenses, ym]);
+  // v1.47.1 : même calcul pour tous les mois (computeMonthTotals) — avant,
+  // les frais fixes n'étaient comptés que pour le mois en cours et les
+  // revenus fixes jamais → comparaisons faussées (« Dépenses ▲ 117 % »).
+  return useMemo(() => computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [transactions, fixedExpenses, fixedIncomes, ym]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  12-month array for a given year
 // ─────────────────────────────────────────────────────────────────
-export function useYearMonths(transactions, fixedExpenses, year) {
-  const now = new Date();
-  const curMonth = now.getMonth();
-  const curYear  = now.getFullYear();
-
+export function useYearMonths(transactions, fixedExpenses, year, fixedIncomes = []) {
+  // v1.47.1 : revenus fixes inclus ; aucun mois avant la 1ʳᵉ opération
+  // (hasData = false → grisé / exclu du classement), aucun mois futur.
   return useMemo(() => {
     const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
     const MONTHS_MINI  = ["J","F","M","A","M","J","J","A","S","O","N","D"];
-    const isCurYear = year === curYear;
-    const isFutureYear = year > curYear;
-
+    const first = firstDataYM(transactions);
     return Array.from({ length: 12 }, (_, i) => {
       const mStr = `${year}-${(i + 1).toString().padStart(2, "0")}`;
-      let inc = 0, exp = 0, sav = 0;
-
-      transactions.filter(t => t.date.startsWith(mStr)).forEach(t => {
-        const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))          inc += a;
-        else if (t.type === "expense") exp += a;
-        else if (t.type === "epargne") sav += a;
-      });
-
-      // Frais fixes de ce mois précis, s'il est déjà passé ou en cours (on
-      // n'anticipe pas les mois futurs de l'année en cours, pas encore vécus)
-      const isPastOrCurrent = !isFutureYear && (!isCurYear || i <= curMonth);
-      if (isPastOrCurrent) {
-        exp += effectiveFixesForMonth(fixedExpenses, mStr);
-      }
-
-      return { inc, exp, sav, net: inc - exp, label: MONTHS_SHORT[i], mini: MONTHS_MINI[i], idx: i };
+      const t = computeMonthTotals(transactions, fixedExpenses, fixedIncomes, mStr, first);
+      return { inc: t.inc, exp: t.exp, sav: t.sav, net: t.net, hasData: t.hasData, label: MONTHS_SHORT[i], mini: MONTHS_MINI[i], idx: i };
     });
-  }, [transactions, fixedExpenses, year, curYear, curMonth]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, fixedExpenses, fixedIncomes, year]);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -181,62 +145,29 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
 // ─────────────────────────────────────────────────────────────────
 //  Year totals
 // ─────────────────────────────────────────────────────────────────
-export function useYearTotals(transactions, fixedExpenses, year) {
-  const now = new Date();
-
+export function useYearTotals(transactions, fixedExpenses, year, fixedIncomes = []) {
+  // v1.47.1 : somme des mêmes totaux mensuels que partout (revenus fixes
+  // inclus, rien avant la 1ʳᵉ opération ni dans le futur)
   return useMemo(() => {
-    const curYear      = now.getFullYear();
-    const isCurYear     = year === curYear;
-    const isFutureYear  = year > curYear;
-    let inc = 0, exp = 0, sav = 0;
-    transactions.filter(t => t.date.startsWith(year.toString())).forEach(t => {
-      const a = parseFloat(t.amount) || 0;
-      if (isIncome(t.type))          inc += a;
-      else if (t.type === "expense") exp += a;
-      else if (t.type === "epargne") sav += a;
-    });
-    // Frais fixes : tous les mois déjà "vécus" de l'année (les 12 pour une
-    // année passée, jusqu'au mois en cours inclus pour l'année en cours,
-    // aucun pour une année future) — pas seulement le mois en cours.
-    if (!isFutureYear) {
-      const lastMonthIdx = isCurYear ? now.getMonth() : 11;
-      for (let m = 0; m <= lastMonthIdx; m++) {
-        const mStr = `${year}-${String(m + 1).padStart(2, "0")}`;
-        exp += effectiveFixesForMonth(fixedExpenses, mStr);
-      }
-    }
-    return { inc, exp, sav };
+    const t = computePeriodTotals(transactions, fixedExpenses, fixedIncomes, `${year}-01`, `${year}-12`);
+    return { inc: t.inc, exp: t.exp, sav: t.sav };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, fixedExpenses, year]);
+  }, [transactions, fixedExpenses, fixedIncomes, year]);
 }
 
 // ─────────────────────────────────────────────────────────────────
 //  Prior year for delta comparison (same elapsed months)
 // ─────────────────────────────────────────────────────────────────
-export function usePriorYearStats(transactions, fixedExpenses) {
+export function usePriorYearStats(transactions, fixedExpenses, fixedIncomes = []) {
+  // Même période l'an dernier (janvier → mois actuel), même calcul (v1.47.1)
   const now = new Date();
   const elapsed  = now.getMonth() + 1;
-  const prevYear = (now.getFullYear() - 1).toString();
-
+  const prevYear = now.getFullYear() - 1;
   return useMemo(() => {
-    let inc = 0, exp = 0, expVar = 0, decag = 0;
-    transactions
-      .filter(t => t.date.startsWith(prevYear))
-      .forEach(t => {
-        const mo = parseInt(t.date.slice(5, 7), 10);
-        if (mo > elapsed) return;
-        const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))               inc  += a;
-        else if (t.type === "expense")     { exp  += a; expVar += a; }
-        else if (t.type === "decagnottage") decag += a;
-      });
-    const prevYMEnd = `${prevYear}-${String(elapsed).padStart(2, "0")}`;
-    const fixTotal = monthRange(`${prevYear}-01`, prevYMEnd)
-      .reduce((s, ym) => s + effectiveFixesForMonth(fixedExpenses, ym), 0);
-    exp    += fixTotal;
-    expVar += fixTotal;
-    return { inc, exp, expVar, decag };
-  }, [transactions, fixedExpenses, prevYear, elapsed]);
+    const t = computePeriodTotals(transactions, fixedExpenses, fixedIncomes, `${prevYear}-01`, `${prevYear}-${String(elapsed).padStart(2, "0")}`);
+    return { inc: t.inc, exp: t.exp, expVar: t.expVar, decag: t.decag, sav: t.sav };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, fixedExpenses, fixedIncomes, prevYear, elapsed]);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -947,4 +878,186 @@ export function computeProjectStatus(p, data, today = todayISO()) {
   return { cag, tag, target, saved, spent, spentCount: tagTx.length, expected, monthsLeft: Math.max(0, monthsLeft), remaining, perMonth, status,
     savedPct: target > 0 ? Math.min(100, saved / target * 100) : 0, expectedPct: target > 0 ? Math.min(100, expected / target * 100) : 0,
     spentPct: target > 0 ? Math.min(100, spent / target * 100) : 0 };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Totaux d'un mois — v1.47.1 : SOURCE UNIQUE pour Accueil (mois/année),
+//  Historique (donut), Rapport (mois, année, classement, taux d'épargne).
+//  = opérations du mois + frais fixes + revenus fixes actifs ce mois-là,
+//  seulement pour un mois « vécu » : depuis la 1ʳᵉ opération enregistrée
+//  et jusqu'au mois en cours (même règle que le rapprochement).
+// ─────────────────────────────────────────────────────────────────
+export function firstDataYM(transactions) {
+  const txs = transactions || [];
+  if (!txs.length) return currentYM();
+  return txs.reduce((m, t) => (t.date && t.date < m ? t.date : m), txs[0].date || "9999").slice(0, 7);
+}
+
+export function computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym, firstYM = firstDataYM(transactions), curYM = currentYM()) {
+  let incTx = 0, expTx = 0, sav = 0, decag = 0;
+  (transactions || []).forEach(t => {
+    if (!(t.date || "").startsWith(ym)) return;
+    const a = parseFloat(t.amount) || 0;
+    if (isIncome(t.type))               incTx += a;
+    else if (t.type === "expense")      expTx += a;
+    else if (t.type === "epargne")      sav   += a;
+    else if (t.type === "decagnottage") decag += a;
+  });
+  const lived = ym >= firstYM && ym <= curYM;
+  const fixExp = lived ? effectiveFixesForMonth(fixedExpenses || [], ym) : 0;
+  const fixInc = lived ? effectiveIncomesForMonth(fixedIncomes || [], ym) : 0;
+  const inc = incTx + fixInc, exp = expTx + fixExp;
+  return { inc, exp, expVar: expTx, sav, decag, net: inc - exp, fixExp, fixInc, hasData: lived };
+}
+
+export function computePeriodTotals(transactions, fixedExpenses, fixedIncomes, fromYM, toYM) {
+  const first = firstDataYM(transactions), cur = currentYM();
+  const out = { inc: 0, exp: 0, expVar: 0, sav: 0, decag: 0, fixExp: 0, fixInc: 0, months: 0 };
+  monthRange(fromYM, toYM).forEach(ym => {
+    const t = computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym, first, cur);
+    if (!t.hasData && t.inc === 0 && t.exp === 0) return;
+    ["inc", "exp", "expVar", "sav", "decag", "fixExp", "fixInc"].forEach(k => { out[k] += t[k]; });
+    if (t.hasData) out.months++;
+  });
+  out.net = out.inc - out.exp;
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Jour de prélèvement, paie, solde jour par jour, reste à vivre — v1.48.0
+//  Un frais/revenu fixe peut avoir un `day` (1–31, ramené au dernier jour
+//  d'un mois plus court). Le revenu fixe daté le plus élevé = la paie.
+// ─────────────────────────────────────────────────────────────────
+const pad2 = n => String(n).padStart(2, "0");
+const ymAdd = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; };
+const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m, 0).getDate(); };
+/** Date (YYYY-MM-DD) d'un jour de prélèvement dans un mois donné */
+export function dayInMonthISO(day, ym) {
+  const d = Math.min(Math.max(1, parseInt(day, 10) || 1), lastDayOf(ym));
+  return `${ym}-${pad2(d)}`;
+}
+const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); const x = new Date(y, m - 1, d + n); return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`; };
+
+/** Prochaine paie = prochaine date du revenu fixe daté le plus élevé */
+export function nextPayday(data, today = todayISO()) {
+  const curYM = today.slice(0, 7);
+  const dated = (data.fixedIncomes || []).filter(f => f.day);
+  if (!dated.length) return null;
+  const main = [...dated].sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))[0];
+  for (let i = 0; i <= 2; i++) {
+    const ym = ymAdd(curYM, i);
+    if (!isActiveForMonth(main, ym)) continue;
+    const d = dayInMonthISO(main.day, ym);
+    if (d > today && !(i === 0 && main.pointedMonths?.[ym])) return { date: d, income: main };
+  }
+  return null;
+}
+
+/**
+ * Solde prévu jour par jour, d'aujourd'hui jusqu'à la paie (ou la fin du
+ * mois sans paie datée). Part du solde estimé et ré-étale dans le temps ce
+ * qu'il a déjà déduit (fixes datés après aujourd'hui, récurrentes, programmées),
+ * puis ajoute les opérations du mois suivant qui tombent avant la paie.
+ * Les courses restantes sont réparties uniformément sur les jours.
+ */
+export function computeDailyForecast(data, breakdown, grocery, today = todayISO()) {
+  const curYM = today.slice(0, 7);
+  const pay = nextPayday(data, today);
+  const end = pay ? pay.date : `${curYM}-${pad2(lastDayOf(curYM))}`;
+  const cats = data.categories || [];
+  const events = [];
+  let addBack = 0;
+  const ev = (date, amount, label, kind, extra = {}) => events.push({ date, amount, label, kind, ...extra });
+
+  // 1) Mois en cours : ce que le solde estimé a déjà compté, ré-étalé à sa date
+  (data.fixedExpenses || []).forEach(f => {
+    if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
+    const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
+    const a = (f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0;
+    ev(d, -a, f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌" }); addBack += a;
+  });
+  (data.fixedIncomes || []).forEach(f => {
+    if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
+    const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
+    const a = (f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0;
+    ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰" }); addBack -= a;
+  });
+  (breakdown?.recurring?.items || []).forEach(({ tpl, signed, day }) => {
+    if (!day || tpl.frequency === "yearly") return;
+    const d = dayInMonthISO(day, curYM); if (d <= today) return;
+    ev(d, signed, tpl.label || tpl.note || "Récurrente", "rec", { icon: cats.find(c => c.id === tpl.categoryId)?.icon || "🔄" }); addBack -= signed;
+  });
+  (breakdown?.scheduled?.items || []).forEach(({ s, signed }) => {
+    if (s.date <= today || !s.date.startsWith(curYM)) return;
+    ev(s.date, signed, s.note || "Programmée", "sch", { icon: cats.find(c => c.id === s.categoryId)?.icon || "📅" }); addBack -= signed;
+  });
+  const start = (breakdown?.total || 0) + addBack;
+
+  // 2) Mois suivants jusqu'à la paie (pas encore dans le solde estimé)
+  if (end.slice(0, 7) > curYM) {
+    monthRange(ymAdd(curYM, 1), end.slice(0, 7)).forEach(ym => {
+      (data.fixedExpenses || []).forEach(f => {
+        if (!f.day || !isActiveForMonth(f, ym)) return;
+        const d = dayInMonthISO(f.day, ym); if (d > end) return;
+        ev(d, -((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌", next: true });
+      });
+      (data.fixedIncomes || []).forEach(f => {
+        if (!f.day || !isActiveForMonth(f, ym)) return;
+        const d = dayInMonthISO(f.day, ym); if (d > end) return;
+        ev(d, (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", next: true, isPay: pay && f.id === pay.income.id && d === pay.date });
+      });
+      (data.scheduledTransactions || []).forEach(s => {
+        if (!s.date.startsWith(ym) || s.date > end) return;
+        ev(s.date, -(parseFloat(s.amount) || 0), s.note || "Programmée", "sch", { icon: cats.find(c => c.id === s.categoryId)?.icon || "📅", next: true });
+      });
+    });
+  }
+  events.sort((a, b) => a.date.localeCompare(b.date));
+
+  // 3) Courses : reste du mois réparti sur les jours restants, puis moyenne/jour
+  const daysLeftCur = lastDayOf(curYM) - parseInt(today.slice(8, 10), 10);
+  const grocCur = grocery && daysLeftCur > 0 ? grocery.remaining / daysLeftCur : 0;
+  const grocNext = grocery ? grocery.average / 30 : 0;
+
+  const days = [];
+  let bal = start, low = null;
+  for (let d = today; d <= end; d = addDaysISO(d, 1)) {
+    const evs = events.filter(e => e.date === d);
+    if (d > today) bal -= d.startsWith(curYM) ? grocCur : grocNext;
+    const payToday = evs.some(e => e.isPay);
+    // Point bas : juste avant la paie le jour de la paie (on retire d'abord les dépenses)
+    const out = evs.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
+    const inn = evs.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+    bal += out;
+    if (low == null || bal < low.balance) low = { date: d, balance: Math.round(bal * 100) / 100 };
+    bal += inn;
+    if (!payToday && inn > 0 && (low == null || bal < low.balance)) low = { date: d, balance: Math.round(bal * 100) / 100 };
+    days.push({ date: d, balance: Math.round(bal * 100) / 100, events: evs });
+  }
+  return { start: Math.round(start * 100) / 100, end, payday: pay?.date || null, payIncome: pay?.income || null, events, days, low };
+}
+
+/** Reste à vivre par jour jusqu'à la paie (indicatif, n'entre dans aucun solde) */
+export function computeRestToLive(data, breakdown, grocery, forecast, today = todayISO()) {
+  const st = data.restSettings || {};
+  if (st.enabled === false || !breakdown) return null;
+  const curYM = today.slice(0, 7);
+  const endCur = `${curYM}-${pad2(lastDayOf(curYM))}`;
+  const payday = forecast?.payday || null;
+  const days = payday ? Math.max(1, daysBetweenISO(today, payday)) : Math.max(1, lastDayOf(curYM) - parseInt(today.slice(8, 10), 10) + 1);
+  // Dépenses du mois suivant qui tombent AVANT la paie (le solde estimé ne les connaît pas)
+  const nextBeforePay = payday ? -(forecast.events || []).filter(e => e.date > endCur && e.date < payday && e.amount < 0).reduce((s, e) => s + e.amount, 0) : 0;
+  const nextGroc = payday && payday > endCur && grocery ? grocery.average / 30 * daysBetweenISO(endCur, payday) : 0;
+  const margin = Math.max(0, parseFloat(st.margin) || 0);
+  const groceries = grocery ? grocery.remaining + nextGroc : 0;
+  const available = breakdown.total - groceries - nextBeforePay - margin;
+  return { base: breakdown.total, groceries: Math.round(groceries * 100) / 100, nextBeforePay: Math.round(nextBeforePay * 100) / 100, margin,
+    available: Math.round(available * 100) / 100, days, payday, perDay: Math.round(available / days * 100) / 100 };
+}
+
+/** Remboursements attendus en cours (le plus ancien d'abord) */
+export function pendingReimbursements(data, today = todayISO()) {
+  return (data.reimbursements || []).filter(r => r.status !== "received")
+    .map(r => ({ ...r, late: r.expectedDate && r.expectedDate < today ? daysBetweenISO(r.expectedDate, today) : 0 }))
+    .sort((a, b) => (a.expectedDate || "9999").localeCompare(b.expectedDate || "9999"));
 }

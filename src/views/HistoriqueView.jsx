@@ -265,7 +265,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
       return !transactions.some(t => t.templateId === tpl.id && recurringRefDate(t).startsWith(month));
     });
   }, [recurringTemplates, transactions, month]);
-  const mStats = useMonthStats(transactions, fixedExpenses, month);
+  const mStats = useMonthStats(transactions, fixedExpenses, month, data.fixedIncomes || []);
   const savMonth = useMemo(() =>
     transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
       .reduce((s, t) => s + (parseFloat(t.amount)||0), 0), [transactions, month]);

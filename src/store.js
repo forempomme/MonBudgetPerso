@@ -104,6 +104,10 @@ export const A = /** @type {const} */ ({
   CASH_CHEQUE:              "CASH_CHEQUE",
   SAVE_GROCERY_BUDGET:      "SAVE_GROCERY_BUDGET",
   MARK_MONTH_RECAP:         "MARK_MONTH_RECAP",
+  SAVE_REIMBURSEMENT:       "SAVE_REIMBURSEMENT",
+  DELETE_REIMBURSEMENT:     "DELETE_REIMBURSEMENT",
+  RECEIVE_REIMBURSEMENT:    "RECEIVE_REIMBURSEMENT",
+  SAVE_REST_SETTINGS:       "SAVE_REST_SETTINGS",
   SAVE_PROJECT:             "SAVE_PROJECT",
   DELETE_PROJECT:           "DELETE_PROJECT",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
@@ -146,6 +150,11 @@ export function withPauseHistory(old, next, curYM = currentYM()) {
 // ─────────────────────────────────────────────────────────────────
 /** @type {AppData} */
 export const DEFAULT_DATA = {
+  // Remboursements attendus (v1.48.0) — n'entrent dans aucun solde tant
+  // qu'ils ne sont pas reçus (le revenu reçu, lui, est une vraie opération)
+  reimbursements: [],
+  // Reste à vivre (v1.48.0) — indicatif ; marge de sécurité modifiable
+  restSettings: { enabled: true, margin: 0 },
   // Projets avec échéance (v1.47.0) : relient une cagnotte et un tag
   projects: [],
   // Budget courses (v1.46.0) — informatif, n'entre dans aucun solde.
@@ -208,6 +217,9 @@ export const DEFAULT_DATA = {
     scheduled:  true,
     backup:     true,
     cheques: true, chequeDelay: 30,   // v1.43.0 : rappels chèques non encaissés
+    // v1.48.0 : rappel du soir (seulement si rien n'a été saisi ce jour-là)
+    evening: false, eveningHour: 21, eveningDays: "all",   // "all" | "week" | "weekend"
+    reimbursements: true,             // v1.48.0 : rappel des remboursements en retard
   },
 };
 
@@ -256,6 +268,8 @@ export function normalizeData(saved) {
     offAccountEntries: src.offAccountEntries || [],
     groceryBudget: { ...DEFAULT_DATA.groceryBudget, ...(src.groceryBudget || {}) },
     projects: src.projects || [],
+    reimbursements: src.reimbursements || [],
+    restSettings: { ...DEFAULT_DATA.restSettings, ...(src.restSettings || {}) },
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -279,11 +293,63 @@ export function normalizeData(saved) {
   return data;
 }
 
+function saveTransactionCore(state, action) {
+  return reducer(state, { ...action, type: "__SAVE_TRANSACTION_CORE__", reimbursement: undefined, receiveReimbursementId: undefined });
+}
+
 export function reducer(state, action) {
   switch (action.type) {
 
     // ── Transactions ──────────────────────────────────────────────
     case A.SAVE_TRANSACTION: {
+      // v1.48.0 : options « sera remboursé » / « c'est le remboursement de… »
+      const next = saveTransactionCore(state, action);
+      if (!action.reimbursement && !action.receiveReimbursementId) return next;
+      const known = new Set(state.transactions.map(t => t.id));
+      const txId = action.tx.id || (next.transactions.find(t => !known.has(t.id) && !t.isRounding) || {}).id;
+      let reimbursements = next.reimbursements || [];
+      if (action.reimbursement) {
+        const r = action.reimbursement;
+        const existing = reimbursements.find(x => (r.id && x.id === r.id) || (x.txId && x.txId === txId && x.status === "pending"));
+        if (r.remove) reimbursements = reimbursements.filter(x => x !== existing);
+        else if (existing) reimbursements = reimbursements.map(x => x === existing ? { ...x, ...r, id: x.id, txId } : x);
+        else reimbursements = [...reimbursements, { ...r, id: uid("rb"), txId, status: "pending", createdAt: todayISO() }];
+      }
+      if (action.receiveReimbursementId) {
+        reimbursements = reimbursements.map(x => x.id === action.receiveReimbursementId
+          ? { ...x, status: "received", receivedTxId: txId, receivedDate: action.tx.date || todayISO() } : x);
+      }
+      return { ...next, reimbursements };
+    }
+
+    case A.SAVE_REIMBURSEMENT: {
+      const r = action.reimbursement;
+      const list = state.reimbursements || [];
+      return { ...state, reimbursements: r.id && list.some(x => x.id === r.id)
+        ? list.map(x => x.id === r.id ? { ...x, ...r } : x)
+        : [...list, { ...r, id: uid("rb"), status: "pending", createdAt: todayISO() }] };
+    }
+
+    case A.DELETE_REIMBURSEMENT:
+      return { ...state, reimbursements: (state.reimbursements || []).filter(x => x.id !== action.id) };
+
+    case A.RECEIVE_REIMBURSEMENT: {
+      // Marque reçu ET crée le revenu correspondant (sinon l'argent reçu
+      // n'apparaîtrait pas dans le solde) — même catégorie que la dépense
+      // d'origine pour que le Rapport calcule le coût net.
+      const r = (state.reimbursements || []).find(x => x.id === action.id);
+      if (!r) return state;
+      const src = state.transactions.find(t => t.id === r.txId);
+      const income = { id: uid("t"), type: "income", amount: parseFloat(r.amount) || 0, date: action.date || todayISO(),
+        categoryId: src?.categoryId || "", note: `Remboursement ${r.from ? "· " + r.from : ""}${r.note ? " — " + r.note : ""}`.trim(), pointed: false };
+      return { ...state, transactions: [...state.transactions, income],
+        reimbursements: state.reimbursements.map(x => x.id === r.id ? { ...x, status: "received", receivedTxId: income.id, receivedDate: income.date } : x) };
+    }
+
+    case A.SAVE_REST_SETTINGS:
+      return { ...state, restSettings: { ...(state.restSettings || DEFAULT_DATA.restSettings), ...action.settings } };
+
+    case "__SAVE_TRANSACTION_CORE__": {
       const { tx } = action;
 
       // ── Edit existing ──

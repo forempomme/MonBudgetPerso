@@ -173,7 +173,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [infoOpenId,    setInfoOpenId]    = useState(null);
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
@@ -192,6 +192,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const [notifBackup,   setNotifBackup]   = useState(notifSettings.backup       ?? true);
   const [notifCheques,  setNotifCheques]  = useState(notifSettings.cheques      ?? true);
   const [chequeDelay,   setChequeDelay]   = useState(notifSettings.chequeDelay  ?? 30);
+  // v1.48.0 : rappel du soir + remboursements en retard
+  const [notifEvening,  setNotifEvening]  = useState(!!notifSettings.evening);
+  const [eveningHour,   setEveningHour]   = useState(notifSettings.eveningHour ?? 21);
+  const [eveningDays,   setEveningDays]   = useState(notifSettings.eveningDays || "all");
+  const [notifReimb,    setNotifReimb]    = useState(notifSettings.reimbursements ?? true);
 
   function saveNotif(field, val) {
     const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay, [field]:val };
@@ -285,6 +290,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const sideAmountTypesCount = (data.sideAmountTypes||[]).length;
   const tagsCount = (data.tags||[]).length;
   const last        = (data.backupHistory||[])[0];
+  // Reste à vivre (v1.48.0)
+  const restCfg = data.restSettings || { enabled: true, margin: 0 };
   // Budget courses (v1.46.0) — informatif
   const groceryCfg  = data.groceryBudget || { enabled: true, categoryIds: null, months: 2 };
   const grocery     = useGroceryBudget(data.transactions, data.categories, groceryCfg);
@@ -324,6 +331,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: groceryCfg.enabled !== false && groceryCats.length > 0,
           hint: "Choisis la catégorie de tes courses",
           desc: "Affiche ce qu'il te reste à dépenser en courses ce mois (moyenne des derniers mois + le mois en cours au prorata), sans toucher au solde estimé." },
+        { id:"rest", icon:"💶", label:"Reste à vivre",
+          badge: restCfg.enabled === false ? "Masqué" : `Marge ${Math.round(parseFloat(restCfg.margin) || 0)} €`,
+          configured: restCfg.enabled !== false,
+          hint: "Reste à vivre masqué",
+          desc: "Ce que tu peux dépenser par jour jusqu'à la paie, après courses prévues et marge de sécurité. Indicatif, le solde estimé n'est pas modifié." },
       ]
     },
     {
@@ -700,6 +712,41 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
         )}
       </Sheet>
 
+      {/* 💶 Reste à vivre (v1.48.0) */}
+      <Sheet open={openSheet==="rest"} onClose={close} title="💶 Reste à vivre">
+        {(() => {
+          const on = restCfg.enabled !== false;
+          const margin = parseFloat(restCfg.margin) || 0;
+          return (
+            <>
+              <div onClick={() => onSaveRestSettings?.({ enabled: !on })}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:on?"rgba(92,200,192,.07)":"var(--surface2)", border:`1px solid ${on?"rgba(92,200,192,.35)":"var(--border)"}`, borderRadius:10, marginBottom:12, cursor:"pointer" }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:".76rem", fontWeight:700, color:on?"#5cc8c0":"var(--text2)" }}>Pastille {on?"affichée":"masquée"} sur l'accueil</div>
+                  <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>(solde estimé − courses prévues − prélèvements avant la paie − marge) ÷ jours restants</div>
+                </div>
+                <div style={{ width:40, height:22, borderRadius:11, background:on?"#5cc8c0":"var(--border)", position:"relative", flexShrink:0 }}>
+                  <div style={{ position:"absolute", top:3, left:on?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+                </div>
+              </div>
+              <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>🛟 Marge de sécurité (€)</div>
+              <input type="number" min="0" step="10" value={margin || ""} placeholder="0"
+                onChange={e => onSaveRestSettings?.({ margin: Math.max(0, parseFloat(e.target.value) || 0) })}
+                style={{ width:"100%", background:"var(--bg)", border:"1.5px solid #5cc8c0", borderRadius:9, padding:"11px 14px", color:"var(--text)", fontSize:"1.1rem", fontFamily:"var(--mono)", boxSizing:"border-box", marginBottom:10 }} />
+              <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+                {[0,100,200,500].map(v => (
+                  <button key={v} onClick={() => onSaveRestSettings?.({ margin: v })}
+                    style={{ flex:1, background:margin===v?"rgba(92,200,192,.15)":"transparent", border:`1px solid ${margin===v?"#5cc8c0":"var(--border)"}`, borderRadius:8, padding:"8px 0", color:margin===v?"#5cc8c0":"var(--text3)", fontSize:".68rem", fontWeight:700, cursor:"pointer" }}>{v} €</button>
+                ))}
+              </div>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", lineHeight:1.5 }}>
+                Somme que tu veux garder de côté sur le compte : elle est retirée avant de diviser par le nombre de jours. La date de paie vient du « jour de versement » de ton revenu fixe le plus élevé (Fixes → ✏️) ; sans elle, le calcul va jusqu'à la fin du mois.
+              </div>
+            </>
+          );
+        })()}
+      </Sheet>
+
       {/* 🛒 Budget courses (v1.46.0) */}
       <Sheet open={openSheet==="grocery"} onClose={close} title="🛒 Budget courses">
         {(() => {
@@ -901,6 +948,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               ["scheduled",  notifSched,     setNotifSched,     "📅", "Dépenses programmées",      "La veille de chaque dépense prévue"],
               ["backup",     notifBackup,    setNotifBackup,    "💾", "Rappel sauvegarde",         "Si aucune sauvegarde depuis 7 jours"],
               ["cheques",    notifCheques,   setNotifCheques,   "🧾", "Chèques non encaissés",     `Tous les ${chequeDelay} jours, et 1 mois avant péremption`],
+              ["reimbursements", notifReimb, setNotifReimb,     "↩️", "Remboursements en retard",  "15 jours après la date prévue, s'il n'est pas reçu"],
+              ["evening",    notifEvening,   setNotifEvening,   "🌙", "Rappel du soir",            "Seulement si rien n'a été saisi ce jour-là"],
             ].map(([key, val, setter, ico, lbl, desc]) => (
               <div key={key} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
                 <div style={{ width:32, height:32, borderRadius:8, background:"rgba(200,184,96,.1)", border:"1px solid rgba(200,184,96,.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem", flexShrink:0 }}>{ico}</div>
@@ -918,6 +967,34 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 </div>
               </div>
             ))}
+            {notifEvening && (
+              <div style={{ marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>🌙 Heure</span>
+                  {[20, 21, 22].map(h => (
+                    <button key={h} onClick={() => { setEveningHour(h); saveNotif("eveningHour", h); }} style={{
+                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+                      border:`1px solid ${eveningHour===h ? "var(--accent)" : "var(--border)"}`, color: eveningHour===h ? "var(--accent)" : "var(--text2)",
+                      background: eveningHour===h ? "var(--accent-glow)" : "transparent" }}>{h} h</button>
+                  ))}
+                  <select value={[20,21,22].includes(eveningHour) ? "" : eveningHour} onChange={e => { const h = parseInt(e.target.value, 10); if (!isNaN(h)) { setEveningHour(h); saveNotif("eveningHour", h); } }}
+                    style={{ width:72, padding:"4px 6px", fontSize:".62rem", borderRadius:14 }}>
+                    <option value="">Autre…</option>
+                    {[17,18,19,23].map(h => <option key={h} value={h}>{h} h</option>)}
+                  </select>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Jours</span>
+                  {[["all","Tous"],["week","Semaine"],["weekend","Week-end"]].map(([k,l]) => (
+                    <button key={k} onClick={() => { setEveningDays(k); saveNotif("eveningDays", k); }} style={{
+                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+                      border:`1px solid ${eveningDays===k ? "var(--accent)" : "var(--border)"}`, color: eveningDays===k ? "var(--accent)" : "var(--text2)",
+                      background: eveningDays===k ? "var(--accent-glow)" : "transparent" }}>{l}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.4 }}>Les 7 prochains soirs sont programmés ; celui du jour est annulé dès qu'une opération est saisie. Sans ouvrir l'app pendant 7 jours, les rappels s'arrêtent.</div>
+              </div>
+            )}
             {notifCheques && (
               <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
                 <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>🧾 Rappel chèque tous les</span>

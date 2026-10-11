@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, touchMoved } from "../utils.js";
-import { useYearMonths, useYearTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap } from "../hooks.js";
+import { useYearMonths, useYearTotals, computeMonthTotals, computePeriodTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap } from "../hooks.js";
 import { MonthRecapSheet } from "./MonthRecapSheet.jsx";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
@@ -167,7 +167,7 @@ function MonthNotes({ currentYear, monthNotes, onSave }) {
 // ─────────────────────────────────────────────────────────────────
 //  Modal taux d'épargne
 // ─────────────────────────────────────────────────────────────────
-function SavingsRateModal({ onClose, transactions, fixedExpenses, currentYear }) {
+function SavingsRateModal({ onClose, transactions, fixedExpenses, fixedIncomes = [], currentYear }) {
   const now = new Date();
 
   // 6 derniers mois
@@ -176,12 +176,8 @@ function SavingsRateModal({ onClose, transactions, fixedExpenses, currentYear })
       const d  = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const label = d.toLocaleDateString("fr-FR", { month: "short" });
-      let inc = 0, sav = 0;
-      transactions.filter(t => t.date.startsWith(ym)).forEach(t => {
-        const a = parseFloat(t.amount) || 0;
-        if (isIncome(t.type))          inc += a;
-        else if (t.type === "epargne") sav += a;
-      });
+      // v1.47.1 : revenus fixes inclus (même calcul que partout)
+      const { inc, sav } = computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym);
       const rate = inc > 0 ? (sav / inc) * 100 : 0;
       return { ym, label, inc, sav, rate };
     });
@@ -760,9 +756,9 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   // Carte « Payé hors banque par catégorie » (v1.42.0)
   const [sideCatType,   setSideCatType]   = useState("tr");
   const [sideCatPeriod, setSideCatPeriod] = useState("year");
-  const months  = useYearMonths(transactions, fixedExpenses, currentYear);
-  const yearly  = useYearTotals(transactions, fixedExpenses, currentYear);
-  const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1);
+  const months  = useYearMonths(transactions, fixedExpenses, currentYear, data.fixedIncomes || []);
+  const yearly  = useYearTotals(transactions, fixedExpenses, currentYear, data.fixedIncomes || []);
+  const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1, data.fixedIncomes || []);
   const [rapportTab,    setRapportTab]    = useState("bilan");
   const [chartFilter,   setChartFilter]   = useState("all");
   const [showSavModal,  setShowSavModal]  = useState(false);
@@ -797,13 +793,12 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
   );
 
   const { top5, topTotal } = useMemo(() => {
-    const nowYM = currentYM();
-    const tf    = fixedExpenses.filter(f => isActiveForMonth(f, nowYM)).reduce((s, f) => s + f.amount, 0);
-    const isCur = currentYear === new Date().getFullYear();
+    // v1.47.1 : frais fixes de tous les mois vécus de l'année (avant : le mois en cours seulement)
+    const tf    = computePeriodTotals(transactions, fixedExpenses, [], `${currentYear}-01`, `${currentYear}-12`).fixExp;
     const yearStr = currentYear.toString();
     const expMap = {};
     const incMap = {};
-    if (isCur && tf > 0) expMap["__fixes__"] = tf;
+    if (tf > 0) expMap["__fixes__"] = tf;
     // Dépenses
     transactions
       .filter(t => t.date.startsWith(yearStr) && t.type === "expense")
@@ -1149,6 +1144,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
             onClose={() => setShowSavModal(false)}
             transactions={data.transactions}
             fixedExpenses={data.fixedExpenses}
+            fixedIncomes={data.fixedIncomes || []}
             currentYear={currentYear}
           />
         )}
@@ -1378,25 +1374,16 @@ function buildInsights(data, currentYear, months) {
   // ⚠ Correction UTC : utilise l'heure locale au lieu de toISOString()
   const MOIS   = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
-  let inc = 0, exp = 0, sav = 0;
+  // v1.47.1 : totaux repris des mois du Rapport (même calcul partout :
+  // revenus et frais fixes inclus, uniquement les mois vécus)
+  let inc = 0, totalExp = 0;
   const byMonth = {};
-  transactions.filter(t => t.date.startsWith(yStr)).forEach(t => {
-    const a = parseFloat(t.amount) || 0;
-    const mon = t.date.slice(0, 7);
-    if (!byMonth[mon]) byMonth[mon] = { inc: 0, exp: 0, net: 0 };
-    if (isIncome(t.type))          { inc += a; byMonth[mon].inc += a; }
-    else if (t.type === "expense") {
-      exp += a; byMonth[mon].exp += a;
-    }
-    else if (t.type === "epargne") sav += a;
+  (months || []).forEach(m => {
+    if (!m.hasData) return;
+    inc += m.inc; totalExp += m.exp;
+    byMonth[m.idx] = { inc: m.inc, exp: m.exp, net: m.net };
   });
-  if (isCurY) {
-    if (!byMonth[curYM]) byMonth[curYM] = { inc: 0, exp: 0, net: 0 };
-    byMonth[curYM].exp += tf;
-  }
-  Object.values(byMonth).forEach(m => { m.net = m.inc - m.exp; });
 
-  const totalExp   = exp + (isCurY ? tf : 0);
   const net        = inc - totalExp;
   const active     = Object.values(byMonth).filter(m => m.inc > 0 || m.exp > 0);
   const n          = active.length || 1;

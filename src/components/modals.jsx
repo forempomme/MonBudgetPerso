@@ -486,6 +486,7 @@ export function TransModal({
   transactions, categories, cagnottes, tags = [], sideAmountTypes = [],
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
   editingId, defaultType = "expense",
+  reimbursements = [],
   onSave, onSaveRecurring, onClose,
 }) {
   const toast = useToast();
@@ -510,6 +511,15 @@ export function TransModal({
   const [adjSign,     setAdjSign]     = useState(tx?.adjSign || "+");
   const [errors,      setErrors]      = useState({});
   const [dupWarning,  setDupWarning]  = useState(null);
+  // v1.48.0 : « Sera remboursé » (dépense) et rapprochement d'un revenu
+  const reimbOf = editingId ? reimbursements.find(r => r.txId === editingId && r.status !== "received") : null;
+  const [reimbOn,   setReimbOn]   = useState(!!reimbOf);
+  const [reimbMode, setReimbMode] = useState(reimbOf ? "custom" : "all");   // all | half | custom
+  const [reimbAmt,  setReimbAmt]  = useState(reimbOf ? String(reimbOf.amount).replace(".", ",") : "");
+  const [reimbFrom, setReimbFrom] = useState(reimbOf?.from || "");
+  const [reimbDate, setReimbDate] = useState(reimbOf?.expectedDate || "");
+  const [linkReimbId, setLinkReimbId] = useState(null);
+  const [dismissReimb, setDismissReimb] = useState([]);
 
   const isCag = type === "epargne" || type === "decagnottage";
   const isInc = type === "income";
@@ -519,6 +529,22 @@ export function TransModal({
   const isAdj = type === "balance_adjustment";
   const accentColor = isAdj ? "var(--sapin)" : isInc ? "var(--success)" : isCag ? "var(--purple)" : "var(--danger)";
 
+
+  // Revenu qui ressemble à un remboursement attendu (± 1 € ou nom dans la note)
+  const reimbCandidate = (() => {
+    if (type !== "income" || editingId || linkReimbId) return null;
+    const a = amountOf(amount), n = (note || "").toLowerCase();
+    return reimbursements.filter(r => r.status !== "received" && !dismissReimb.includes(r.id)).find(r =>
+      (!isNaN(a) && a > 0 && Math.abs((parseFloat(r.amount) || 0) - a) <= 1) ||
+      (r.from && r.from.length >= 3 && n.includes(r.from.toLowerCase()))) || null;
+  })();
+  const linkedReimb = linkReimbId ? reimbursements.find(r => r.id === linkReimbId) : null;
+  const reimbValue = (() => {
+    const a = amountOf(amount);
+    if (reimbMode === "all") return isNaN(a) ? 0 : a;
+    if (reimbMode === "half") return isNaN(a) ? 0 : Math.round(a * 50) / 100;
+    const v = amountOf(reimbAmt); return isNaN(v) ? 0 : v;
+  })();
 
   function findDuplicate(amt, catId, txDate, txType) {
     if (!amt || editingId) return null;
@@ -569,6 +595,12 @@ export function TransModal({
       paymentMethod: cheque ? "cheque" : undefined,
       chequeNumber:  cheque && chequeNum.trim() ? chequeNum.trim() : undefined,
       issuedDate:    cheque ? (tx?.pointed ? (tx.issuedDate || tx.date) : date) : undefined,
+    }, {
+      // v1.48.0 : remboursement attendu lié à cette dépense / revenu qui solde un remboursement
+      reimbursement: type === "expense" && reimbOn && reimbValue > 0
+        ? { id: reimbOf?.id, amount: reimbValue, from: reimbFrom.trim(), expectedDate: reimbDate || null, note: note || (categories.find(c => c.id === catId)?.name) || "" }
+        : (reimbOf && (!reimbOn || type !== "expense") ? { id: reimbOf.id, remove: true } : undefined),
+      receiveReimbursementId: type === "income" && linkReimbId ? linkReimbId : undefined,
     });
     if (recurringId) {
       onSaveRecurring?.({
@@ -773,7 +805,8 @@ export function TransModal({
         if (canSide && isCheque) chips.push([`🧾 Chèque${chequeNum ? " n°" + chequeNum : ""}`, "var(--chq)", "var(--chq-glow)"]);
         if (canTags) tagIds.forEach(id => { const tg = tags.find(x => x.id === id); if (tg) chips.push([`${tg.icon} ${tg.name}`, tg.color, `${tg.color}22`]); });
         if (canRec && isRecurring) chips.push([`🔄 ${frequency === "yearly" ? "Annuelle" : "Mensuelle"}${frequency === "monthly" && occurrences ? " ×" + occurrences : ""}`, "var(--sapin)", "rgba(88,192,144,.14)"]);
-        const hint = [canSide && sideAmountTypes.map(x => x.label).join(", "), canSide && "chèque", canTags && "tags", canRec && "récurrente"].filter(Boolean).join(", ");
+        if (canSide && reimbOn && reimbValue > 0) chips.push([`↩️ ${fmt(reimbValue)}${reimbFrom ? " · " + reimbFrom : ""}`, "#5cc8c0", "rgba(92,200,192,.14)"]);
+        const hint = [canSide && sideAmountTypes.map(x => x.label).join(", "), canSide && "chèque", canSide && "remboursement", canTags && "tags", canRec && "récurrente"].filter(Boolean).join(", ");
         const rowStyle = col => ({ display: "flex", alignItems: "center", gap: 9, padding: "9px 10px", borderRadius: 11, border: `1px solid ${col}`, marginBottom: 7 });
         const pill = (on, col, bg) => ({ padding: "5px 10px", borderRadius: 14, fontSize: ".64rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
           border: `1px solid ${on ? col : "var(--border)"}`, color: on ? col : "var(--text2)", background: on ? bg : "transparent" });
@@ -847,6 +880,37 @@ export function TransModal({
                     </div>
                   )}
 
+                  {canSide && (
+                    <div style={{ ...rowStyle("rgba(92,200,192,.45)"), flexWrap: "wrap" }}>
+                      <span style={{ fontSize: ".95rem" }}>↩️</span>
+                      <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "#5cc8c0" }}>Sera remboursé</span>
+                      <button type="button" onClick={() => setReimbOn(v => !v)}
+                        style={{ width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative", flexShrink: 0, background: reimbOn ? "#5cc8c0" : "var(--surface3)" }}>
+                        <span style={{ position: "absolute", top: 2, left: reimbOn ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+                      </button>
+                      {reimbOn && (
+                        <div style={{ width: "100%", marginTop: 8 }}>
+                          <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
+                            {[["all", `Tout${amountOf(amount) > 0 ? " (" + fmt(amountOf(amount)) + ")" : ""}`], ["half", "50 %"], ["custom", "Autre…"]].map(([k, l]) => (
+                              <span key={k} onClick={() => setReimbMode(k)} style={pill(reimbMode === k, "#5cc8c0", "rgba(92,200,192,.14)")}>{l}</span>
+                            ))}
+                          </div>
+                          {reimbMode === "custom" && (
+                            <input type="text" inputMode="decimal" placeholder="Montant attendu €" value={reimbAmt} onChange={e => setReimbAmt(e.target.value.replace(/[^0-9,.]/g, ""))}
+                              style={{ width: "100%", boxSizing: "border-box", fontSize: ".75rem", marginBottom: 7, background: "var(--surface3)" }} />
+                          )}
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <input type="text" placeholder="Par : Mutuelle, Thomas…" value={reimbFrom} onChange={e => setReimbFrom(e.target.value)}
+                              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", fontSize: ".72rem", background: "var(--surface3)" }} />
+                            <input type="date" value={reimbDate} onChange={e => setReimbDate(e.target.value)} title="Date prévue (optionnel)"
+                              style={{ width: 128, boxSizing: "border-box", fontSize: ".68rem", background: "var(--surface3)" }} />
+                          </div>
+                          {reimbValue > 0 && <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 6 }}>→ <b style={{ color: "#5cc8c0" }}>{fmt(reimbValue)}</b> à recevoir{reimbFrom ? ` de ${reimbFrom}` : ""} · n'entre pas dans le solde avant réception</div>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {canTags && (
                     <div style={{ ...rowStyle("rgba(228,139,184,.35)"), flexWrap: "wrap" }}>
                       <span style={{ fontSize: ".95rem" }}>🏷️</span>
@@ -885,6 +949,25 @@ export function TransModal({
           </div>
         );
       })()}
+
+      {/* ── v1.48.0 : ce revenu est-il un remboursement attendu ? ── */}
+      {reimbCandidate && (
+        <div style={{ padding: "10px 12px", borderRadius: 11, marginBottom: 10, background: "rgba(92,200,192,.07)", border: "1.5px solid rgba(92,200,192,.5)" }}>
+          <div style={{ fontSize: ".74rem", fontWeight: 800 }}>↩️ C'est le remboursement{reimbCandidate.from ? ` de ${reimbCandidate.from}` : ""} ?</div>
+          <div style={{ fontSize: ".62rem", color: "var(--text2)", margin: "3px 0 8px" }}>{reimbCandidate.note || "Remboursement attendu"} · {fmt(reimbCandidate.amount)} attendus{reimbCandidate.expectedDate ? ` vers le ${reimbCandidate.expectedDate.slice(8)}/${reimbCandidate.expectedDate.slice(5, 7)}` : ""}</div>
+          <div className="grid-2" style={{ marginBottom: 0 }}>
+            <button className="btn btn-outline" style={{ width: "100%", padding: "8px" }} onClick={() => setDismissReimb(l => [...l, reimbCandidate.id])}>Non</button>
+            <button className="btn" style={{ width: "100%", padding: "8px", background: "#5cc8c0", color: "#06201e", fontWeight: 800 }}
+              onClick={() => { setLinkReimbId(reimbCandidate.id); if (!note && reimbCandidate.from) setNote(`Remboursement ${reimbCandidate.from}`); }}>✓ Oui</button>
+          </div>
+        </div>
+      )}
+      {linkedReimb && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, marginBottom: 10, fontSize: ".66rem", background: "rgba(92,200,192,.07)", border: "1px solid rgba(92,200,192,.4)" }}>
+          <span style={{ flex: 1 }}>✓ Relié au remboursement{linkedReimb.from ? ` de ${linkedReimb.from}` : ""} ({fmt(linkedReimb.amount)})</span>
+          <span onClick={() => setLinkReimbId(null)} style={{ color: "var(--text3)", cursor: "pointer" }}>✕</span>
+        </div>
+      )}
 
       {/* ── Alerte doublon ── */}
       {dupWarning && (
@@ -1123,6 +1206,43 @@ const amountOf = str => { const v = evalAmount(str); return isNaN(v) ? NaN : Mat
 const toPadStr = n => (n === undefined || n === null || n === "") ? "" : String(n).replace(".", ",");
 
 // ─────────────────────────────────────────────────────────────────
+//  Jour de prélèvement (v1.48.0) : Aucun / 1 / 5 / 10 / Autre… → grille
+// ─────────────────────────────────────────────────────────────────
+function DayField({ value, onChange, label = "Jour de prélèvement" }) {
+  const [grid, setGrid] = useState(false);
+  const quick = [[null, "Aucun"], [1, "Le 1"], [5, "Le 5"], [10, "Le 10"]];
+  const isQuick = value == null || [1, 5, 10].includes(value);
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <SectionLabel color="var(--accent)">{label}</SectionLabel>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, padding: 5, borderRadius: 12,
+        background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+        {[...quick, ["__other", isQuick ? "Autre…" : `Le ${value}`]].map(([v, l]) => {
+          const sel = v === "__other" ? (!isQuick || grid) : (value === v && !grid);
+          return (
+            <button key={l} type="button" {...tap(() => { if (v === "__other") setGrid(g => !g); else { setGrid(false); onChange(v); } })}
+              style={{ padding: "6px 2px", borderRadius: 20, fontSize: ".62rem", whiteSpace: "nowrap",
+                border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`, background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                color: sel ? "var(--accent)" : "var(--text2)", fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation" }}>{l}</button>
+          );
+        })}
+      </div>
+      {grid && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginTop: 6 }}>
+          {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+            <button key={d} type="button" {...tap(() => { onChange(d); setGrid(false); })}
+              style={{ padding: "6px 0", borderRadius: 8, fontSize: ".66rem", cursor: "pointer", touchAction: "manipulation",
+                border: `1px solid ${value === d ? "var(--accent)" : "var(--border)"}`, background: value === d ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                color: value === d ? "var(--accent)" : "var(--text2)", fontWeight: value === d ? 700 : 400 }}>{d}</button>
+          ))}
+          <div style={{ gridColumn: "1 / -1", fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>Mois plus court (ex. le 31 en février) : dernier jour du mois.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
 //  Frais fixe / revenu fixe — v1.45.0 (un seul formulaire pour les deux)
 //  À la création, les boutons du haut permettent de basculer de l'un à
 //  l'autre ; en modification le type est verrouillé (un frais existant
@@ -1141,6 +1261,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   const [amt,    setAmt]    = useState(toPadStr(f?.amount));
   const [catId,  setCatId]  = useState(f?.categoryId || cats[0]?.id || "");
   const [startYM, setStartYM] = useState(f?.startYM || "");
+  const [day, setDay] = useState(f?.day || null);   // v1.48.0 : jour de prélèvement
   const [paused,      setPaused]      = useState(f?.paused || false);
   const [pausedFrom,  setPausedFrom]  = useState(f?.pausedFrom || "");
   const [pausedUntil, setPausedUntil] = useState(f?.pausedUntil || "");
@@ -1165,6 +1286,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
     const payload = {
       name: name.trim(), amount: a, categoryId: catId,
       startYM: startYM || null,
+      day: day || null,
       paused,
       // Point de départ de la pause : le mois en cours par défaut si on
       // vient de l'activer (jamais rétroactif sur l'historique déjà passé)
@@ -1194,6 +1316,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
           onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
       </div>
       <CategoryField cats={cats} catId={catId} onChange={setCatId} />
+      <DayField label={isInc ? "Jour de versement" : "Jour de prélèvement"} value={day} onChange={setDay} />
       <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
         ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
       ]} />
@@ -1770,6 +1893,45 @@ export function ProjectModal({ project = null, cagnottes = [], tags = [], onSave
         noneLabel="⊘ Pas de suivi des dépenses" emptyLabel="Pas de suivi des dépenses" accentColor="#e48bb8" />
       {target > 0 && <InfoNote color="var(--purple)">💡 À mettre de côté : <b>{fmt(perMonth)} / mois</b> pendant {months} mois{savedNow > 0 ? ` (déjà ${fmt(savedNow)} dans la cagnotte)` : ""}</InfoNote>}
       <FormActions onCancel={onClose} onSave={handleSave} emoji="🎯" />
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  ReimbursementModal — v1.48.0 : remboursement attendu (« à recevoir »)
+// ─────────────────────────────────────────────────────────────────
+export function ReimbursementModal({ reimbursement = null, onSave, onDelete, onReceive, onClose }) {
+  const toast = useToast();
+  const r = reimbursement;
+  const [amt, setAmt]   = useState(toPadStr(r?.amount));
+  const [from, setFrom] = useState(r?.from || "");
+  const [note, setNote] = useState(r?.note || "");
+  const [date, setDate] = useState(r?.expectedDate || "");
+  const [errors, setErrors] = useState({});
+  function handleSave() {
+    const a = amountOf(amt);
+    if (!amt || isNaN(a) || a <= 0) { setErrors({ amt: "Montant requis" }); return; }
+    onSave({ id: r?.id || null, amount: a, from: from.trim(), note: note.trim(), expectedDate: date || null, txId: r?.txId || null });
+    toast(r ? "Remboursement modifié" : "Remboursement attendu ajouté");
+  }
+  return (
+    <Modal onClose={onClose} title={r ? "↩️ Remboursement attendu" : "↩️ Nouveau remboursement attendu"}>
+      <div style={{ marginBottom: 10 }}>
+        {errors.amt && <FieldError msg={errors.amt} />}
+        <NumPad value={amt} type="income" onChange={v => { setAmt(p => typeof v === "function" ? v(p) : v); setErrors({}); }} />
+      </div>
+      <TextField label="Par qui" value={from} onChange={setFrom} placeholder="Ex : Mutuelle, Thomas, employeur…" />
+      <TextField value={note} onChange={setNote} placeholder="Motif (optionnel)… ex : kiné du 03/10" />
+      <DateField label="Attendu vers le (optionnel)" date={date} onChange={setDate}
+        shortcuts={[["Aucune", ""], ["Dans 1 sem.", plusDaysISO(7)], ["Dans 1 mois", plusDaysISO(30)]]} />
+      <InfoNote>N'entre pas dans le solde tant que l'argent n'est pas arrivé. Quand tu saisis le revenu correspondant, l'app te proposera de le relier.</InfoNote>
+      {r && (
+        <div className="grid-2" style={{ marginBottom: 10 }}>
+          <button className="btn btn-outline" style={{ width: "100%", color: "var(--danger)", borderColor: "rgba(200,112,112,.4)" }} onClick={() => onDelete(r)}>🗑 Supprimer</button>
+          <button className="btn" style={{ width: "100%", background: "#5cc8c0", color: "#06201e", fontWeight: 800 }} onClick={() => onReceive(r)}>✓ Reçu</button>
+        </div>
+      )}
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="↩️" />
     </Modal>
   );
 }

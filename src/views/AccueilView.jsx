@@ -2,9 +2,10 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceBreakdown, useGroceryBudget, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
+import { ForecastPanel, RestToLiveSheet, ReimbursementsSheet } from "./ForecastPanels.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  CountUp — chiffre animé de 0 à target
@@ -103,7 +104,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
+export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
 
   // Sections masquables — persistées en localStorage
   const [hidden, setHidden] = useState(() => {
@@ -137,6 +138,13 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   // v1.46.0 : budget courses restant — informatif, jamais déduit du solde
   const grocery = useGroceryBudget(transactions, data.categories, data.groceryBudget);
+  // v1.48.0 : solde jour par jour, reste à vivre, remboursements attendus
+  const forecast = useMemo(() => computeDailyForecast(data, breakdown, grocery), [data, breakdown, grocery]);
+  const rest     = useMemo(() => computeRestToLive(data, breakdown, grocery, forecast), [data, breakdown, grocery, forecast]);
+  const reimbs   = useMemo(() => pendingReimbursements(data), [data]);
+  const [avTab, setAvTab] = useState("list");   // panneau À venir : liste par défaut
+  const [restOpen, setRestOpen] = useState(false);
+  const [reimbOpen, setReimbOpen] = useState(false);
 
   // v1.39.10 : projection du solde sur les prochains mois (médiane des
   // dépenses courantes + fixes/récurrentes/programmées déjà connus)
@@ -192,18 +200,12 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
     useReconciliation(transactions, fixedExpenses, data.fixedIncomes || []);
 
   // Year stats (memoised)
+  // v1.47.1 : année en cours = somme des mêmes totaux mensuels que partout
+  // (frais ET revenus fixes de chaque mois vécu — avant : seulement le mois en cours)
   const { yInc, yExp, yExpVar, yDecag, ySav } = useMemo(() => {
-    let yInc=0, yExp=0, yExpVar=0, yDecag=0, ySav=0;
-    transactions.filter(t => t.date.startsWith(curY)).forEach(t => {
-      const a = parseFloat(t.amount) || 0;
-      if (isIncome(t.type))               { yInc += a; }
-      else if (t.type === "expense")      { yExp += a; yExpVar += a; }
-      else if (t.type === "decagnottage")   yDecag += a;
-      else if (t.type === "epargne")        ySav   += a;
-    });
-    yExp += tf;
-    return { yInc, yExp, yExpVar, yDecag, ySav };
-  }, [transactions, curY, tf]);
+    const t = computePeriodTotals(transactions, fixedExpenses, data.fixedIncomes || [], `${curY}-01`, curM);
+    return { yInc: t.inc, yExp: t.exp, yExpVar: t.expVar, yDecag: t.decag, ySav: t.sav };
+  }, [transactions, fixedExpenses, data.fixedIncomes, curY, curM]);
 
   // Épargne mois en cours
   const savMonth = useMemo(() =>
@@ -217,7 +219,7 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
     [transactions, prevM]
   );
 
-  const pyStats = usePriorYearStats(transactions, fixedExpenses);
+  const pyStats = usePriorYearStats(transactions, fixedExpenses, data.fixedIncomes || []);
   const cagTotal = useMemo(() => cagnottes.reduce((s,c) => s + c.current, 0), [cagnottes]);
 
   // ── Récap cagnotte par période ────────────────────────────────
@@ -478,20 +480,42 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                     <span style={{ fontSize: ".58rem", fontWeight: 700, color: "var(--accent)", border: "1px solid rgba(112,184,224,.45)",
                       borderRadius: 10, padding: "2px 7px", background: "rgba(112,184,224,.1)", whiteSpace: "nowrap", letterSpacing: 0 }}>ⓘ calcul</span>
                   </div>
-                  {grocery && (
-                    <div role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
-                      style={{ order: 3, flexBasis: "100%", display: "flex" }}>
-                      <span style={{
-                        display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
-                        padding: "3px 9px", borderRadius: 10,
-                        color: grocery.over > 0 ? "var(--danger)" : "var(--coral)",
-                        background: grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)",
-                        border: `1px solid ${grocery.over > 0 ? "rgba(200,112,112,.35)" : "rgba(224,136,112,.3)"}`,
-                      }}>
-                        🛒 {grocery.over > 0
-                          ? `Budget courses dépassé de ${fmt(grocery.over)}`
-                          : grocery.remaining > 0 ? `${fmt(grocery.remaining)} de courses à prévoir ce mois` : "Budget courses du mois atteint"}
-                      </span>
+                  {/* v1.48.0 : pastilles (2 lignes max) — courses, reste à vivre, à recevoir */}
+                  {(grocery || rest || reimbs.length > 0) && (
+                    <div style={{ order: 3, flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 5 }}>
+                      {grocery && (
+                        <span role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }} style={{
+                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
+                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
+                          color: grocery.over > 0 ? "var(--danger)" : "var(--coral)",
+                          background: grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)",
+                          border: `1px solid ${grocery.over > 0 ? "rgba(200,112,112,.35)" : "rgba(224,136,112,.3)"}`,
+                        }}>
+                          🛒 {grocery.over > 0
+                            ? `Budget courses dépassé de ${fmt(grocery.over)}`
+                            : grocery.remaining > 0 ? `${fmt(grocery.remaining)} de courses à prévoir` : "Budget courses du mois atteint"}
+                        </span>
+                      )}
+                      {rest && (
+                        <span role="button" onClick={() => { if (touchMoved()) return; setRestOpen(true); }} style={{
+                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
+                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
+                          color: rest.perDay >= 0 ? "#5cc8c0" : "var(--danger)",
+                          background: rest.perDay >= 0 ? "rgba(92,200,192,.12)" : "rgba(200,112,112,.1)",
+                          border: `1px solid ${rest.perDay >= 0 ? "rgba(92,200,192,.35)" : "rgba(200,112,112,.35)"}`,
+                        }}>
+                          💶 {fmt(rest.perDay)}/jour {rest.payday ? "jusqu'à la paie" : "jusqu'à fin du mois"}
+                        </span>
+                      )}
+                      {reimbs.length > 0 && (
+                        <span role="button" onClick={() => { if (touchMoved()) return; setReimbOpen(true); }} style={{
+                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
+                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
+                          color: "#a6e3a1", background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.35)",
+                        }}>
+                          ↩️ {fmt(reimbs.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0))} à recevoir{reimbs.some(r => r.late > 15) ? " ⚠️" : ""}
+                        </span>
+                      )}
                     </div>
                   )}
                   {deltaPct !== null && (
@@ -897,6 +921,12 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
       </Sec>
 
       {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
+      {restOpen && rest && <RestToLiveSheet rest={rest} onClose={() => setRestOpen(false)} />}
+      {reimbOpen && (
+        <ReimbursementsSheet items={reimbs} onClose={() => setReimbOpen(false)}
+          onOpen={r => { setReimbOpen(false); onOpenReimbursement?.(r); }}
+          onAdd={() => { setReimbOpen(false); onOpenReimbursement?.(null); }} />
+      )}
       {breakdownOpen && (
         <BalanceBreakdownSheet breakdown={breakdown} grocery={grocery} categories={data.categories || []} cagnottes={cagnottes}
           onClose={() => setBreakdownOpen(false)} />
@@ -1052,6 +1082,14 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                   <button onClick={closeUpcoming} style={{ width:26, height:26, borderRadius:"50%", background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text2)", fontSize:".7rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
                 </div>
 
+                {/* v1.48.0 : Liste (par défaut) / Calendrier & solde */}
+                <div style={{ display: "flex", gap: 4, background: "var(--surface2)", padding: 3, borderRadius: 12, border: "1px solid var(--border-soft)", marginBottom: 12 }}>
+                  {[["list", "📋 Liste"], ["cal", "📅 Calendrier & solde"]].map(([k, l]) => (
+                    <button key={k} onClick={() => setAvTab(k)} style={{ flex: 1, padding: "7px 2px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: ".66rem", fontWeight: 700,
+                      background: avTab === k ? "rgba(112,184,224,.16)" : "transparent", color: avTab === k ? "var(--accent)" : "var(--text2)" }}>{l}</button>
+                  ))}
+                </div>
+                {avTab === "cal" ? <ForecastPanel forecast={forecast} /> : <>
                 {/* Filtres */}
                 <div style={{ display:"flex", gap:6, overflowX:"auto", marginBottom:12, paddingBottom:2 }}>
                   {[["both","Tout"],["recurring","Récurrents"],["fixes","Fixes"],["scheduled","Programmés"]].map(([k,l])=>(
@@ -1075,7 +1113,10 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                     const cat=data.categories?.find(c=>c.id===item.categoryId);
                     const icon=isFix?(cat?.icon??"📌"):isInc?(cat?.icon??"💰"):isRec?(cat?.icon??"🔄"):(cat?.icon??"📅");
                     const label=(isFix||isInc)?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
-                    const sub=(isFix||isInc)?"Ce mois · non pointé":isRec?`Ce mois · ${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
+                    // v1.48.0 : date de prélèvement quand elle est connue
+                    const recDay = isRec ? (breakdown.recurring.items.find(x => x.tpl.id === item.id)?.day || null) : null;
+                    const dayLbl = (isFix||isInc) && item.day ? `le ${item.day}` : recDay ? `le ${recDay}` : null;
+                    const sub=(isFix||isInc)?`${dayLbl ? dayLbl + " · " : "Ce mois · "}non pointé`:isRec?`${dayLbl ? dayLbl + " · " : "Ce mois · "}${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
                     const badge=isSch?daysUntil(item.date):null;
                     const recurBadge = isRec && item.occurrences != null ? (() => {
                       const done = (data.transactions||[]).filter(t => t.templateId === item.id).length;
@@ -1132,6 +1173,7 @@ export function AccueilView({ data, onOpenOffAccount, onCashCheque, onDeleteTran
                     <span style={{ fontFamily:"var(--mono)", fontSize:".68rem", fontWeight:800, color: total >= 0 ? "var(--success)" : "var(--text)" }}>{total >= 0 ? "+" : ""}{fmt(total)}</span>
                   </div>
                 )}
+                </>}
               </Modal>
             )}
           </>

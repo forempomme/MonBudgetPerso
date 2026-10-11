@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.47.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.48.0**.
 
 ---
 
@@ -25,6 +25,7 @@ src/
 │   ├── AccueilView.jsx    ├── CagnottesView.jsx   ├── HistoriqueView.jsx
 │   ├── BalanceBreakdownSheet.jsx  panneau « Calcul du solde estimé » (v1.45.0)
 │   ├── MonthRecapSheet.jsx        « Clôture du mois » / bilans mensuels (v1.47.0)
+│   ├── ForecastPanels.jsx         calendrier & solde jour par jour, reste à vivre, remboursements (v1.48.0)
 │   ├── FixesView.jsx      ├── RapportView.jsx     ├── OptionsView.jsx
 │   └── LockScreen.jsx
 └── components/
@@ -119,6 +120,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | `computeWallets(types, offEntries, txs, ym)` | Porte-monnaie par type suivi : solde = rechargements − dépenses hors compte − montants à part en complément ; rechargé/dépensé du mois (corrections exclues) ; mouvements | Mini-carte hero + panneau porte-monnaie (Accueil) |
 | `computeSidePaidByCategory(txs, offEntries, type, période)` | Payé hors banque vs budget réel par catégorie | Rapport |
 | `computeTagBudgets(tags, txs, ym)` | Budgets par tag : dépensé / budget / % / niveau (`ok`/`warn`/`over`). Dépenses uniquement, montant banque | Rapport (`TagBudgetBars`) ET alerte Accueil |
+| `computeMonthTotals` / `computePeriodTotals` / `firstDataYM` (v1.47.1) | Totaux d'un mois / d'une période = opérations + frais fixes + revenus fixes, uniquement pour les mois vécus (≥ 1ʳᵉ opération, ≤ mois en cours). `useMonthStats`, `useYearMonths`, `useYearTotals`, `usePriorYearStats` n'en sont que des enveloppes | Tout total mensuel/annuel affiché (Accueil, Historique, Rapport). Ne jamais recalculer à la main |
 | `effectiveFixesForMonth` / `effectiveIncomesForMonth` | Montant effectif d'un frais/revenu fixe pour un mois donné (respecte `isActiveForMonth` + `monthlyOverrides`) | Tout total mensuel de frais/revenus fixes |
 
 **Rappel de conception (établi et re-confirmé plusieurs fois avec l'utilisateur)** :
@@ -150,6 +152,10 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 | Clôture du mois | `hooks.js` (`computeMonthRecap`) + `views/MonthRecapSheet.jsx` + `App.jsx` (affichage auto le 1er, `lastMonthRecapShown` / `MARK_MONTH_RECAP`) + `RapportView` (« Bilans mensuels ») | — |
 | Projets avec échéance | `store.js` (`projects`, `SAVE_PROJECT` crée cagnotte/tag au besoin, `DELETE_PROJECT`) + `hooks.js` (`computeProjectStatus`) + `modals.jsx` (`ProjectModal`) + `CagnottesView` (`ProjectCard`) | — |
 | Historique « Par type » | `HistoriqueView` (`viewMode` = "type" par défaut, `openTypes`, `closedWeeks`, `renderOffRow`, `renderFixesCard`, `renderIncomesCard`) | — |
+| Jour de prélèvement / solde jour par jour | `fixedExpenses[].day`, `fixedIncomes[].day` (1–31) ; `hooks.js` (`dayInMonthISO`, `nextPayday` = revenu fixe daté le plus élevé, `computeDailyForecast` : part du solde estimé, ré-étale les fixes datés/récurrentes/programmées du mois, ajoute le mois suivant jusqu'à la paie, courses réparties) ; `modals.jsx` (`DayField`) ; `ForecastPanels.jsx` (`ForecastPanel`) dans le panneau À venir (onglet 2, la Liste reste l'onglet par défaut) | — |
+| Reste à vivre | `hooks.js` (`computeRestToLive` : (estimé − courses − prélèvements du mois suivant avant la paie − marge) ÷ jours) ; `restSettings` {enabled, margin} ; pastille Accueil + `RestToLiveSheet` ; Options → Reste à vivre. Indicatif, jamais dans le solde | — |
+| Remboursements attendus | `reimbursements[]` {amount, from, note, expectedDate, txId, status, receivedTxId} ; `store.js` (`SAVE_TRANSACTION` accepte `reimbursement` / `receiveReimbursementId`, `SAVE/DELETE/RECEIVE_REIMBURSEMENT` — Reçu crée le revenu) ; `TransModal` (option « Sera remboursé » + suggestion sur un revenu) ; `ReimbursementModal` ; `ReimbursementsSheet` ; rappel ids 500+ | — |
+| Rappel du soir | `notifSettings.evening/eveningHour/eveningDays` ; `App.jsx` (`eveningReminders`, ids 900–906, reprogrammé à chaque saisie ; actions « EVENING » Saisir / Rien aujourd'hui) | — |
 | Budget courses | `hooks.js` (`computeGroceryBudget`, `useGroceryBudget`, `groceryCategoryIds`) + `store.js` (`groceryBudget`, `SAVE_GROCERY_BUDGET`) + `AccueilView` (pastille) + `BalanceBreakdownSheet` (`GrocerySection`, sous le total) + `OptionsView` (feuille « grocery ») | — |
 | Formulaires de saisie (tous) | `modals.jsx` — depuis 1.45.0 tous bâtis avec les mêmes briques que `TransModal` ; `FixedModal`/`FixedIncomeModal` sont deux portes d'entrée vers un unique `FixedFormModal` (bascule frais ↔ revenu à la création, via `onSaveIncome`/`onSaveExpense` passés par App.jsx). Montants lus avec `amountOf()` (évalue « 12+3 ») | — |
 | Projection 3 mois | `hooks.js` (`useBalanceProjection`, `useVariableCashflowMedian`, `useProjectionAccuracy`) + `views.jsx` (`AccueilView`, carte carrousel) | — |
@@ -185,6 +191,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **Jour de prélèvement, calendrier & solde jour par jour, reste à vivre, remboursements attendus, rappel du soir** — v1.48.0
 - **Historique par type, sous-catégories, suppression protégée, aperçu d'import, clôture du mois, projets** — v1.47.0
 - **Budget courses** (`groceryBudget` {enabled, categoryIds (null = catégories nommées « Courses »), months}, `computeGroceryBudget`) — v1.46.0 ; moyenne = (N mois complets + mois en cours) ÷ (N + jour/nbJours) depuis v1.46.1 (mois en cours au prorata, validé par Julien). **Purement informatif : ne jamais l'ajouter au solde estimé** (décision de Julien) ; affiché en pastille hero card + section sous le total du panneau de calcul + réglage Options.
 - **Pauses terminées archivées** (`pauseHistory` [{from, until}], rempli par `withPauseHistory` dans le reducer à chaque réactivation ; éditable dans Options du formulaire « Pauses passées ») — v1.45.1. Ne jamais remettre `pausedFrom` à null sans archiver la période.

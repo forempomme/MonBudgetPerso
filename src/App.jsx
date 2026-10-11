@@ -8,7 +8,7 @@ import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
-  ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal,
+  ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
   ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
   QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal,
 } from "./components/modals.jsx";
@@ -50,6 +50,31 @@ function loadState() {
 // ─────────────────────────────────────────────────────────────────
 //  App
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  Rappel du soir (v1.48.0) : les 7 prochains soirs à l'heure choisie,
+//  sauf les jours où une opération (ou une dépense hors compte) existe déjà.
+// ─────────────────────────────────────────────────────────────────
+function eveningReminders(ns, data, now) {
+  if (!ns?.enabled || !ns.evening) return [];
+  const hour = Math.min(23, Math.max(0, parseInt(ns.eveningHour, 10) || 21));
+  const days = ns.eveningDays || "all";
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const used = new Set([...(data.transactions || []), ...(data.offAccountEntries || [])].map(t => t.date));
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, hour, 0, 0);
+    if (at <= now) continue;
+    const dow = at.getDay();   // 0 = dimanche
+    if (days === "week" && (dow === 0 || dow === 6)) continue;
+    if (days === "weekend" && dow !== 0 && dow !== 6) continue;
+    if (used.has(iso(at))) continue;
+    const jour = at.toLocaleDateString("fr-FR", { weekday: "long" });
+    out.push({ id: 900 + i, title: "🌙 Une dépense aujourd'hui ?", body: `Rien n'a été saisi ce ${jour}. Un petit tap pour garder ton solde juste.`,
+      schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING" });
+  }
+  return out;
+}
+
 export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
@@ -114,6 +139,8 @@ export default function App() {
   // opts.test    : ajoute une notification de test dans 5 s (bouton Options).
   const scheduleNotifications = useCallback(async (ns, opts = {}) => {
     const { silent = false, test = false } = opts;
+    // v1.48.0 : les réglages passés depuis Options ne contiennent pas tous les champs
+    ns = { ...(data.notifSettings || {}), ...(ns || {}) };
     const say = (msg, type) => { if (!silent) addToast(msg, type); };
     try {
       let LN = null;
@@ -217,6 +244,18 @@ export default function App() {
           if (warn > now) push(400 + i, "🧾 Chèque bientôt périmé", `${label} — plus encaissable après le ${String(exp[2]).padStart(2, "0")}/${String(exp[1]).padStart(2, "0")}/${exp[0]}`, warn);
         });
       }
+      // v1.48.0 : remboursements attendus en retard (15 j après la date prévue, puis chaque semaine)
+      if (ns.reimbursements !== false) {
+        (data.reimbursements || []).filter(r => r.status !== "received" && r.expectedDate).slice(0, 50).forEach((r, i) => {
+          const [y, m, d] = r.expectedDate.split("-").map(Number);
+          let k = 0, at;
+          do { at = new Date(y, m - 1, d + 15 + 7 * k, 9, 0, 0); k++; } while (at <= now && k < 60);
+          if (at > now) push(500 + i, "↩️ Remboursement en attente",
+            `${r.from || "Remboursement"} : ${fmtAmt(r.amount)} attendus depuis le ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`, at);
+        });
+      }
+      // v1.48.0 : rappel du soir (7 prochains soirs, sauf ceux où une opération existe déjà)
+      eveningReminders(ns, data, now).forEach(n => pending.push(n));
       if (test) push(9, "✅ Notifications actives", "Tes rappels Gestion du Budget fonctionnent.", new Date(Date.now() + 5000));
 
       if (pending.length > 0) await LN.schedule({ notifications: pending });
@@ -228,7 +267,47 @@ export default function App() {
   // addToast est défini plus bas mais stable (useCallback sans dépendance) :
   // il est lu au moment de l'appel, jamais au rendu — pas dans les deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold, data.transactions]);
+  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold, data.transactions, data.reimbursements, data.notifSettings, data.offAccountEntries]);
+
+  // ── Rappel du soir (v1.48.0) : reprogrammé à chaque saisie, pour annuler
+  // celui du jour dès qu'une opération est enregistrée ───────────────
+  useEffect(() => {
+    if (!window?.Capacitor?.isNativePlatform?.()) return;
+    const id = setTimeout(async () => {
+      try {
+        const { LocalNotifications: LN } = await import("@capacitor/local-notifications");
+        const perm = await LN.checkPermissions();
+        if (perm.display !== "granted") return;
+        await LN.cancel({ notifications: Array.from({ length: 7 }, (_, i) => ({ id: 900 + i })) });
+        const ns = data.notifSettings || {};
+        if (!ns.enabled) return;
+        const list = eveningReminders(ns, data, new Date());
+        if (list.length) await LN.schedule({ notifications: list });
+      } catch (e) { console.warn("evening reminders:", e); }
+    }, 1500);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.transactions, data.offAccountEntries, data.notifSettings]);
+
+  // Boutons de la notification du soir : « Saisir » / « Rien aujourd'hui »
+  useEffect(() => {
+    if (!window?.Capacitor?.isNativePlatform?.()) return;
+    let handle = null;
+    (async () => {
+      try {
+        const { LocalNotifications: LN } = await import("@capacitor/local-notifications");
+        await LN.registerActionTypes({ types: [{ id: "EVENING", actions: [
+          { id: "add", title: "Saisir", foreground: true },
+          { id: "none", title: "Rien aujourd'hui" },
+        ] }] });
+        handle = await LN.addListener("localNotificationActionPerformed", ev => {
+          const nid = ev?.notification?.id;
+          if (nid >= 900 && nid <= 906 && ev.actionId !== "none") setTransModal({ editingId: null, defaultType: "expense" });
+        });
+      } catch (e) { console.warn("notification actions:", e); }
+    })();
+    return () => { handle?.remove?.(); };
+  }, []);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
   const saveTag                = useCallback(tag  => dispatch({ type: A.SAVE_TAG,    tag  }), []);
@@ -371,6 +450,7 @@ export default function App() {
     if (importPreview) { setImportPreview(null);  return; }
     if (recapYM)       { setRecapYM(null);        return; }
     if (projectModal)  { setProjectModal(null);   return; }
+    if (reimbModal)    { setReimbModal(null);     return; }
     if (catModal)      { setCatModal(null);       return; }
     if (transferModal) { setTransferModal(false); return; }
     if (cagModal)      { setCagModal(null);       return; }
@@ -429,6 +509,7 @@ export default function App() {
   const [importPreview, setImportPreview] = useState(null); // v1.47.0 : { fileName, data }
   const [recapYM,       setRecapYM]       = useState(null); // v1.47.0 : clôture du mois affichée
   const [projectModal,  setProjectModal]  = useState(null); // v1.47.0 : {} (nouveau) | projet
+  const [reimbModal,    setReimbModal]    = useState(null); // v1.48.0 : {} (nouveau) | remboursement attendu
   const [confirmModal,  setConfirmModal]  = useState(null); // null | { title, msg, onConfirm }
   const [detailModal,   setDetailModal]   = useState(null); // null | { type, period }
   const [monthModal,    setMonthModal]    = useState(null); // null | { year, monthIdx }
@@ -663,6 +744,7 @@ export default function App() {
   switch (tab) {
   case "accueil": return (
       <AccueilView data={data}
+        onOpenReimbursement={r => setReimbModal(r || {})}
         onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
         onDeleteTrans={deleteTransaction}
         onOpenOffAccount={(mode, satId, entry) => setOffModal({ mode, satId, entry })}
@@ -784,6 +866,7 @@ export default function App() {
         onSaveTag={saveTag}
         onDeleteTag={deleteTag}
         onSaveGroceryBudget={settings => dispatch({ type: A.SAVE_GROCERY_BUDGET, settings })}
+        onSaveRestSettings={settings => dispatch({ type: A.SAVE_REST_SETTINGS, settings })}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
@@ -963,6 +1046,7 @@ export default function App() {
             animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
           }}>
           {[
+            { type:"reimbursement",      icon:"↩️", label:"À recevoir", color:"#5cc8c0"        },
             { type:"balance_adjustment", icon:"⚖️", label:"Équilibre",  color:"var(--sapin)"   },
             { type:"scheduled",          icon:"📅", label:"Programmée", color:"var(--warning)" },
             { type:"epargne",            icon:"🐷", label:"Épargne",    color:"var(--purple)"  },
@@ -975,6 +1059,7 @@ export default function App() {
                 setFabOpen(false);
                 if (item.type === "scheduled") setScheduledModal(true);
                 else if (item.type === "offAccount") setOffModal({ mode: "expense" });
+                else if (item.type === "reimbursement") setReimbModal({});
                 else setTransModal({ editingId: null, defaultType: item.type });
               }}
               style={{
@@ -1045,7 +1130,8 @@ export default function App() {
           roundingRule={data.roundingRule || "ceil"}
           editingId={transModal.editingId}
           defaultType={transModal.defaultType || "expense"}
-          onSave={tx => { saveTransaction(tx); setTransModal(null); }}
+          reimbursements={data.reimbursements || []}
+          onSave={(tx, extra) => { dispatch({ type: A.SAVE_TRANSACTION, tx, ...(extra || {}) }); setTransModal(null); }}
           onSaveRecurring={tpl => saveRecurring(tpl)}
           onClose={() => setTransModal(null)}
         />
@@ -1125,6 +1211,17 @@ export default function App() {
           onSave={cat => { saveCat(cat); setCatModal(null); }}
           onClose={() => setCatModal(null)}
         />
+      )}
+      {reimbModal && (
+        <ReimbursementModal reimbursement={reimbModal.id ? reimbModal : null}
+          onSave={r => { dispatch({ type: A.SAVE_REIMBURSEMENT, reimbursement: r }); setReimbModal(null); }}
+          onDelete={r => setConfirmModal({
+            title: "Supprimer ce remboursement attendu ?", msg: "Il ne sera plus suivi. La dépense d'origine n'est pas modifiée.",
+            onConfirm: () => { dispatch({ type: A.DELETE_REIMBURSEMENT, id: r.id }); setReimbModal(null); addToast("Remboursement supprimé", "error"); },
+          })}
+          onReceive={r => { dispatch({ type: A.RECEIVE_REIMBURSEMENT, id: r.id }); setReimbModal(null);
+            addToast(`↩️ Reçu : revenu de ${(parseFloat(r.amount) || 0).toFixed(2).replace(".", ",")} € ajouté (à pointer)`); }}
+          onClose={() => setReimbModal(null)} />
       )}
       {projectModal && (
         <ProjectModal project={projectModal.id ? projectModal : null} cagnottes={data.cagnottes} tags={data.tags || []}

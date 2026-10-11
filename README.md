@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.47.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.48.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.47.0
+└── package.json         — version: 1.48.0
 ```
 
 ---
@@ -341,6 +341,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.48.0** | minor | **Jour de prélèvement** des frais et revenus fixes (Aucun / 1 / 5 / 10 / grille 31 j) ; panneau **À venir** avec 2 onglets — « 📋 Liste » (par défaut, dates de prélèvement affichées) et « 📅 Calendrier & solde » (calendrier du mois, opérations datées jusqu'à la paie, courbe du solde jour par jour, point bas) — bandeau d'accueil inchangé ; **reste à vivre** par jour jusqu'à la paie (revenu fixe daté le plus élevé) en pastille + détail, marge de sécurité 0 € par défaut modifiable (Options → Reste à vivre), indicatif ; **remboursements attendus** : option « ↩️ Sera remboursé » d'une dépense (tout / 50 % / montant, par qui, date), entrée « À recevoir » dans le bouton +, pastille + liste, « ✓ Reçu » crée le revenu, un revenu correspondant (± 1 € ou nom) propose « C'est le remboursement de… ? », rappel 15 j après la date prévue ; jamais compté dans le solde avant réception ; **rappel du soir** (heure, jours) seulement si rien n'a été saisi ce jour-là, avec boutons Saisir / Rien aujourd'hui. Pastilles de la carte du solde sur 2 lignes |
+| **1.47.1** | patch | Totaux mensuels et annuels justes partout — nouvelle source unique `computeMonthTotals` / `computePeriodTotals` (opérations + frais fixes + revenus fixes de chaque mois vécu, depuis la 1ʳᵉ opération et jusqu'au mois en cours) utilisée par l'Accueil (mois en cours / précédent, année en cours / même période l'an dernier), le donut de l'Historique, le Rapport (mois, année, classement, comparaison N-1, taux d'épargne, analyste, top catégories). Corrige « Dépenses ▲ 117 % » (fixes comptés seulement pour le mois en cours), les revenus fixes absents de tous ces chiffres, et les frais fixes comptés avant le début d'utilisation de l'app |
 | **1.47.0** | minor | **Historique « Par type »** (vue par défaut) : blocs dépliants Dépenses / Revenus / Frais & revenus fixes / Cagnottes / Équilibres / Hors compte avec total et nombre à pointer, puis sous-blocs par semaine ; **sous-catégories** (`parentId`, un niveau) : saisie avec ▸ « Toute la catégorie » / sous-catégories, champ « Transport › Carburant », arbre dans Options (＋ sous), Rapport, seuils et budget courses additionnent les sous-catégories dans la principale ; liaisons inchangées ; **suppression protégée** des catégories (liste de tout ce qui est rattaché + déplacer vers / laisser sans catégorie — plus d'opérations orphelines) ; **aperçu avant import** (fichier vs données actuelles, alerte opérations perdues, sauvegarde préalable cochée par défaut ; la version de l'app est désormais notée dans les sauvegardes) ; **clôture du mois** (« Octobre en bref » affiché automatiquement le 1er du mois, une seule fois, + Rapport → Bilans mensuels) ; **projets avec échéance** (onglet Cagnottes : cagnotte + tag liés, avance/retard, € par mois, versement auto en un tap). Fix : le réglage Options → Budget courses n'était pas enregistré (callback branché sur le Rapport au lieu des Options depuis 1.46.0) |
 | **1.46.2** | patch | 3 correctifs : (1) projection 3 mois — les frais/revenus fixes en pause (y compris pauses passées) ou pas encore commencés (`startYM`) étaient quand même projetés → passe désormais par `isActiveForMonth` ; (2) badge % et petite courbe de la hero card — les opérations d'équilibre (+/−) étaient ignorées dans les soldes des mois passés ; (3) notification « Récurrentes à confirmer » — annonçait le nombre total de modèles au lieu de celles qui tombent vraiment le mois suivant (terminées exclues, annuelles seulement en janvier) |
 | **1.46.1** | patch | Budget courses : la moyenne inclut maintenant le mois en cours **au prorata** de la part du mois écoulée — (N derniers mois complets + dépensé ce mois) ÷ (N + jour/nb de jours du mois). En début de mois ≈ moyenne des mois passés, le dernier jour = moyenne simple des N+1 mois. Ligne « Octobre (au 10) · poids 10/31 » ajoutée au détail ; réglage « N mois + en cours » |
