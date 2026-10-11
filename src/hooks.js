@@ -910,6 +910,30 @@ export function computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym
   return { inc, exp, expVar: expTx, sav, decag, net: inc - exp, fixExp, fixInc, hasData: lived };
 }
 
+/** v1.49.1 — Mois « vécus » d'une période (depuis la 1ʳᵉ opération, jusqu'au mois en cours) :
+ *  ce sont les seuls mois où computeMonthTotals compte les frais/revenus fixes. */
+export function livedMonths(transactions, fromYM, toYM) {
+  const first = firstDataYM(transactions), cur = currentYM();
+  return monthRange(fromYM, toYM).filter(ym => ym >= first && ym <= cur);
+}
+/** v1.49.1 — Détail ligne par ligne des frais (kind "expense") ou revenus (kind "income")
+ *  fixes sur une liste de mois. Mêmes règles que effectiveFixesForMonth /
+ *  effectiveIncomesForMonth → la somme des lignes = fixExp / fixInc de computePeriodTotals.
+ *  Retourne [{ f, total, n }] (n = nombre de mois actifs), sans les lignes jamais actives. */
+export function fixedLinesForPeriod(list, months, kind) {
+  return (list || []).map(f => {
+    let total = 0, n = 0;
+    months.forEach(ym => {
+      if (!isActiveForMonth(f, ym)) return;
+      n++;
+      total += kind === "expense"
+        ? (((f.monthlyOverrides?.[ym])?.amount ?? f.amount) || 0)
+        : (parseFloat(f.amount) || 0);
+    });
+    return { f, total, n };
+  }).filter(l => l.n > 0);
+}
+
 export function computePeriodTotals(transactions, fixedExpenses, fixedIncomes, fromYM, toYM) {
   const first = firstDataYM(transactions), cur = currentYM();
   const out = { inc: 0, exp: 0, expVar: 0, sav: 0, decag: 0, fixExp: 0, fixInc: 0, months: 0 };

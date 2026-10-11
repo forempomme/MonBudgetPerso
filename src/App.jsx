@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
+import { LS_KEY, uid, fmt, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
 import { useBalanceWithRecurring, categoryUsage, computeMonthRecap } from "./hooks.js";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
@@ -28,10 +28,11 @@ const TABS = [
   ["rapport",    "📊", "Rapport"],
   ["options",    "⚙️",  "Options"],
 ];
-const PAGE_TITLES = Object.fromEntries(
-  [["accueil","Tableau de bord"],["cagnottes","🐷 Cagnottes"],["historique","Historique"],
-   ["fixes","Frais Fixes"],["rapport","Rapport Annuel"],["options","Options"]]
-);
+// v1.49.0 : le titre d'une page = son emoji + son libellé du menu du bas
+// (avant : « Tableau de bord », « Frais Fixes », « Rapport Annuel »… ≠ menu).
+// Le sous-titre de contexte est calculé dans le rendu (pageSubtitle).
+const PAGE_TITLES = Object.fromEntries(TABS.map(([k, icon, label]) => [k, { icon, label }]));
+const MONTHS_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 
 // ─────────────────────────────────────────────────────────────────
 //  Load initial state
@@ -78,6 +79,8 @@ function eveningReminders(ns, data, now) {
 export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
+  // Mois affiché dans l'Historique — remonté par HistoriqueView pour le sous-titre (v1.49.0)
+  const [histYM, setHistYM] = useState(() => ({ y: new Date().getFullYear(), m: new Date().getMonth() }));
   // Nécessaire pour l'alerte "solde bas" des notifications — même formule
   // que le solde estimé affiché sur l'accueil (voir hooks.js)
   const currentBalance = useBalanceWithRecurring(
@@ -357,7 +360,10 @@ export default function App() {
   const canGoBack = tabHistory.length > 1;
 
   // ── React-controlled theme ───────────────────────────────────
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  // v1.49.0 : bouton ☀️ retiré de l'en-tête (thème clair inutilisé). Le thème
+  // clair reste dans styles.css, mais l'appli démarre toujours en sombre pour
+  // que personne ne reste bloqué en clair sans bouton pour revenir.
+  const [theme] = useState("dark");
   useEffect(() => {
     document.documentElement.className = theme === "light" ? "light" : "";
     localStorage.setItem("theme", theme);
@@ -748,7 +754,7 @@ export default function App() {
         onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
         onDeleteTrans={deleteTransaction}
         onOpenOffAccount={(mode, satId, entry) => setOffModal({ mode, satId, entry })}
-        onShowDetail={(type, period) => setDetailModal({ type, period })}
+        onShowDetail={(type, period, extra) => setDetailModal({ type, period, extra })}
         onSwitchTab={navigateTo}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
@@ -811,6 +817,7 @@ export default function App() {
         }}
         onConfirmScheduled={id => dispatch({ type: A.CONFIRM_SCHEDULED, id })}
         onDeleteScheduled={id  => dispatch({ type: A.DELETE_SCHEDULED,  id })}
+        onMonthChange={(y, m) => setHistYM(p => (p.y === y && p.m === m ? p : { y, m }))}
         initPointFilter={histPointFilter}
         onClearPointFilter={() => setHistPointFilter("all")}
       />
@@ -934,6 +941,24 @@ export default function App() {
     );
   }
 
+  // ── Sous-titre de contexte sous le titre de page (v1.49.0) ──
+  const pageSubtitle = (() => {
+    const now = new Date();
+    switch (tab) {
+      case "accueil":    return `${MONTHS_LC[now.getMonth()]} ${now.getFullYear()}`;
+      case "cagnottes": {
+        const n = (data.cagnottes || []).length;
+        if (!n) return "aucune cagnotte";
+        const tot = data.cagnottes.reduce((s, c) => s + (c.current || 0), 0);
+        return `${n} cagnotte${n > 1 ? "s" : ""} · ${fmt(tot)}`;
+      }
+      case "historique": return `${MONTHS_LC[histYM.m]} ${histYM.y}`;
+      case "fixes":      return "frais & revenus fixes";
+      case "rapport":    return `année ${year}`;
+      default:           return "";
+    }
+  })();
+
   return (
     <ToastCtx.Provider value={addToast}>
 
@@ -945,9 +970,19 @@ export default function App() {
               ‹
             </button>
           )}
-          <h1 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {PAGE_TITLES[tab] ?? tab}
-          </h1>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+              <span style={{ fontSize: "1rem", lineHeight: 1, flexShrink: 0 }}>{PAGE_TITLES[tab]?.icon}</span>
+              <h1 style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {PAGE_TITLES[tab]?.label ?? tab}
+              </h1>
+            </div>
+            {pageSubtitle && (
+              <div style={{ fontSize: ".6rem", fontWeight: 700, color: "var(--text3)", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {pageSubtitle}
+              </div>
+            )}
+          </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <div style={{
@@ -961,9 +996,6 @@ export default function App() {
               fontFamily:"'Courier New',monospace", letterSpacing:".06em",
             }}>v{APP_VERSION}</span>
           </div>
-          <button className="theme-btn" onClick={() => setTheme(t => t === "dark" ? "light" : "dark")}>
-            {theme === "dark" ? "☀️" : "🌙"}
-          </button>
         </div>
       </header>
 
@@ -1273,6 +1305,7 @@ export default function App() {
           categories={data.categories}
           cagnottes={data.cagnottes}
           fixedExpenses={data.fixedExpenses}
+          fixedIncomes={data.fixedIncomes || []}
           onClose={() => setDetailModal(null)}
         />
       )}
@@ -1283,6 +1316,7 @@ export default function App() {
           categories={data.categories}
           cagnottes={data.cagnottes}
           fixedExpenses={data.fixedExpenses}
+          fixedIncomes={data.fixedIncomes || []}
           onClose={() => setMonthModal(null)}
         />
       )}

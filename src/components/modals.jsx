@@ -39,7 +39,7 @@ import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
 import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved } from "../utils.js";
 import { useToast } from "../context.js";
-import { useTotalFixes } from "../hooks.js";
+import { useTotalFixes, computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod } from "../hooks.js";
 
 // ─── Helper : parse un montant saisi avec virgule ou point ────────
 const parseAmt = s => parseFloat(String(s ?? "").replace(",", ".")) || 0;
@@ -1959,13 +1959,21 @@ export function ConfirmModal({ title, msg, onConfirm, onClose }) {
 // ─────────────────────────────────────────────────────────────────
 //  Detail drill-down modal
 // ─────────────────────────────────────────────────────────────────
-export function DetailModal({ config, transactions, categories, cagnottes, fixedExpenses, onClose }) {
+export function DetailModal({ config, transactions, categories, cagnottes, fixedExpenses, fixedIncomes = [], onClose }) {
   const { type, period } = config;
   const now     = new Date();
   const curM    = currentYM();
   const curY    = now.getFullYear().toString();
-  const tf      = useTotalFixes(fixedExpenses, curM);
-  const prefix  = period === "month" ? curM : period === "year" ? curY : "";
+  // v1.49.1 : mêmes totaux que les cases du Bilan (computePeriodTotals) — avant,
+  // les revenus fixes étaient ignorés et les frais fixes comptés pour 1 seul mois
+  // même sur l'année. Période = 1ᵉʳ du mois (ou janvier) → mois en cours.
+  const fromYM  = period === "year" ? `${curY}-01` : curM;
+  const inPeriod = d => { const ym = (d || "").slice(0, 7); return ym >= fromYM && ym <= curM; };
+  const totals  = computePeriodTotals(transactions, fixedExpenses, fixedIncomes, fromYM, curM);
+  const months  = livedMonths(transactions, fromYM, curM);
+  const fixLines = type === "expense" ? fixedLinesForPeriod(fixedExpenses, months, "expense")
+                 : type === "income"  ? fixedLinesForPeriod(fixedIncomes,  months, "income")  : [];
+  const fixTotal = fixLines.reduce((a, l) => a + l.total, 0);
 
   const CFG = {
     income:      { label: "Revenus",          icon: "💰", color: "var(--success)", badge: "rgba(52,211,153,.15)"  },
@@ -1984,7 +1992,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
     items = null;
   } else {
     const filtered = transactions.filter(t => {
-      if (prefix && !t.date.startsWith(prefix)) return false;
+      if (period === "month" || period === "year") { if (!inPeriod(t.date)) return false; }
       if (type === "income")        return isIncome(t.type);
       if (type === "expense")       return t.type === "expense";
       if (type === "expense_var")   return t.type === "expense";
@@ -1993,7 +2001,11 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
     }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     total = filtered.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-    if (type === "expense") total += tf;
+    if (period === "month" || period === "year") {
+      if (type === "income")      total = totals.inc;
+      if (type === "expense")     total = totals.exp;
+      if (type === "expense_var") total = totals.expVar;
+    }
     items = filtered;
   }
 
@@ -2011,6 +2023,18 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
       </div>
 
       <div style={{ maxHeight: "55vh", overflowY: "auto" }}>
+        {/* v1.49.0 : taux d'épargne du mois (retiré de la carte Accueil devenue compacte) */}
+        {type === "cagnottes" && config.extra?.rate != null && (() => {
+          const { rate, prevRate } = config.extra;
+          const d = prevRate != null ? rate - prevRate : null;
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", marginBottom: 10, borderRadius: 10, background: "rgba(176,144,224,.08)", border: "1px solid rgba(176,144,224,.25)", fontSize: ".72rem" }}>
+              <span style={{ flex: 1, color: "var(--text2)" }}>🐷 Taux d'épargne ce mois</span>
+              <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{rate} %</b>
+              {d != null && <span style={{ fontSize: ".62rem", fontWeight: 700, color: d >= 0 ? "var(--success)" : "var(--danger)" }}>{d >= 0 ? "▲" : "▼"} {Math.abs(d)} pt vs mois dernier</span>}
+            </div>
+          );
+        })()}
         {type === "cagnottes" && (
           cagnottes.length === 0
             ? <div className="empty-state"><div className="empty-icon">🎯</div><p>Aucune cagnotte</p></div>
@@ -2030,18 +2054,18 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
 
         {type === "expense" && (
           <>
-            {fixedExpenses.length > 0 && (
+            {fixLines.length > 0 && (
               <>
                 <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "10px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
-                  Frais fixes — {fmt(tf)}
+                  Frais fixes — {fmt(fixTotal)}
                 </div>
-                {fixedExpenses.map((f, i) => {
-                  const cat = categories.find(c => c.id === f.categoryId);
+                {fixLines.map((l, i) => {
+                  const cat = categories.find(c => c.id === l.f.categoryId);
                   return (
-                    <div key={i} className="item-row">
+                    <div key={l.f.id || i} className="item-row">
                       <div className="item-icon">{cat?.icon ?? "🔄"}</div>
-                      <div className="item-info"><div className="item-title">{f.name}</div><div className="item-sub">Mensuel récurrent</div></div>
-                      <div className="item-amount type-expense">−{fmt(f.amount)}</div>
+                      <div className="item-info"><div className="item-title">{l.f.name}</div><div className="item-sub">{period === "year" ? `${l.n} mois × ${fmt(l.total / l.n)}` : "Ce mois"}</div></div>
+                      <div className="item-amount type-expense">−{fmt(l.total)}</div>
                     </div>
                   );
                 })}
@@ -2057,9 +2081,31 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
           </>
         )}
 
+        {type === "income" && fixLines.length > 0 && (
+          <>
+            <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "10px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
+              Revenus fixes — {fmt(fixTotal)}
+            </div>
+            {fixLines.map((l, i) => {
+                  const cat = categories.find(c => c.id === l.f.categoryId);
+                  return (
+                    <div key={l.f.id || i} className="item-row">
+                      <div className="item-icon">{cat?.icon ?? "🔄"}</div>
+                      <div className="item-info"><div className="item-title">{l.f.name}</div><div className="item-sub">{period === "year" ? `${l.n} mois × ${fmt(l.total / l.n)}` : "Ce mois"}</div></div>
+                      <div className="item-amount type-income">+{fmt(l.total)}</div>
+                    </div>
+                  );
+                })}
+            {items.length > 0 && (
+              <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "10px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
+                Autres revenus
+              </div>
+            )}
+          </>
+        )}
         {type !== "cagnottes" && type !== "expense" && (
           items.length === 0
-            ? <div className="empty-state"><div className="empty-icon">📭</div><p>Aucune opération</p></div>
+            ? (type === "income" && fixLines.length > 0 ? null : <div className="empty-state"><div className="empty-icon">📭</div><p>Aucune opération</p></div>)
             : items.map(t => <ItemRow key={t.id} t={t} categories={categories} cagnottes={cagnottes} />)
         )}
       </div>
@@ -2072,20 +2118,34 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
 // ─────────────────────────────────────────────────────────────────
 //  Month detail modal (from chart click)
 // ─────────────────────────────────────────────────────────────────
-export function MonthDetailModal({ config, transactions, categories, cagnottes, fixedExpenses, onClose }) {
+export function MonthDetailModal({ config, transactions, categories, cagnottes, fixedExpenses, fixedIncomes = [], onClose }) {
   const { year, monthIdx } = config;
   const mStr  = `${year}-${(monthIdx + 1).toString().padStart(2, "0")}`;
-  const tf    = useTotalFixes(fixedExpenses, mStr);
-  const isCurM = mStr === currentYM();
-  let inc = 0, exp = 0;
-  const txs = transactions.filter(t => t.date.startsWith(mStr));
-  txs.forEach(t => {
-    const a = parseFloat(t.amount) || 0;
-    if (isIncome(t.type)) inc += a;
-    else if (t.type === "expense") exp += a;
-  });
-  if (isCurM) exp += tf;
-  const net = inc - exp;
+  // v1.49.1 : mêmes chiffres que le graphique du Rapport (computeMonthTotals) —
+  // avant, les frais fixes n'étaient comptés que pour le mois en cours et les
+  // revenus fixes jamais.
+  const txs   = transactions.filter(t => (t.date || "").startsWith(mStr));
+  const { inc, exp, net } = computeMonthTotals(transactions, fixedExpenses, fixedIncomes, mStr);
+  const mMonths  = livedMonths(transactions, mStr, mStr);
+  const fixExpLines = fixedLinesForPeriod(fixedExpenses, mMonths, "expense");
+  const fixIncLines = fixedLinesForPeriod(fixedIncomes,  mMonths, "income");
+  const fixSection = (title, lines, cls, sign) => lines.length > 0 && (
+    <>
+      <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "8px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
+        {title} — {fmt(lines.reduce((a, l) => a + l.total, 0))}
+      </div>
+      {lines.map((l, i) => {
+        const cat = categories.find(c => c.id === l.f.categoryId);
+        return (
+          <div key={l.f.id || i} className="item-row">
+            <div className="item-icon">{cat?.icon ?? "🔄"}</div>
+            <div className="item-info"><div className="item-title">{l.f.name}</div><div className="item-sub">Mensuel</div></div>
+            <div className={`item-amount ${cls}`}>{sign}{fmt(l.total)}</div>
+          </div>
+        );
+      })}
+    </>
+  );
 
   return (
     <Modal onClose={onClose} title="">
@@ -2112,23 +2172,8 @@ export function MonthDetailModal({ config, transactions, categories, cagnottes, 
       </div>
 
       <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-        {isCurM && fixedExpenses.length > 0 && (
-          <>
-            <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "8px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
-              Frais fixes — {fmt(tf)}
-            </div>
-            {fixedExpenses.map((f, i) => {
-              const cat = categories.find(c => c.id === f.categoryId);
-              return (
-                <div key={i} className="item-row">
-                  <div className="item-icon">{cat?.icon ?? "🔄"}</div>
-                  <div className="item-info"><div className="item-title">{f.name}</div><div className="item-sub">Mensuel récurrent</div></div>
-                  <div className="item-amount type-expense">−{fmt(f.amount)}</div>
-                </div>
-              );
-            })}
-          </>
-        )}
+        {fixSection("Revenus fixes", fixIncLines, "type-income", "+")}
+        {fixSection("Frais fixes", fixExpLines, "type-expense", "−")}
         {txs.length > 0 && (
           <>
             <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "8px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
@@ -2139,7 +2184,7 @@ export function MonthDetailModal({ config, transactions, categories, cagnottes, 
             }
           </>
         )}
-        {txs.length === 0 && (!isCurM || fixedExpenses.length === 0) && (
+        {txs.length === 0 && fixExpLines.length === 0 && fixIncLines.length === 0 && (
           <div className="empty-state"><div className="empty-icon">📭</div><p>Aucune opération ce mois</p></div>
         )}
       </div>

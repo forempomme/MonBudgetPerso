@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.48.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.49.1`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -33,8 +33,8 @@ Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 - **Rapprochement bancaire** — mini-cartes cliquables « ✓ Solde pointé » et « ⏳ En attente » + barre de progression. Tapoter « En attente » ouvre Historique avec le filtre correspondant déjà appliqué
 - **Opération d'équilibre** — ajuste le solde pointé sans impacter le solde estimé (⚖️ dans le FAB)
 - **Colonne arrondis** (si arrondi activé) — Mois / Année / À virer
-- Cartes 🐷 Cagnottes (avec taux d'épargne du mois) et 📌 Fixes/mois (respecte la date de démarrage propre à chaque frais/revenu fixe et les corrections ponctuelles du mois)
-- **Cartes stat teintées** — Revenus, Dépenses, Cagnotte, Dép. variables avec barre dégradée
+- Cartes 🐷 Cagnottes et 📌 Fixes/mois sur une ligne (v1.49.0 ; le taux d'épargne du mois est dans le détail des cagnottes, au tap) — Fixes/mois respecte la date de démarrage propre à chaque frais/revenu fixe et les corrections ponctuelles du mois
+- **Bloc 📊 Bilan** (v1.49.0, remplace « Mois en cours » + « Année en cours ») — Revenus, Dépenses, Épargné (+ retiré), Dép. variables, avec un sélecteur Mois | Année qui revient toujours sur le mois
 - **Récap cagnotte au tap** — sheet avec répartition des mouvements par cagnotte
 - **Modal ⏳ À venir** — s'ouvre en tapant la carte (remplace l'ancien dépliant inline), centré à l'écran, fermable par le bouton ✕ ou le bouton retour (Android/navigateur) :
   - Onglets Tout / Récurrents / Fixes / Programmés, badge occurrences restantes sur les récurrentes
@@ -192,7 +192,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.48.0
+└── package.json         — version: 1.49.1
 ```
 
 ---
@@ -341,6 +341,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.49.1** | patch | **Détails cohérents avec les cases** : le détail ouvert depuis le Bilan (Revenus / Dépenses / Dép. variables, mois ou année) et le détail d'un mois du Rapport affichent désormais les mêmes totaux que les cases et le graphique (`computePeriodTotals` / `computeMonthTotals`) — avant, les revenus fixes étaient ignorés et les frais fixes comptés pour un seul mois (ou seulement le mois en cours). Nouvelles sections « Revenus fixes » / « Frais fixes » ligne par ligne (« 4 mois × 2 100,00 € » sur l'année), sans les fixes inactifs ou en pause |
+| **1.49.0** | minor | **Titres de page** = emoji + libellé du menu (🏠 Accueil, 🐷 Cagnottes, 📋 Historique, 📌 Fixes, 📊 Rapport, ⚙️ Options) avec une ligne de contexte (mois, nombre/total des cagnottes, mois affiché dans l'Historique, « frais & revenus fixes », année du rapport) ; bouton ☀️ retiré (thème sombre forcé) ; **Historique** : la catégorie n'apparaît plus 2 fois quand il n'y a pas de note — sous-ligne « jour date » (« mar. 07/10 »), précédée de la catégorie parente pour une sous-catégorie ; **Accueil compact** : « Mois en cours » + « Année en cours » fusionnés en un bloc « 📊 Bilan » (sélecteur Octobre | 2026, revient toujours sur le mois), cartes Cagnottes / Fixes sur une ligne, taux d'épargne déplacé dans le détail des cagnottes ; **police DM Sans intégrée** à l'APK (≈ 50 Ko, s'affiche sans Internet), chiffres de largeur fixe limités aux chiffres (la virgule et l'espace ne sont plus élargis) |
 | **1.48.0** | minor | **Jour de prélèvement** des frais et revenus fixes (Aucun / 1 / 5 / 10 / grille 31 j) ; panneau **À venir** avec 2 onglets — « 📋 Liste » (par défaut, dates de prélèvement affichées) et « 📅 Calendrier & solde » (calendrier du mois, opérations datées jusqu'à la paie, courbe du solde jour par jour, point bas) — bandeau d'accueil inchangé ; **reste à vivre** par jour jusqu'à la paie (revenu fixe daté le plus élevé) en pastille + détail, marge de sécurité 0 € par défaut modifiable (Options → Reste à vivre), indicatif ; **remboursements attendus** : option « ↩️ Sera remboursé » d'une dépense (tout / 50 % / montant, par qui, date), entrée « À recevoir » dans le bouton +, pastille + liste, « ✓ Reçu » crée le revenu, un revenu correspondant (± 1 € ou nom) propose « C'est le remboursement de… ? », rappel 15 j après la date prévue ; jamais compté dans le solde avant réception ; **rappel du soir** (heure, jours) seulement si rien n'a été saisi ce jour-là, avec boutons Saisir / Rien aujourd'hui. Pastilles de la carte du solde sur 2 lignes |
 | **1.47.1** | patch | Totaux mensuels et annuels justes partout — nouvelle source unique `computeMonthTotals` / `computePeriodTotals` (opérations + frais fixes + revenus fixes de chaque mois vécu, depuis la 1ʳᵉ opération et jusqu'au mois en cours) utilisée par l'Accueil (mois en cours / précédent, année en cours / même période l'an dernier), le donut de l'Historique, le Rapport (mois, année, classement, comparaison N-1, taux d'épargne, analyste, top catégories). Corrige « Dépenses ▲ 117 % » (fixes comptés seulement pour le mois en cours), les revenus fixes absents de tous ces chiffres, et les frais fixes comptés avant le début d'utilisation de l'app |
 | **1.47.0** | minor | **Historique « Par type »** (vue par défaut) : blocs dépliants Dépenses / Revenus / Frais & revenus fixes / Cagnottes / Équilibres / Hors compte avec total et nombre à pointer, puis sous-blocs par semaine ; **sous-catégories** (`parentId`, un niveau) : saisie avec ▸ « Toute la catégorie » / sous-catégories, champ « Transport › Carburant », arbre dans Options (＋ sous), Rapport, seuils et budget courses additionnent les sous-catégories dans la principale ; liaisons inchangées ; **suppression protégée** des catégories (liste de tout ce qui est rattaché + déplacer vers / laisser sans catégorie — plus d'opérations orphelines) ; **aperçu avant import** (fichier vs données actuelles, alerte opérations perdues, sauvegarde préalable cochée par défaut ; la version de l'app est désormais notée dans les sauvegardes) ; **clôture du mois** (« Octobre en bref » affiché automatiquement le 1er du mois, une seule fois, + Rapport → Bilans mensuels) ; **projets avec échéance** (onglet Cagnottes : cagnotte + tag liés, avance/retard, € par mois, versement auto en un tap). Fix : le réglage Options → Budget courses n'était pas enregistré (callback branché sur le Rapport au lieu des Options depuis 1.46.0) |

@@ -182,11 +182,30 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE
+// ── v1.49.0 : sous-ligne d'une opération sans doublon de catégorie ──
+// Sans note, le titre EST déjà la catégorie : la sous-ligne ne montre que
+// « jour date » (précédé de la catégorie parente pour une sous-catégorie).
+// Avec une note : « Catégorie · jour date » (inchangé, + le jour).
+const WEEKDAYS_SHORT = ["dim.","lun.","mar.","mer.","jeu.","ven.","sam."];
+export function dayLabel(iso) {
+  const [y, m, d] = (iso || "").slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${WEEKDAYS_SHORT[new Date(y, m - 1, d).getDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+}
+export function txSubLabel(note, cat, categories, iso) {
+  const day = iso ? dayLabel(iso) : "";
+  if (note) return [cat?.name ?? "—", day].filter(Boolean).join(" · ");
+  const parent = cat?.parentId ? (categories || []).find(c => c.id === cat.parentId) : null;
+  return `${parent ? `${parent.name} › ` : ""}${day}`;
+}
+
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter }) {
+export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  // v1.49.0 : remonte le mois affiché à App.jsx (sous-titre de l'en-tête)
+  useEffect(() => { onMonthChange?.(year, monthIdx); }, [year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const [search,   setSearch]   = useState("");
   const [filter,   setFilter]   = useState("all");
   const [sort,     setSort]     = useState("date");
@@ -487,7 +506,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: ".76rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
                             <div style={{ display: "flex", gap: 5, alignItems: "center", marginTop: 2 }}>
-                              <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>{cat?.name ?? "—"} · {e.date.slice(8)}/{e.date.slice(5, 7)}</span>
+                              <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>{e.note || cat ? txSubLabel(e.note, cat, categories, e.date) : dayLabel(e.date)}</span>
                               <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 8, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)", border: "1px solid var(--tr-border)" }}>{st?.icon || "🎫"} Hors compte</span>
                             </div>
                           </div>
@@ -875,7 +894,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: ".72rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.note || cat?.name || "—"}</div>
-                        <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 1 }}>{cat?.name ?? "—"}</div>
+                        {(() => { const sub = txSubLabel(t.note, cat, categories, null).replace(/ › $/, ""); return sub ? <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 1 }}>{sub}</div> : null; })()}
                       </div>
                       <span style={{ fontSize: ".72rem", fontWeight: 800, color: inc ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)", flexShrink: 0 }}>
                         {inc ? "+" : "−"}{fmt(t.amount)}
@@ -1405,7 +1424,7 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
               }
               return (
                 <>
-                  <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{cat?.name ?? "—"} · {t.date.slice(8)}/{t.date.slice(5,7)}</span>
+                  <span style={{ fontSize: ".6rem", color: "var(--text3)", flexShrink: 0 }}>{txSubLabel(t.note, cat, categories, t.date)}</span>
                   {t.paymentMethod === "cheque" && (
                     <span style={{ fontSize: ".5rem", padding: "1px 5px", background: "var(--chq-glow)", color: "var(--chq)", border: "1px solid var(--chq-border)", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>
                       🧾 {t.pointed ? "Encaissé" : `En attente · ${Math.max(0, daysBetweenISO(t.issuedDate || t.date, todayISO()))} j`}
