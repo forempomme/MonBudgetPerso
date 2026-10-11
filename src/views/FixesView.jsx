@@ -3,11 +3,12 @@ import { useState } from "react";
 import { fmt, currentYM } from "../utils.js";
 import { effectiveFixesForMonth, effectiveIncomesForMonth } from "../hooks.js";
 import { EmptyIllustration, SectionTitle } from "./shared.jsx";
+import { InsightsList } from "./InsightPanels.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  FIXES
 // ─────────────────────────────────────────────────────────────────
-export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onSaveProvisional, onDeleteProvisional }) {
+export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onSaveProvisional, onDeleteProvisional, insights = [], onDismissInsight, onUpdateRecurringInsight, onCreateFixedInsight }) {
   const { fixedExpenses, categories } = data;
   const fixedIncomes         = data.fixedIncomes || [];
   const provisionalExpenses  = data.provisionalExpenses || [];
@@ -61,6 +62,10 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
 
   return (
     <div>
+      {/* ── 🔍 Repéré pour toi (v1.50.0) — seulement s'il y a quelque chose ── */}
+      <InsightsList items={insights} categories={categories}
+        onDismiss={onDismissInsight} onUpdateRecurring={onUpdateRecurringInsight} onCreateFixed={onCreateFixedInsight} />
+
       {/* ── Hero récap charges / revenus / net ── */}
       <div style={{
         background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",

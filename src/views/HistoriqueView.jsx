@@ -200,7 +200,7 @@ export function txSubLabel(note, cat, categories, iso) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
+export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onOverrideIncomeMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -325,6 +325,9 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
   const handleOverrideFix = useCallback((id, override) => {
     onOverrideFixMonth?.(id, month, override);
   }, [onOverrideFixMonth, month]);
+  const handleOverrideIncome = useCallback((id, override) => {
+    onOverrideIncomeMonth?.(id, month, override);
+  }, [onOverrideIncomeMonth, month]);
 
   // Rapprochement du mois affiché
   const { soldePointe, soldeAttente, nbPointed, totalPointable } = useMemo(() => {
@@ -443,7 +446,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
           })}
           <div style={{ padding: "8px 14px", background: "rgba(200,184,96,.05)", display: "flex", justifyContent: "space-between", fontSize: ".65rem" }}>
             <span style={{ color: "var(--text3)" }}>Total fixes</span>
-            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+(f.amount||0), 0))}</span>
+            <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--warning)" }}>−{fmt(monthFixes.reduce((s,f) => s+((f.monthlyOverrides?.[month]?.amount) ?? f.amount ?? 0), 0))}</span>
           </div>
         </div>
   );
@@ -482,6 +485,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                   isOverridden: !!ov,
                 }}
                 onToggle={handleTogglePointIncome}
+                onEditFixed={handleOverrideIncome}
                 isFixed={true} />
             );
           })}

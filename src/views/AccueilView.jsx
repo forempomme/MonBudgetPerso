@@ -2,10 +2,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 import { ForecastPanel, RestToLiveSheet, ReimbursementsSheet } from "./ForecastPanels.jsx";
+import { SimulationSheet, SimulationBlock, SurplusCard, SurplusSheet } from "./InsightPanels.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  CountUp — chiffre animé de 0 à target
@@ -104,7 +105,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot }) {
+export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
 
   // Sections masquables — persistées en localStorage
   // v1.49.0 : période du bloc Bilan — pas mémorisée, revient toujours sur le mois
@@ -154,6 +155,18 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
     balance, transactions, fixedExpenses, data.fixedIncomes || [],
     data.recurringTemplates || [], data.scheduledTransactions || [], 3, alertThreshold
   );
+  // v1.50.0 : « Et si… ? » — projection sur 6 mois servant de base à la
+  // simulation (jamais figée dans projectionSnapshots), scénarios en mémoire seulement
+  const projection6 = useBalanceProjection(
+    balance, transactions, fixedExpenses, data.fixedIncomes || [],
+    data.recurringTemplates || [], data.scheduledTransactions || [], 6, null
+  );
+  const [simScenarios, setSimScenarios] = useState([]);
+  const [simOn,        setSimOn]        = useState(false);
+  const [simSheet,     setSimSheet]     = useState(false);
+  // v1.50.0 : surplus de fin de cycle → cagnotte
+  const surplus = useMemo(() => computeSurplus(data, breakdown, grocery, forecast), [data, breakdown, grocery, forecast]);
+  const [surplusSheet, setSurplusSheet] = useState(false);
   const [heroIndex, setHeroIndex] = useState(0);
   const heroCarouselRef = useRef(null);
   const onHeroScroll = () => {
@@ -715,9 +728,17 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           borderRadius: "50%", pointerEvents: "none",
           background: "radial-gradient(circle, rgba(104,212,152,.18) 0%, transparent 70%)",
         }} />
-        <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative" }}>
-          Projection à 3 mois
+        <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ flex: 1 }}>{simOn ? "Projection à 6 mois" : "Projection à 3 mois"}</span>
+          {simOn && <span style={{ fontSize: ".56rem", fontWeight: 800, color: "var(--purple)", border: "1px solid rgba(176,144,224,.5)", background: "rgba(176,144,224,.12)", borderRadius: 10, padding: "2px 8px", letterSpacing: 0, textTransform: "none" }}>🧪 simulation</span>}
         </div>
+
+        {simOn && (
+          <SimulationBlock baseMonths={projection6.months} startBalance={balance} scenarios={simScenarios}
+            margin={Math.max(0, parseFloat(data.restSettings?.margin) || 0)}
+            onEdit={() => setSimSheet(true)} onQuit={() => { setSimOn(false); setSimScenarios([]); }} />
+        )}
+        {!simOn && <>
 
         {/* Alerte : passera sous le seuil configuré */}
         {projection.thresholdBreachMonth && (
@@ -779,14 +800,30 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             })}
           </div>
         )}
+        <button onClick={() => setSimSheet(true)} style={{ width: "100%", marginTop: 12, padding: "9px", borderRadius: 10, fontSize: ".66rem", fontWeight: 800, cursor: "pointer", background: "transparent", border: "1px dashed rgba(176,144,224,.6)", color: "var(--purple)", position: "relative" }}>🧪 Et si… ?</button>
+        </>}
       </div>
       </div>
+      {simSheet && (
+        <SimulationSheet months={projection6.months} scenarios={simScenarios} onChange={setSimScenarios}
+          onApply={list => { setSimScenarios(list); setSimOn(list.length > 0); setSimSheet(false); }}
+          onClose={() => { setSimSheet(false); if (!simScenarios.length) setSimOn(false); }} />
+      )}
 
       {/* Dots du carrousel solde ↔ projection */}
       <div className="hero-dots">
         <div className={`hero-dot ${heroIndex === 0 ? "active" : ""}`} />
         <div className={`hero-dot ${heroIndex === 1 ? "active" : ""}`} />
       </div>
+
+      {/* ── 💡 Surplus de fin de cycle → cagnotte (v1.50.0) ── */}
+      {surplus?.show && (
+        <SurplusCard key={surplus.cycleEnd + surplus.amount} surplus={surplus} cagnottes={cagnottes}
+          onDetail={() => setSurplusSheet(true)}
+          onDismiss={() => onDismissInsight?.("surplus", surplus.cycleEnd)}
+          onSave={(cagId, amount) => onSaveSurplus?.(cagId, amount, surplus.cycleEnd)} />
+      )}
+      {surplusSheet && surplus && <SurplusSheet surplus={surplus} onClose={() => setSurplusSheet(false)} />}
 
       {/* ── 🧾 Chèques non encaissés (v1.43.0) — n'apparaît que s'il y en a ── */}
       {(() => {
@@ -893,17 +930,17 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
            le taux d'épargne du mois est affiché dans le détail (tap). */}
       <Sec id="cagnottes_fixes">
       <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="stat-mini dash-cagnotte2" style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 6 }}
+        <div className="stat-mini dash-cagnotte2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5 }}
           onClick={() => {
             const rate     = curMonth.inc > 0 ? Math.round((savMonth / curMonth.inc) * 100) : null;
             const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
             onShowDetail("cagnottes", "all", { rate, prevRate });
           }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>🐷 Cagnottes</div>
+          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>🐷 Cagnottes</div>
           <div className="stat-val" style={{ margin: 0, color: "var(--purple)", whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
         </div>
-        <div className="stat-mini dash-fixe2" style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 6, cursor: "default" }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📌 Fixes/mois</div>
+        <div className="stat-mini dash-fixe2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "default" }}>
+          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>📌 Fixes/mois</div>
           <div className="stat-val" style={{ margin: 0, color: "#e8944a", whiteSpace: "nowrap" }}>{fmt(tf)}</div>
         </div>
       </div>

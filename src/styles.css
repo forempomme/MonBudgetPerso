@@ -1,10 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&display=swap');
 /* v1.49.0 : DM Sans intégrée à l'APK (plus besoin d'Internet pour l'afficher).
    Police variable (graisses 400→800 + taille optique), sous-ensemble latin,
    ~50 Ko. Source : github.com/googlefonts/dm-fonts — licence OFL (fonts/DMSans-OFL.txt).
    Modif : « chiffres de largeur fixe » (tnum) limité aux chiffres 0-9 — dans l'original,
-   l'espace, la virgule et le point devenaient aussi larges qu'un chiffre (« 1 785 ,41  € »).
-   Syne reste chargée depuis Google Fonts : elle n'est utilisée nulle part (à confirmer avant suppression). */
+   l'espace, la virgule et le point devenaient aussi larges qu'un chiffre (« 1 785 ,41  € »). */
+/* v1.50.0 : import Google Fonts de « Syne » retiré (police jamais utilisée) — l'appli ne
+   télécharge plus aucune police au démarrage. */
 @font-face {
   font-family: 'DM Sans';
   src: url('./fonts/DMSans-var.woff') format('woff');

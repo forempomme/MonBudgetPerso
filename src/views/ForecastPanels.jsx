@@ -13,7 +13,7 @@ import { fmt, todayISO, MONTHS_SHORT } from "../utils.js";
 const ddmm = iso => `${parseInt(iso.slice(8, 10), 10)} ${MONTHS_SHORT[parseInt(iso.slice(5, 7), 10) - 1].toLowerCase()}.`;
 const signed = v => (v >= 0 ? "+" : "−") + fmt(Math.abs(v));
 
-function Sheet({ title, right, onClose, children }) {
+export function Sheet({ title, right, onClose, children }) {
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", animation: "fadeIn .2s ease" }} />

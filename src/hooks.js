@@ -38,9 +38,11 @@ export function effectiveFixesForMonth(fixedExpenses, ym) {
 }
 
 export function effectiveIncomesForMonth(fixedIncomes, ym) {
+  // v1.50.0 : respecte la correction ponctuelle d'un mois (monthlyOverrides),
+  // comme effectiveFixesForMonth — déjà le cas dans le rapprochement et la projection.
   return (fixedIncomes || []).reduce((s, f) => {
     if (!isActiveForMonth(f, ym)) return s;
-    return s + (parseFloat(f.amount) || 0);
+    return s + (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
   }, 0);
 }
 
@@ -717,6 +719,27 @@ export function catRootId(categories, id) {
   if (c?.parentId && (categories || []).some(x => x.id === c.parentId)) return c.parentId;
   return id;
 }
+/** v1.50.0 — Budget (seuil) qui s'applique à une catégorie : le sien, sinon celui
+ *  de sa catégorie principale. → { catId, limit } ou null. */
+export function categoryBudgetFor(categories, thresholds, catId) {
+  if (!catId || !thresholds) return null;
+  if (thresholds[catId] > 0) return { catId, limit: thresholds[catId] };
+  const root = catRootId(categories, catId);
+  if (root && root !== catId && thresholds[root] > 0) return { catId: root, limit: thresholds[root] };
+  return null;
+}
+/** v1.50.0 — Dépensé un mois donné dans une catégorie ET ses sous-catégories :
+ *  opérations « dépense » + frais fixes actifs (correction du mois comprise).
+ *  Même calcul que le suivi des catégories du Rapport. excludeTxId : opération
+ *  en cours de modification (sa nouvelle valeur est ajoutée à part). */
+export function categorySpentForMonth(categories, transactions, fixedExpenses, catId, ym, excludeTxId = null) {
+  const fam = catFamilyIds(categories, catId);
+  const tx = (transactions || []).filter(t => t.id !== excludeTxId && t.type === "expense" && (t.date || "").startsWith(ym) && fam.includes(t.categoryId))
+    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const fx = (fixedExpenses || []).filter(f => fam.includes(f.categoryId) && isActiveForMonth(f, ym))
+    .reduce((s, f) => s + ((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), 0);
+  return tx + fx;
+}
 /** [id, ...ids de ses sous-catégories] */
 export function catFamilyIds(categories, id) {
   return [id, ...(categories || []).filter(c => c.parentId === id).map(c => c.id)];
@@ -928,7 +951,7 @@ export function fixedLinesForPeriod(list, months, kind) {
       n++;
       total += kind === "expense"
         ? (((f.monthlyOverrides?.[ym])?.amount ?? f.amount) || 0)
-        : (parseFloat(f.amount) || 0);
+        : (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
     });
     return { f, total, n };
   }).filter(l => l.n > 0);
@@ -1084,4 +1107,141 @@ export function pendingReimbursements(data, today = todayISO()) {
   return (data.reimbursements || []).filter(r => r.status !== "received")
     .map(r => ({ ...r, late: r.expectedDate && r.expectedDate < today ? daysBetweenISO(r.expectedDate, today) : 0 }))
     .sort((a, b) => (a.expectedDate || "9999").localeCompare(b.expectedDate || "9999"));
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Simulation « Et si… ? » — v1.50.0
+//  Changements temporaires appliqués PAR-DESSUS la projection, jamais
+//  enregistrés dans les données. Scénario :
+//   { kind: "incDown" | "incUp" | "expMonthly" | "expOnce", amount, fromYM, months (null = toujours) }
+//  Effet d'un mois = cumul des effets de tous les mois projetés jusqu'à lui.
+// ─────────────────────────────────────────────────────────────────
+export function scenarioEffectForMonth(sc, ym) {
+  const a = Math.abs(parseFloat(sc.amount) || 0);
+  if (!a || !sc.fromYM || ym < sc.fromYM) return 0;
+  if (sc.kind === "expOnce") return ym === sc.fromYM ? -a : 0;
+  if (sc.months != null) {
+    const [y0, m0] = sc.fromYM.split("-").map(Number), [y1, m1] = ym.split("-").map(Number);
+    if ((y1 - y0) * 12 + (m1 - m0) >= sc.months) return 0;
+  }
+  return sc.kind === "incUp" ? a : -a;
+}
+export function simulateProjection(months, scenarios = []) {
+  let cum = 0;
+  return (months || []).map(m => {
+    const eff = scenarios.reduce((s, sc) => s + scenarioEffectForMonth(sc, m.ym), 0);
+    cum += eff;
+    return { ...m, base: m.value, value: m.value + cum, effect: eff, cumEffect: cum };
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────
+//  « Repéré pour toi » — v1.50.0 (page Fixes)
+//  • rise    : récurrente dont le dernier montant confirmé dépasse la moyenne
+//              des confirmations précédentes (≥ +5 % ET ≥ +1 €) et reste
+//              supérieur au montant du modèle.
+//  • regular : dépense sans modèle, même catégorie (+ même note), montant à
+//              ±10 % de la médiane, présente au moins 3 des 4 derniers mois
+//              (mois en cours compris), 1 fois par mois, jour à ±5 j, et non
+//              couverte par un frais fixe / une récurrente de montant proche.
+//  data.insightDismissed = { [clé]: valeur au moment du « Ignorer » }.
+// ─────────────────────────────────────────────────────────────────
+const normNote = n => (n || "").trim().toLowerCase().replace(/\s+/g, " ");
+const near = (a, b, pct = 0.10) => b > 0 && Math.abs(a - b) <= b * pct;
+
+export function detectInsights(data, today = todayISO()) {
+  const out = [];
+  const tx = data.transactions || [];
+  const dis = data.insightDismissed || {};
+  const curYM = today.slice(0, 7);
+
+  // ── Hausses de prix sur les récurrentes ──
+  (data.recurringTemplates || []).forEach(tpl => {
+    if (tpl.type === "income") return;
+    const conf = tx.filter(t => t.templateId === tpl.id).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    if (conf.length < 2) return;
+    const last = parseFloat(conf[conf.length - 1].amount) || 0;
+    const prevList = conf.slice(-7, -1).map(t => parseFloat(t.amount) || 0);
+    const prev = prevList.reduce((s, a) => s + a, 0) / prevList.length;
+    const tplAmt = parseFloat(tpl.amount) || 0;
+    if (!(last >= prev * 1.05 && last - prev >= 1 && last > tplAmt + 0.004)) return;
+    const key = `rise:${tpl.id}`;
+    if (dis[key] != null && Math.abs(dis[key] - last) < 0.01) return;
+    out.push({ kind: "rise", key, value: last, tpl, last, prev: Math.round(prev * 100) / 100,
+      pct: Math.round((last - prev) / prev * 100), lastYM: (conf[conf.length - 1].date || "").slice(0, 7), count: prevList.length });
+  });
+
+  // ── Dépenses régulières non déclarées ──
+  const win = [ymAdd(curYM, -3), ymAdd(curYM, -2), ymAdd(curYM, -1), curYM];
+  const groups = {};
+  tx.forEach(t => {
+    if (t.type !== "expense" || t.templateId || t.isRounding || !t.categoryId) return;
+    const ym = (t.date || "").slice(0, 7);
+    if (!win.includes(ym)) return;
+    const k = `${t.categoryId}|${normNote(t.note)}`;
+    (groups[k] = groups[k] || []).push(t);
+  });
+  Object.entries(groups).forEach(([k, list]) => {
+    const [catId, note] = k.split("|");
+    const ref = median(list.map(t => parseFloat(t.amount) || 0));
+    if (!(ref >= 5)) return;
+    const hits = list.filter(t => near(parseFloat(t.amount) || 0, ref));
+    const byMonth = {};
+    hits.forEach(t => { const ym = t.date.slice(0, 7); (byMonth[ym] = byMonth[ym] || []).push(t); });
+    const months = Object.keys(byMonth).sort();
+    if (months.length < 3) return;
+    if (months.some(ym => byMonth[ym].length > 1)) return;          // 1 fois par mois, pas des achats répétés
+    if (list.length > hits.length + 1) return;                        // la catégorie+note n'est pas « régulière » à elle seule
+    const days = months.map(ym => parseInt(byMonth[ym][0].date.slice(8, 10), 10));
+    const day = Math.round(median(days));
+    if (days.some(d => Math.abs(d - day) > 5)) return;
+    const covered = (data.fixedExpenses || []).some(f => f.categoryId === catId && (isActiveForMonth(f, curYM) || (f.startYM && f.startYM > curYM)) && near(parseFloat(f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0, ref))
+      || (data.recurringTemplates || []).some(r => r.categoryId === catId && r.type !== "income" && near(parseFloat(r.amount) || 0, ref));
+    if (covered) return;
+    const key = `reg:${catId}:${note}`;
+    if (dis[key] != null && near(ref, dis[key])) return;
+    out.push({ kind: "regular", key, value: Math.round(ref * 100) / 100, catId, note: list.find(t => normNote(t.note) === note)?.note?.trim() || "",
+      ref: Math.round(ref * 100) / 100, day, months: months.map(ym => ({ ym, amount: parseFloat(byMonth[ym][0].amount) || 0 })),
+      thisMonth: !!byMonth[curYM] });
+  });
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Surplus de fin de cycle → cagnotte — v1.50.0
+//  = reste à vivre « disponible » (solde estimé − courses prévues −
+//    prélèvements avant la paie − marge) − dépenses courantes estimées
+//    jusqu'à la paie (médiane/jour des 3 derniers mois complets, hors
+//    courses, récurrentes et arrondis). Proposé les 5 derniers jours du
+//    cycle (avant la paie, ou fin de mois sans paie datée), si ≥ 20 €,
+//    arrondi à la dizaine inférieure.
+// ─────────────────────────────────────────────────────────────────
+export function dailyVariableSpend(data, excludeCatIds = [], today = todayISO()) {
+  const curYM = today.slice(0, 7);
+  const first = firstDataYM(data.transactions || []);
+  const ex = new Set(excludeCatIds);
+  const vals = [1, 2, 3].map(i => ymAdd(curYM, -i)).filter(ym => ym >= first).map(ym => {
+    const tot = (data.transactions || []).filter(t => t.type === "expense" && !t.templateId && !t.isRounding && !ex.has(t.categoryId) && (t.date || "").startsWith(ym))
+      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    return tot / lastDayOf(ym);
+  });
+  return vals.length ? Math.round(median(vals) * 100) / 100 : 0;
+}
+
+export function computeSurplus(data, breakdown, grocery, forecast, today = todayISO()) {
+  if (!breakdown) return null;
+  const r = computeRestToLive({ ...data, restSettings: { ...(data.restSettings || {}), enabled: true } }, breakdown, grocery, forecast, today);
+  if (!r) return null;
+  const curYM = today.slice(0, 7);
+  const cycleEnd = r.payday || `${curYM}-${pad2(lastDayOf(curYM))}`;
+  const daysLeft = r.payday ? daysBetweenISO(today, r.payday) : daysBetweenISO(today, cycleEnd) + 1;
+  const perDay = dailyVariableSpend(data, grocery?.catIds || [], today);
+  const daily = Math.round(perDay * r.days * 100) / 100;
+  const raw = r.available - daily;
+  const amount = Math.max(0, Math.floor(raw / 10) * 10);
+  const inWindow = daysLeft >= 1 && daysLeft <= 5;
+  const dismissed = (data.insightDismissed || {}).surplus === cycleEnd;
+  return { ...r, cycleEnd, daysLeft, perDayVar: perDay, daily, raw: Math.round(raw * 100) / 100, amount,
+    show: inWindow && amount >= 20 && !dismissed && (data.cagnottes || []).length > 0 };
 }

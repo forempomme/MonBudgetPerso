@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, touchMoved } from "../utils.js";
-import { useYearMonths, useYearTotals, computeMonthTotals, computePeriodTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap } from "../hooks.js";
+import { useYearMonths, useYearTotals, computeMonthTotals, computePeriodTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap, categorySpentForMonth } from "../hooks.js";
 import { MonthRecapSheet } from "./MonthRecapSheet.jsx";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
@@ -891,12 +891,7 @@ export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDeta
           const alerts = data.categories.filter(c => {
             const limit = categoryThresholds[c.id];
             if (!limit) return false;
-            const fam = catFamilyIds(data.categories, c.id);
-            const spent = data.transactions
-              .filter(t => t.date.startsWith(curYM) && t.type === "expense" && fam.includes(t.categoryId))
-              .reduce((s, t) => s + (parseFloat(t.amount)||0), 0)
-              + data.fixedExpenses.filter(f=>fam.includes(f.categoryId) && isActiveForMonth(f, curYM))
-                  .reduce((s,f)=>{ const ov=f.monthlyOverrides?.[curYM]; return s+((ov?.amount??f.amount)||0); }, 0);
+            const spent = categorySpentForMonth(data.categories, data.transactions, data.fixedExpenses, c.id, curYM);
             return spent >= limit * 0.8;
           });
           return (

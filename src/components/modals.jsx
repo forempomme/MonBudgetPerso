@@ -39,7 +39,8 @@ import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
 import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved } from "../utils.js";
 import { useToast } from "../context.js";
-import { useTotalFixes, computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod } from "../hooks.js";
+import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
+const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
 
 // ─── Helper : parse un montant saisi avec virgule ou point ────────
 const parseAmt = s => parseFloat(String(s ?? "").replace(",", ".")) || 0;
@@ -487,6 +488,7 @@ export function TransModal({
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
   editingId, defaultType = "expense",
   reimbursements = [],
+  categoryThresholds = {}, fixedExpenses = [],
   onSave, onSaveRecurring, onClose,
 }) {
   const toast = useToast();
@@ -722,6 +724,41 @@ export function TransModal({
 
       {/* ── Catégorie : menu déroulant partagé (v1.44.3, aussi utilisé hors compte) ── */}
       {!isCag && !isAdj && <CategoryField cats={cats} catId={catId} onChange={setCatId} accentColor={accentColor} />}
+
+      {/* ── 🎯 Budget de la catégorie (v1.50.0) — informatif, ne bloque rien ── */}
+      {type === "expense" && catId && (() => {
+        const bud = categoryBudgetFor(categories, categoryThresholds, catId);
+        if (!bud) return null;
+        const ym = (date || todayISO()).slice(0, 7);
+        const before = categorySpentForMonth(categories, transactions, fixedExpenses, bud.catId, ym, editingId || null);
+        const cur = Math.max(0, amountOf(amount) || 0);
+        const after = before + cur, pct = Math.round(after / bud.limit * 100);
+        const over = after > bud.limit + 0.004, warn = !over && pct >= 80;
+        const col = over ? "var(--danger)" : warn ? "var(--warning)" : "var(--success)";
+        const bg  = over ? "rgba(200,112,112,.08)" : warn ? "rgba(200,184,96,.08)" : "rgba(104,212,152,.06)";
+        const bCat = categories.find(c => c.id === bud.catId);
+        const [y, m] = ym.split("-").map(Number);
+        const isCurM = ym === currentYM();
+        const daysLeft = isCurM ? new Date(y, m, 0).getDate() - new Date().getDate() + 1 : null;
+        const wB = Math.min(100, before / bud.limit * 100), wA = Math.min(100, after / bud.limit * 100);
+        return (
+          <div style={{ borderRadius: 11, padding: "8px 11px", margin: "-4px 0 10px", fontSize: ".68rem", background: bg, border: `1px solid ${col}55` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ flex: 1, minWidth: 0, color: "var(--text2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>🎯 Budget {bCat?.name || ""} · {MONTHS_FULL_LC[m - 1]}</span>
+              <b style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(after)} / {fmt(bud.limit)}</b>
+            </div>
+            <div style={{ height: 6, borderRadius: 4, background: "var(--surface3)", overflow: "hidden", marginTop: 6, position: "relative" }}>
+              <div style={{ width: `${wA}%`, height: "100%", borderRadius: 4, background: col }} />
+              {wA > wB && <div style={{ position: "absolute", top: 0, bottom: 0, left: `${wB}%`, width: `${wA - wB}%`, background: "repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)" }} />}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: ".6rem", color: "var(--text2)" }}>
+              <span>{over ? <>⚠️ Dépassé de <b style={{ color: col }}>{fmt(after - bud.limit)}</b>{cur > 0 ? " avec cette dépense" : ""}</>
+                : <>Reste <b style={{ color: "var(--text)" }}>{fmt(bud.limit - after)}</b> pour finir le mois{warn && daysLeft ? ` (${daysLeft} jour${daysLeft > 1 ? "s" : ""})` : ""}</>}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct} %</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Cagnotte cible — chips scrollables ── */}
       {isCag && (

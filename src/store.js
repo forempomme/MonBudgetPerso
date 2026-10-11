@@ -77,6 +77,7 @@ export const A = /** @type {const} */ ({
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
   TOGGLE_POINT_INCOME: "TOGGLE_POINT_INCOME",
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
+  OVERRIDE_INCOME_MONTH: "OVERRIDE_INCOME_MONTH",   // v1.50.0
   SAVE_RECURRING:      "SAVE_RECURRING",
   DEL_RECURRING:       "DEL_RECURRING",
   SAVE_ALERT_SETTINGS:      "SAVE_ALERT_SETTINGS",
@@ -108,6 +109,7 @@ export const A = /** @type {const} */ ({
   DELETE_REIMBURSEMENT:     "DELETE_REIMBURSEMENT",
   RECEIVE_REIMBURSEMENT:    "RECEIVE_REIMBURSEMENT",
   SAVE_REST_SETTINGS:       "SAVE_REST_SETTINGS",
+  DISMISS_INSIGHT:          "DISMISS_INSIGHT",        // v1.50.0
   SAVE_PROJECT:             "SAVE_PROJECT",
   DELETE_PROJECT:           "DELETE_PROJECT",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
@@ -155,6 +157,8 @@ export const DEFAULT_DATA = {
   reimbursements: [],
   // Reste à vivre (v1.48.0) — indicatif ; marge de sécurité modifiable
   restSettings: { enabled: true, margin: 0 },
+  // « Repéré pour toi » / surplus (v1.50.0) : { [clé]: valeur au moment du « Ignorer » }
+  insightDismissed: {},
   // Projets avec échéance (v1.47.0) : relient une cagnotte et un tag
   projects: [],
   // Budget courses (v1.46.0) — informatif, n'entre dans aucun solde.
@@ -270,6 +274,7 @@ export function normalizeData(saved) {
     projects: src.projects || [],
     reimbursements: src.reimbursements || [],
     restSettings: { ...DEFAULT_DATA.restSettings, ...(src.restSettings || {}) },
+    insightDismissed: src.insightDismissed || {},
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -345,6 +350,9 @@ export function reducer(state, action) {
       return { ...state, transactions: [...state.transactions, income],
         reimbursements: state.reimbursements.map(x => x.id === r.id ? { ...x, status: "received", receivedTxId: income.id, receivedDate: income.date } : x) };
     }
+
+    case A.DISMISS_INSIGHT:
+      return { ...state, insightDismissed: { ...(state.insightDismissed || {}), [action.key]: action.value } };
 
     case A.SAVE_REST_SETTINGS:
       return { ...state, restSettings: { ...(state.restSettings || DEFAULT_DATA.restSettings), ...action.settings } };
@@ -573,6 +581,7 @@ export function reducer(state, action) {
           ...income,
           pauseHistory: withPauseHistory({ ...old, pauseHistory: income.pauseHistory !== undefined ? income.pauseHistory : old.pauseHistory }, { ...old, ...income }),
           startYM: income.startYM !== undefined ? income.startYM : old.startYM,
+          monthlyOverrides: old.monthlyOverrides,   // v1.50.0 : corrections « ce mois uniquement » conservées
         };
       } else {
         newIncomes.push({ ...income, id: uid("fi"), startYM: income.startYM || null });
@@ -806,6 +815,19 @@ export function reducer(state, action) {
           const pointedMonths = { ...(f.pointedMonths || {}) };
           pointedMonths[action.ym] = !pointedMonths[action.ym];
           return { ...f, pointedMonths };
+        }),
+      };
+
+    // v1.50.0 : correction d'un revenu fixe pour un seul mois (même format que les frais fixes)
+    case A.OVERRIDE_INCOME_MONTH:
+      return {
+        ...state,
+        fixedIncomes: (state.fixedIncomes || []).map(f => {
+          if (f.id !== action.id) return f;
+          const monthlyOverrides = { ...(f.monthlyOverrides || {}) };
+          if (action.override) monthlyOverrides[action.ym] = action.override; // { amount, name }
+          else delete monthlyOverrides[action.ym];
+          return { ...f, monthlyOverrides };
         }),
       };
 

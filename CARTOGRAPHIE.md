@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.49.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.50.0**.
 
 ---
 
@@ -26,7 +26,8 @@ src/
 │   ├── AccueilView.jsx    ├── CagnottesView.jsx   ├── HistoriqueView.jsx
 │   ├── BalanceBreakdownSheet.jsx  panneau « Calcul du solde estimé » (v1.45.0)
 │   ├── MonthRecapSheet.jsx        « Clôture du mois » / bilans mensuels (v1.47.0)
-│   ├── ForecastPanels.jsx         calendrier & solde jour par jour, reste à vivre, remboursements (v1.48.0)
+│   ├── ForecastPanels.jsx         calendrier & solde jour par jour, reste à vivre, remboursements (v1.48.0) ; exporte `Sheet`
+│   ├── InsightPanels.jsx          « Et si… ? » (SimulationSheet/Block), « Repéré pour toi » (InsightsList), surplus (SurplusCard/Sheet) — v1.50.0
 │   ├── FixesView.jsx      ├── RapportView.jsx     ├── OptionsView.jsx
 │   └── LockScreen.jsx
 └── components/
@@ -192,6 +193,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **v1.50.0** : `OVERRIDE_INCOME_MONTH` (correction d'un revenu fixe pour un mois, `effectiveIncomesForMonth` la respecte) ; `categoryBudgetFor` / `categorySpentForMonth` (budget catégorie, aussi utilisés par l'alerte du Rapport) ; `simulateProjection` / `scenarioEffectForMonth` (simulation, jamais enregistrée) ; `detectInsights` (hausses de récurrentes, dépenses régulières non déclarées — `insightDismissed` + `DISMISS_INSIGHT`) ; `dailyVariableSpend` / `computeSurplus` (surplus = `computeRestToLive.available` − dépenses courantes estimées ; « ✕ » mémorisé sous `insightDismissed.surplus` = fin de cycle). Les frais fixes gardaient déjà `prevAmount`/`prevAmountYM` (affiché dans Fixes) : rien à détecter côté frais fixes.
 - **Détails (DetailModal, MonthDetailModal) alignés sur `computePeriodTotals` / `computeMonthTotals`** ; helpers `livedMonths` (mois vécus d'une période) et `fixedLinesForPeriod` (fixes ligne par ligne, somme = fixExp/fixInc) dans hooks.js — v1.49.1. Toute nouvelle vue de détail doit passer par ces helpers, jamais par `useTotalFixes` + filtre de dates à la main.
 - **Titres de page emoji + sous-titre** (`PAGE_TITLES` dérivé de `TABS`, `pageSubtitle` dans App.jsx ; mois de l'Historique remonté par `onMonthChange`), **bouton ☀️ retiré** (thème forcé sombre), **sous-ligne Historique sans doublon** (`txSubLabel` / `dayLabel` dans HistoriqueView), **bloc Bilan** Mois|Année sur l'Accueil (`bilanPer`, non mémorisé), **police intégrée** (`src/fonts/`) — v1.49.0
 - **Jour de prélèvement, calendrier & solde jour par jour, reste à vivre, remboursements attendus, rappel du soir** — v1.48.0

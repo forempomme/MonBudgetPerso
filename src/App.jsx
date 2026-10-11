@@ -1,8 +1,8 @@
 import { useReducer, useEffect, useState, useCallback, useRef } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
-import { useBalanceWithRecurring, categoryUsage, computeMonthRecap } from "./hooks.js";
+import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
+import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights } from "./hooks.js";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
@@ -28,6 +28,7 @@ const TABS = [
   ["rapport",    "📊", "Rapport"],
   ["options",    "⚙️",  "Options"],
 ];
+const getNextYM = ym => { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
 // v1.49.0 : le titre d'une page = son emoji + son libellé du menu du bas
 // (avant : « Tableau de bord », « Frais Fixes », « Rapport Annuel »… ≠ menu).
 // Le sous-titre de contexte est calculé dans le rendu (pageSubtitle).
@@ -344,6 +345,7 @@ export default function App() {
     setFabOpen(o => !o);
   }, []);
   const overrideFixMonth  = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_FIX_MONTH, id, ym, override }), []);
+  const overrideIncomeMonth = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_INCOME_MONTH, id, ym, override }), []);
 
   // Filtre pointage partagé entre AccueilView et HistoriqueView
   const [histPointFilter, setHistPointFilter] = useState("all");
@@ -770,6 +772,13 @@ export default function App() {
         onTogglePointFix={togglePointFix}
         onTogglePointIncome={togglePointIncome}
         onSaveProjectionSnapshot={(ym, predictedValue) => dispatch({ type: A.SAVE_PROJECTION_SNAPSHOT, ym, predictedValue })}
+        onDismissInsight={(key, value) => dispatch({ type: A.DISMISS_INSIGHT, key, value })}
+        onSaveSurplus={(cagId, amount, cycleEnd) => {
+          dispatch({ type: A.SAVE_TRANSACTION, tx: { type: "epargne", amount, date: todayISO(), targetCagId: cagId, note: "Surplus de fin de cycle" } });
+          dispatch({ type: A.DISMISS_INSIGHT, key: "surplus", value: cycleEnd });
+          const cag = data.cagnottes.find(c => c.id === cagId);
+          addToast(`🐷 ${fmt(amount)} versés dans « ${cag?.name || "cagnotte"} »`);
+        }}
       />
   );
   case "cagnottes": return (
@@ -802,6 +811,7 @@ export default function App() {
         onTogglePointFix={togglePointFix}
         onTogglePointIncome={togglePointIncome}
         onOverrideFixMonth={overrideFixMonth}
+        onOverrideIncomeMonth={overrideIncomeMonth}
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={confirmRecurring}
         onApplyAutoSaving={planId => {
@@ -834,6 +844,16 @@ export default function App() {
         onQuickPauseIncome={quickPauseIncome}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
+        insights={insights}
+        onDismissInsight={it => { dispatch({ type: A.DISMISS_INSIGHT, key: it.key, value: it.value }); addToast("Ignoré — ne sera plus signalé (sauf si le montant change)"); }}
+        onUpdateRecurringInsight={it => { dispatch({ type: A.SAVE_RECURRING, tpl: { ...it.tpl, amount: it.last } }); addToast(`✓ Récurrente mise à jour à ${fmt(it.last)}`); }}
+        onCreateFixedInsight={it => {
+          const cat = data.categories.find(c => c.id === it.catId);
+          // Si la dépense de ce mois est déjà saisie, le frais fixe démarre le mois prochain (pas de double compte)
+          const startYM = it.thisMonth ? getNextYM(currentYM()) : currentYM();
+          dispatch({ type: A.SAVE_FIXED, idx: null, fixed: { name: it.note || cat?.name || "Dépense régulière", amount: it.ref, categoryId: it.catId, day: it.day, startYM } });
+          addToast(`✓ Frais fixe créé (${fmt(it.ref)} le ${it.day})${it.thisMonth ? " — à partir du mois prochain" : ""}`);
+        }}
       />
   );
   case "rapport": return (
@@ -941,6 +961,9 @@ export default function App() {
     );
   }
 
+  // ── 🔍 Repéré pour toi (v1.50.0) : calculé ici pour le point sur l'onglet Fixes ──
+  const insights = detectInsights(data);
+
   // ── Sous-titre de contexte sous le titre de page (v1.49.0) ──
   const pageSubtitle = (() => {
     const now = new Date();
@@ -1008,7 +1031,9 @@ export default function App() {
       <div className="tabs">
         {TABS.map(([k, icon, label]) => (
           <button key={k} className={`tab-btn${tab === k ? " active" : ""}`} onClick={() => navigateTo(k)}>
-            <span className="tab-icon">{icon}</span>
+            <span className="tab-icon" style={{ position: "relative" }}>{icon}
+              {k === "fixes" && insights.length > 0 && <span style={{ position: "absolute", top: -2, right: -5, width: 8, height: 8, borderRadius: "50%", background: "var(--teal, #5cc8c0)", boxShadow: "0 0 0 2px var(--bg)" }} />}
+            </span>
             {label}
           </button>
         ))}
@@ -1163,6 +1188,8 @@ export default function App() {
           editingId={transModal.editingId}
           defaultType={transModal.defaultType || "expense"}
           reimbursements={data.reimbursements || []}
+          categoryThresholds={data.categoryThresholds || {}}
+          fixedExpenses={data.fixedExpenses || []}
           onSave={(tx, extra) => { dispatch({ type: A.SAVE_TRANSACTION, tx, ...(extra || {}) }); setTransModal(null); }}
           onSaveRecurring={tpl => saveRecurring(tpl)}
           onClose={() => setTransModal(null)}

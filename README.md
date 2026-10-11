@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.49.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.50.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -34,6 +34,8 @@ Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 - **Opération d'équilibre** — ajuste le solde pointé sans impacter le solde estimé (⚖️ dans le FAB)
 - **Colonne arrondis** (si arrondi activé) — Mois / Année / À virer
 - Cartes 🐷 Cagnottes et 📌 Fixes/mois sur une ligne (v1.49.0 ; le taux d'épargne du mois est dans le détail des cagnottes, au tap) — Fixes/mois respecte la date de démarrage propre à chaque frais/revenu fixe et les corrections ponctuelles du mois
+- **💡 Surplus de fin de cycle** (v1.50.0) — les 5 derniers jours avant la paie, propose de verser le surplus (reste à vivre − dépenses courantes estimées) dans une cagnotte ; « voir le calcul » détaille chaque ligne
+- **🧪 Et si… ?** (v1.50.0) — bouton de la carte Projection : simulation de changements temporaires sur 6 mois, rien n'est enregistré
 - **Bloc 📊 Bilan** (v1.49.0, remplace « Mois en cours » + « Année en cours ») — Revenus, Dépenses, Épargné (+ retiré), Dép. variables, avec un sélecteur Mois | Année qui revient toujours sur le mois
 - **Récap cagnotte au tap** — sheet avec répartition des mouvements par cagnotte
 - **Modal ⏳ À venir** — s'ouvre en tapant la carte (remplace l'ancien dépliant inline), centré à l'écran, fermable par le bouton ✕ ou le bouton retour (Android/navigateur) :
@@ -192,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.49.1
+└── package.json         — version: 1.50.0
 ```
 
 ---
@@ -341,6 +343,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.50.0** | minor | **Revenu fixe corrigé pour un mois** (✏️ « ce mois uniquement » dans Historique → Revenus fixes du mois, comme les frais fixes ; pris en compte partout, `effectiveIncomesForMonth` respecte désormais `monthlyOverrides`) ; **🎯 budget de la catégorie dans la saisie** (dépensé du mois + la dépense en cours / plafond, catégorie + sous-catégories + frais fixes, vert/orange ≥ 80 %/rouge, informatif) ; **🧪 Et si… ?** sur la carte Projection : changements temporaires (baisse/hausse de revenu, dépense mensuelle, dépense unique, durée 1/3/6 mois/toujours) simulés sur 6 mois, courbe comparée, point bas, économie mensuelle nécessaire pour rester au-dessus de la marge — rien n'est enregistré ; **🔍 Repéré pour toi** (page Fixes + point sur l'onglet) : hausse de prix d'une récurrente (≥ +5 % et ≥ +1 €, « Mettre à jour ») et dépense régulière non déclarée (même catégorie/note, ±10 %, 3 mois sur 4, 1×/mois, jour ±5 ; « Créer un frais fixe », démarrage le mois suivant si déjà payée ce mois), « Ignorer » mémorisé ; **💡 surplus de fin de cycle** les 5 derniers jours avant la paie (ou du mois) : reste à vivre − dépenses courantes estimées (médiane/jour hors courses), ≥ 20 €, arrondi à la dizaine, « Verser » crée une épargne vers la cagnotte choisie, ✕ jusqu'à la paie suivante. Aussi : total « Frais fixes » de l'Historique tient compte des corrections du mois ; police Syne (inutilisée) plus téléchargée ; import inutile retiré |
 | **1.49.1** | patch | **Détails cohérents avec les cases** : le détail ouvert depuis le Bilan (Revenus / Dépenses / Dép. variables, mois ou année) et le détail d'un mois du Rapport affichent désormais les mêmes totaux que les cases et le graphique (`computePeriodTotals` / `computeMonthTotals`) — avant, les revenus fixes étaient ignorés et les frais fixes comptés pour un seul mois (ou seulement le mois en cours). Nouvelles sections « Revenus fixes » / « Frais fixes » ligne par ligne (« 4 mois × 2 100,00 € » sur l'année), sans les fixes inactifs ou en pause |
 | **1.49.0** | minor | **Titres de page** = emoji + libellé du menu (🏠 Accueil, 🐷 Cagnottes, 📋 Historique, 📌 Fixes, 📊 Rapport, ⚙️ Options) avec une ligne de contexte (mois, nombre/total des cagnottes, mois affiché dans l'Historique, « frais & revenus fixes », année du rapport) ; bouton ☀️ retiré (thème sombre forcé) ; **Historique** : la catégorie n'apparaît plus 2 fois quand il n'y a pas de note — sous-ligne « jour date » (« mar. 07/10 »), précédée de la catégorie parente pour une sous-catégorie ; **Accueil compact** : « Mois en cours » + « Année en cours » fusionnés en un bloc « 📊 Bilan » (sélecteur Octobre | 2026, revient toujours sur le mois), cartes Cagnottes / Fixes sur une ligne, taux d'épargne déplacé dans le détail des cagnottes ; **police DM Sans intégrée** à l'APK (≈ 50 Ko, s'affiche sans Internet), chiffres de largeur fixe limités aux chiffres (la virgule et l'espace ne sont plus élargis) |
 | **1.48.0** | minor | **Jour de prélèvement** des frais et revenus fixes (Aucun / 1 / 5 / 10 / grille 31 j) ; panneau **À venir** avec 2 onglets — « 📋 Liste » (par défaut, dates de prélèvement affichées) et « 📅 Calendrier & solde » (calendrier du mois, opérations datées jusqu'à la paie, courbe du solde jour par jour, point bas) — bandeau d'accueil inchangé ; **reste à vivre** par jour jusqu'à la paie (revenu fixe daté le plus élevé) en pastille + détail, marge de sécurité 0 € par défaut modifiable (Options → Reste à vivre), indicatif ; **remboursements attendus** : option « ↩️ Sera remboursé » d'une dépense (tout / 50 % / montant, par qui, date), entrée « À recevoir » dans le bouton +, pastille + liste, « ✓ Reçu » crée le revenu, un revenu correspondant (± 1 € ou nom) propose « C'est le remboursement de… ? », rappel 15 j après la date prévue ; jamais compté dans le solde avant réception ; **rappel du soir** (heure, jours) seulement si rien n'a été saisi ce jour-là, avec boutons Saisir / Rien aujourd'hui. Pastilles de la carte du solde sur 2 lignes |
