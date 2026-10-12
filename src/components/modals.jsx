@@ -1459,7 +1459,7 @@ const CAG_TYPES = [
   { id:"plaisir",        icon:"✈️", label:"Plaisir",         color:"var(--purple)"   },
   { id:"investissement", icon:"📈", label:"Invest.",         color:"var(--success)"  },
 ];
-export function CagModal({ cagnottes, editingId, onSave, onClose }) {
+export function CagModal({ cagnottes, editingId, onSave, onDelete, onClose }) {
   const toast = useToast();
   const c     = editingId ? cagnottes.find(x => x.id === editingId) : null;
 
@@ -1532,6 +1532,10 @@ export function CagModal({ cagnottes, editingId, onSave, onClose }) {
         shortcuts={[["Aucune", ""], ["Dans 6 mois", endOfMonthIn(6)], ["Dans 1 an", endOfMonthIn(12)]]} />
       {calcInfo && <InfoNote color="var(--purple)">{calcInfo}</InfoNote>}
       <FormActions onCancel={onClose} onSave={handleSave} emoji="🐷" />
+      {/* v1.53.0 : la suppression se fait ici (plus de ✕ sur les cartes de l'écran Cagnottes) */}
+      {editingId && onDelete && (
+        <button type="button" onClick={() => onDelete(editingId)} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, background: "transparent", border: "1px solid rgba(200,112,112,.35)", color: "var(--danger)", fontWeight: 700, cursor: "pointer" }}>🗑 Supprimer la cagnotte</button>
+      )}
     </Modal>
   );
 }
