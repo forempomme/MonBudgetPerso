@@ -143,8 +143,8 @@ export const MONTHS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juil
 export const TAG_COLORS = ["#70b8e0","#68d498","#b090e0","#c87070","#c8b860","#88c880","#e08870"];
 export const TAG_ICONS  = ["🏖️","🎉","🔨","✈️","🎓","🏥","🎁","🍽️","🏠","💼","🌿","🎮"];
 
-export function TagsModal({ onClose, tags, transactions, fixedExpenses, categories, onSaveTag, onDeleteTag }) {
-  const [selTagId, setSelTagId]  = useState(tags[0]?.id || null);
+export function TagsModal({ onClose, tags, transactions, fixedExpenses, categories, onSaveTag, onDeleteTag, initialTagId }) {
+  const [selTagId, setSelTagId]  = useState(initialTagId || tags[0]?.id || null);
   const [newName,  setNewName]   = useState("");
   const [newIcon,  setNewIcon]   = useState("🏷️");
   const [newColor, setNewColor]  = useState(TAG_COLORS[0]);
