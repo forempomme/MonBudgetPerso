@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.52.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.53.0**.
 
 ---
 
@@ -193,6 +193,7 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **v1.53.0** : CagnottesView en grille compacte avec barre collée (même `stickyTop` que Historique/Rapport) ; projets en bandeau, `ProjectCard` affichée sous le bandeau au toucher ; `CagModal` reçoit `onDelete` (suppression déplacée depuis la carte). La prop `onDeleteCag` de CagnottesView n'est plus utilisée.
 - **v1.52.0** : Rapport en 3 onglets (`tab` mois/annee/cats, `ym` propre au Rapport, `catPer`). `computeCategoryBreakdown(data, fromYM, toYM)` (hooks) = ancien Top 5 généralisé (sous-catégories → principale, frais fixes en ligne à part, revenus liés déduits) ; `savingsGoals` + `SAVE_SAVINGS_GOAL` ; `CategoryDetailModal` accepte `initialCatId`, `TagsModal` `initialTagId` ; sous-titre de l'en-tête remonté par `onSubtitle`. Plus utilisés (suppression à confirmer) : PeriodCompare, MonthNotes, SavingsRateModal, SuiviModal, RapportDonut, buildInsights, AnalysteLocal, import ChartSVG/PatrimoineSVG/MonthRecapSheet dans RapportView, MonthDetailModal + `monthModal` dans App.
 - **v1.51.0** : Historique — barre collée (`position: sticky; top: stickyTop` = hauteur mesurée de `.bp-header`, ResizeObserver), `activeCount`/`activePills` remontés au niveau du composant, recherche par montant. ⚠️ Ne jamais remettre `overflow-x: hidden` sur html/body/.container : ça casse tout `position: sticky` (utiliser `clip`). `HistDonut`, `BudgetBar` et `savMonth` ne sont plus utilisés (suppression à confirmer).
 - **v1.50.1** : Historique trié du plus récent au plus ancien (semaines `[3,2,1,0]`, départage à date égale par ordre de saisie = index dans `transactions` / `offAccountEntries`).
