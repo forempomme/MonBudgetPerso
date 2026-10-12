@@ -110,6 +110,7 @@ export const A = /** @type {const} */ ({
   RECEIVE_REIMBURSEMENT:    "RECEIVE_REIMBURSEMENT",
   SAVE_REST_SETTINGS:       "SAVE_REST_SETTINGS",
   DISMISS_INSIGHT:          "DISMISS_INSIGHT",        // v1.50.0
+  SAVE_SAVINGS_GOAL:        "SAVE_SAVINGS_GOAL",      // v1.52.0
   SAVE_PROJECT:             "SAVE_PROJECT",
   DELETE_PROJECT:           "DELETE_PROJECT",
   DELETE_QUICK_TEMPLATE:    "DELETE_QUICK_TEMPLATE",
@@ -159,6 +160,8 @@ export const DEFAULT_DATA = {
   restSettings: { enabled: true, margin: 0 },
   // « Repéré pour toi » / surplus (v1.50.0) : { [clé]: valeur au moment du « Ignorer » }
   insightDismissed: {},
+  // Objectif d'épargne annuel (v1.52.0) : { [année]: montant } — avant, non enregistré
+  savingsGoals: {},
   // Projets avec échéance (v1.47.0) : relient une cagnotte et un tag
   projects: [],
   // Budget courses (v1.46.0) — informatif, n'entre dans aucun solde.
@@ -275,6 +278,7 @@ export function normalizeData(saved) {
     reimbursements: src.reimbursements || [],
     restSettings: { ...DEFAULT_DATA.restSettings, ...(src.restSettings || {}) },
     insightDismissed: src.insightDismissed || {},
+    savingsGoals: src.savingsGoals || {},
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -349,6 +353,12 @@ export function reducer(state, action) {
         categoryId: src?.categoryId || "", note: `Remboursement ${r.from ? "· " + r.from : ""}${r.note ? " — " + r.note : ""}`.trim(), pointed: false };
       return { ...state, transactions: [...state.transactions, income],
         reimbursements: state.reimbursements.map(x => x.id === r.id ? { ...x, status: "received", receivedTxId: income.id, receivedDate: income.date } : x) };
+    }
+
+    case A.SAVE_SAVINGS_GOAL: {
+      const g = { ...(state.savingsGoals || {}) };
+      if (action.amount > 0) g[action.year] = action.amount; else delete g[action.year];
+      return { ...state, savingsGoals: g };
     }
 
     case A.DISMISS_INSIGHT:
