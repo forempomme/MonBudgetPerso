@@ -371,7 +371,11 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
       const q = search.toLowerCase();
       list = list.filter(t => {
         const cat = categories.find(c => c.id === t.categoryId);
-        return (t.note||"").toLowerCase().includes(q) || (cat?.name||"").toLowerCase().includes(q);
+        // v1.51.0 : aussi par montant (« 67,48 », « 67.48 » ou « 67 »)
+        const qa = q.replace(/\s/g, "").replace(".", ",");
+        const amtStr = (parseFloat(t.amount) || 0).toFixed(2).replace(".", ",");
+        const amtHit = /^\d+(,\d{0,2})?$/.test(qa) && (qa.includes(",") ? amtStr.startsWith(qa) : amtStr.split(",")[0] === qa);
+        return (t.note||"").toLowerCase().includes(q) || (cat?.name||"").toLowerCase().includes(q) || amtHit;
       });
     }
     if (minAmt) list = list.filter(t => parseFloat(t.amount) >= parseFloat(minAmt));
@@ -527,135 +531,102 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
   };
 
 
+  // ── v1.51.0 : barre du haut ──
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [stickyTop, setStickyTop] = useState(0);
+  useEffect(() => {
+    const h = document.querySelector(".bp-header");
+    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
+    upd(); window.addEventListener("resize", upd);
+    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
+    ro?.observe(h);
+    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
+  }, []);
+  const barBtn = on => ({
+    width: 34, height: 34, flexShrink: 0, borderRadius: 9, cursor: "pointer", touchAction: "manipulation",
+    background: on ? "var(--accent-glow)" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+    color: "var(--accent)", fontSize: ".85rem", display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+  });
+  const chipSt = (col, bg, clickable, on = false) => ({
+    display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".64rem", fontWeight: 800, padding: "5px 9px", borderRadius: 10,
+    whiteSpace: "nowrap", flexShrink: 0, color: col, background: bg, fontVariantNumeric: "tabular-nums",
+    border: `1px solid ${clickable ? (on ? col : "rgba(255,255,255,.1)") : "transparent"}`,
+    cursor: clickable ? "pointer" : "default",
+  });
+  const activeCount = [
+    filter !== "all", pointFilter !== "all", tagFilter !== "", hideOff,
+    sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "type",
+  ].filter(Boolean).length;
+  const activePills = [
+    filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
+    pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
+    hideOff                && { label: "🎫 Hors compte masqué", clear: () => setHideOff(false) },
+    tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
+    sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
+    (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
+    viewMode === "list"     && { label: "📋 Liste", clear: () => setViewMode("type") },
+    viewMode === "cats"     && { label: "📊 Catégories", clear: () => setViewMode("type") },
+    viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("type") },
+  ].filter(Boolean);
+
+
+
 
   return (
     <div>
-      {/* ── 5. Navigation mois ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "10px 16px", marginBottom: 10 }}>
-        <button onClick={prevMonth} style={{ background: "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: "var(--accent)", fontSize: "1.1rem", cursor: "pointer" }}>◀</button>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800 }}>{MONTHS_FR[monthIdx]}</div>
-          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{year}</div>
-        </div>
-        <button onClick={nextMonth} style={{ background: isCurrentMonth ? "var(--surface3)" : "var(--accent-glow)", border: "none", borderRadius: 8, width: 36, height: 36, color: isCurrentMonth ? "var(--text3)" : "var(--accent)", fontSize: "1.1rem", cursor: isCurrentMonth ? "default" : "pointer", opacity: isCurrentMonth ? .4 : 1 }}>▶</button>
-      </div>
-
-      {/* ── Donut + barre budget ── */}
-      <div className="card" style={{ padding: 14, marginBottom: 10 }}>
-        <HistDonut inc={mStats.inc} exp={mStats.exp} sav={savMonth} />
-        <BudgetBar exp={mStats.exp} inc={mStats.inc} />
-      </div>
-
-      {/* ── Mini récap rapprochement ── */}
-      {totalPointable > 0 && (
-        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".08em" }}>📊 Rapprochement</div>
-            <span style={{ fontSize: ".6rem", color: nbPointed === totalPointable ? "var(--success)" : "var(--warning)", fontWeight: 700 }}>
-              {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
-            </span>
+      {/* ── v1.51.0 : barre unique collée en haut (mois, recherche, filtres) + pastilles du mois ──
+           (remplace navigation mois, donut/budget, rapprochement et zone de recherche) */}
+      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px 8px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={prevMonth} style={barBtn(false)}>◀</button>
+          <div style={{ flex: 1, minWidth: 0, paddingLeft: 4, fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 800, whiteSpace: "nowrap" }}>
+            {MONTHS_FR[monthIdx]} <span style={{ fontFamily: "var(--ui)", fontSize: ".62rem", color: "var(--text3)", fontWeight: 700 }}>{year}</span>
           </div>
-
-          {/* Deux mini-cartes clickables */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 8 }}>
-            {[
-              { label: "✓ Pointé",     value: soldePointe,  color: "var(--success)", bg: "rgba(104,212,152,.1)", filter: "pointed",   sub: `${nbPointed} op.` },
-              { label: "⏳ En attente", value: soldeAttente, color: "var(--warning)",  bg: "rgba(200,184,96,.08)", filter: "unpointed", sub: `${totalPointable - nbPointed} op.` },
-            ].map(s => (
-              <div key={s.label}
-                onClick={() => setPointFilter(f => f === s.filter ? "all" : s.filter)}
-                style={{
-                  background: s.bg, borderRadius: 8, padding: "7px 9px",
-                  border: `1px solid ${pointFilter === s.filter ? s.color : "transparent"}`,
-                  cursor: "pointer", transition: "border-color .15s",
-                }}>
-                <div style={{ fontSize: ".55rem", color: s.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 3 }}>{s.label}</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.color, fontSize: ".82rem", fontVariantNumeric: "tabular-nums" }}>
-                  {s.value >= 0 ? "+" : ""}{fmt(s.value)}
-                </div>
-                <div style={{ fontSize: ".52rem", color: "var(--text3)", marginTop: 2 }}>{s.sub}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Barre de progression */}
-          <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
-            <div style={{ width: `${totalPointable > 0 ? (nbPointed / totalPointable) * 100 : 0}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .3s" }} />
-          </div>
-        </div>
-      )}
-
-      <div className="card" style={{ marginBottom: 10 }}>
-        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-          <div className="hist-search-wrap" style={{ flex: 1, marginBottom: 0 }}>
-            <span className="hist-search-icon">🔍</span>
-            <input className="hist-search" type="text" placeholder="Rechercher…"
-              value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          {/* Toggle recherche globale */}
-          <button
-            onClick={() => setGlobalSearch(g => !g)}
-            title="Rechercher sur tous les mois"
-            style={{
-              background: globalSearch ? "var(--accent-glow)" : "transparent",
-              border: `1px solid ${globalSearch ? "var(--accent)" : "var(--border)"}`,
-              borderRadius: 8, padding: "7px 10px",
-              color: globalSearch ? "var(--accent)" : "var(--text3)",
-              fontSize: ".65rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
-            }}>
-            {globalSearch ? "🌐 Global" : "🌐"}
+          <button onClick={nextMonth} style={{ ...barBtn(false), opacity: isCurrentMonth ? .35 : 1, cursor: isCurrentMonth ? "default" : "pointer" }}>▶</button>
+          <button onClick={() => setSearchOpen(o => !o)} style={barBtn(searchOpen || !!search.trim())}>🔍</button>
+          <button onClick={() => setShowFilterPanel(p => !p)} style={{ ...barBtn(activeCount > 0 || showFilterPanel), position: "relative" }}>⚙️
+            {activeCount > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: "var(--accent)", color: "var(--bg)", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".52rem", fontWeight: 800 }}>{activeCount}</span>}
           </button>
+          {viewMode === "type" && (
+            <button onClick={() => setOpenTypes(o => Object.values(o).some(Boolean) ? {} : { expense: true, income: true, fixed: true, savings: true, adjust: true, off: true })}
+              style={{ ...barBtn(false), fontSize: ".8rem", color: "var(--text2)" }}>{Object.values(openTypes).some(Boolean) ? "⊟" : "⊞"}</button>
+          )}
         </div>
+        {(searchOpen || search.trim()) && (
+          <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
+            <div className="hist-search-wrap" style={{ flex: 1, marginBottom: 0 }}>
+              <span className="hist-search-icon">🔍</span>
+              <input className="hist-search" type="text" placeholder="Nom, catégorie ou montant…" autoFocus
+                value={search} onChange={e => setSearch(e.target.value)} style={{ padding: "7px 30px 7px 32px", fontSize: ".8rem" }} />
+              {search && <span onClick={() => setSearch("")} style={{ position: "absolute", right: 9, top: "50%", transform: "translateY(-50%)", color: "var(--text3)", cursor: "pointer", fontSize: ".8rem" }}>✕</span>}
+            </div>
+            <button onClick={() => setGlobalSearch(g => !g)} title="Rechercher sur tous les mois"
+              style={{ ...barBtn(globalSearch), width: "auto", padding: "0 9px", fontSize: ".62rem", fontWeight: 700, whiteSpace: "nowrap" }}>{globalSearch ? "🌐 Tous les mois" : "🌐"}</button>
+          </div>
+        )}
         {globalSearch && search.trim() && (
-          <div style={{ fontSize: ".6rem", color: "var(--accent)", fontWeight: 700, marginBottom: 6, padding: "4px 8px", background: "var(--accent-glow)", borderRadius: 6 }}>
+          <div style={{ fontSize: ".58rem", color: "var(--accent)", fontWeight: 700, marginTop: 5 }}>
             🌐 Recherche sur toutes les périodes — {filtered.length} résultat{filtered.length !== 1 ? "s" : ""}
           </div>
         )}
+        {/* Pastilles du mois : revenus / dépenses (mêmes chiffres que le Bilan) + rapprochement (tap = filtre) */}
+        <div style={{ display: "flex", gap: 5, marginTop: 7, overflowX: "auto", scrollbarWidth: "none" }}>
+          <span style={chipSt("var(--success)", "rgba(104,212,152,.1)", false)}>+{fmt(mStats.inc)}</span>
+          <span style={chipSt("var(--danger)", "rgba(200,112,112,.1)", false)}>−{fmt(mStats.exp)}</span>
+          {totalPointable > 0 && <>
+            <span onClick={() => setPointFilter(f => f === "pointed" ? "all" : "pointed")} style={chipSt("var(--success)", "rgba(104,212,152,.1)", true, pointFilter === "pointed")}>✓ {nbPointed}/{totalPointable}</span>
+            {nbPointed < totalPointable && (
+              <span onClick={() => setPointFilter(f => f === "unpointed" ? "all" : "unpointed")} style={chipSt("var(--warning)", "rgba(200,184,96,.1)", true, pointFilter === "unpointed")}>⏳ {soldeAttente >= 0 ? "+" : "−"}{fmt(Math.abs(soldeAttente))}</span>
+            )}
+          </>}
+        </div>
+      </div>
 
+      <div>
         {/* ── Filtres compacts ── */}
         {(() => {
-          const activeCount = [
-            filter !== "all", pointFilter !== "all", tagFilter !== "", hideOff,
-            sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "type",
-          ].filter(Boolean).length;
-          const activePills = [
-            filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
-            pointFilter !== "all"  && { label: pointFilter === "pointed" ? "✓ Pointées" : "⏳ Attente", clear: () => { setPointFilter("all"); onClearPointFilter?.(); } },
-            hideOff                && { label: "🎫 Hors compte masqué", clear: () => setHideOff(false) },
-            tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
-            sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
-            (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
-            viewMode === "list"     && { label: "📋 Liste", clear: () => setViewMode("type") },
-            viewMode === "cats"     && { label: "📊 Catégories", clear: () => setViewMode("type") },
-            viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("type") },
-          ].filter(Boolean);
-
           return (
             <div>
-              {/* Barre unique */}
-              <div style={{ display: "flex", gap: 5, marginBottom: showFilterPanel || activePills.length > 0 ? 6 : 0 }}>
-                <button onClick={() => setShowFilterPanel(p => !p)} style={{
-                  display: "flex", alignItems: "center", gap: 4,
-                  background: activeCount > 0 ? "var(--accent-glow)" : "var(--surface2)",
-                  border: `1px solid ${activeCount > 0 ? "var(--accent)" : "var(--border)"}`,
-                  borderRadius: 8, padding: "0 10px", height: 36,
-                  color: activeCount > 0 ? "var(--accent)" : "var(--text2)",
-                  fontWeight: 700, fontSize: ".68rem", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
-                }}>
-                  <span>⚙️</span>
-                  <span>Filtres</span>
-                  {activeCount > 0 && (
-                    <span style={{ background: "var(--accent)", color: "var(--bg)", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".52rem", fontWeight: 800 }}>{activeCount}</span>
-                  )}
-                </button>
-                <button onClick={() => setGlobalSearch(g => !g)} style={{
-                  width: 36, height: 36, flexShrink: 0,
-                  background: globalSearch ? "var(--accent-glow)" : "var(--surface2)",
-                  border: `1px solid ${globalSearch ? "var(--accent)" : "var(--border)"}`,
-                  borderRadius: 8, fontSize: ".78rem", cursor: "pointer", color: globalSearch ? "var(--accent)" : "var(--text2)", touchAction: "manipulation",
-                }}>🌐</button>
-              </div>
-
               {/* Chips filtres actifs */}
               {!showFilterPanel && activePills.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 6 }}>
@@ -664,7 +635,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                       {p.label} <span style={{ opacity: .7 }}>✕</span>
                     </span>
                   ))}
-                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("list"); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
+                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("type"); setTagFilter(""); setHideOff(false); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
                     ✕ Tout reset
                   </span>
                 </div>
@@ -964,12 +935,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
         if (visible.length === 0) return <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />;
         return (
           <div style={{ marginBottom: 10 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-              <button onClick={() => setOpenTypes(o => Object.values(o).some(Boolean) ? {} : Object.fromEntries(visible.map(v => [v.k, true])))}
-                style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", fontSize: ".62rem", cursor: "pointer" }}>
-                {Object.values(openTypes).some(Boolean) ? "⊟ Tout replier" : "⊞ Tout déplier"}
-              </button>
-            </div>
+            {/* v1.51.0 : « Tout replier / déplier » déplacé dans la barre du haut (⊟ / ⊞) */}
             {visible.map(sec => {
               const open = !!openTypes[sec.k];
               const items = sec.fixed ? [] : sec.off ? sec.off : sec.list;
@@ -981,8 +947,8 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                   <div role="button"
                     onTouchEnd={e => { if (touchMoved()) return; e.preventDefault(); setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
                     onClick={() => { if (!("ontouchstart" in window)) setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 12px", borderLeft: `4px solid ${sec.color}`, cursor: "pointer", touchAction: "manipulation" }}>
-                    <span style={{ fontSize: "1.1rem" }}>{sec.icon}</span>
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderLeft: `4px solid ${sec.color}`, cursor: "pointer", touchAction: "manipulation" }}>
+                    <span style={{ fontSize: "1rem" }}>{sec.icon}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: ".82rem", fontWeight: 700 }}>{sec.label}</span>
                       <span style={{ display: "block", fontSize: ".6rem", color: "var(--text3)" }}>
