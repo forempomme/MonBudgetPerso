@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { ChartSVG, PatrimoineSVG } from "../components/charts.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, PALETTE, touchMoved } from "../utils.js";
-import { useYearMonths, useYearTotals, computeMonthTotals, computePeriodTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap, categorySpentForMonth } from "../hooks.js";
+import { useYearMonths, useYearTotals, computeMonthTotals, computePeriodTotals, useTotalFixes, isActiveForMonth, isIncomeDirection, computeTagBudgets, computeSidePaidByCategory, catRootId, catFamilyIds, computeMonthRecap, categorySpentForMonth, firstDataYM, livedMonths, computeCategoryBreakdown } from "../hooks.js";
 import { MonthRecapSheet } from "./MonthRecapSheet.jsx";
 import { SectionTitle, TagsModal, TagBudgetBars, MONTHS_FR } from "./shared.jsx";
 
@@ -485,10 +485,10 @@ function getLinkedIncomeForCat(catId, categories, transactions, period) {
 // ─────────────────────────────────────────────────────────────────
 //  Modal détail catégorie
 // ─────────────────────────────────────────────────────────────────
-function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses }) {
+function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses, initialCatId }) {
   const now       = new Date();
   const curYM     = currentYM();
-  const [selCatId, setSelCatId] = useState(categories[0]?.id || "");
+  const [selCatId, setSelCatId] = useState(initialCatId || categories[0]?.id || "");
 
   const cat = categories.find(c => c.id === selCatId);
   // v1.47.0 : une catégorie principale inclut ses sous-catégories
@@ -743,615 +743,504 @@ function RapportDonut({ inc, exp, sav }) {
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, onShowMonthDetail, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onPushBack, onPopBack }) {
-  const [recapYM, setRecapYM] = useState(null);   // v1.47.0 : bilan mensuel ouvert
-  const recapOpen = !!recapYM;
-  useEffect(() => {   // bouton retour Android ferme le bilan
-    if (!recapOpen) return;
-    onPushBack?.(() => setRecapYM(null));
-    return () => onPopBack?.();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recapOpen]);
+export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onSaveSavingsGoal, onGoToHistorique, onSubtitle, onPushBack, onPopBack }) {
+  // ── v1.52.0 : 3 onglets organisés par question ──
+  //  📅 Mois        « Comment s'est passé ce mois ? »
+  //  📆 Année       « Où j'en suis sur l'année ? »
+  //  🗂️ Catégories  « Où part mon argent ? »
   const { transactions, categories, fixedExpenses } = data;
-  // Carte « Payé hors banque par catégorie » (v1.42.0)
-  const [sideCatType,   setSideCatType]   = useState("tr");
-  const [sideCatPeriod, setSideCatPeriod] = useState("year");
-  const months  = useYearMonths(transactions, fixedExpenses, currentYear, data.fixedIncomes || []);
-  const yearly  = useYearTotals(transactions, fixedExpenses, currentYear, data.fixedIncomes || []);
-  const prevY   = useYearTotals(transactions, fixedExpenses, currentYear - 1, data.fixedIncomes || []);
-  const [rapportTab,    setRapportTab]    = useState("bilan");
-  const [chartFilter,   setChartFilter]   = useState("all");
-  const [showSavModal,  setShowSavModal]  = useState(false);
-  const [showCatModal,  setShowCatModal]  = useState(false);
-  const [showSuiviModal,setShowSuiviModal]= useState(false);
-  const [showTagsModal, setShowTagsModal] = useState(false);
-  const [savGoal,     setSavGoal]     = useState(0);
-  const [editGoal,    setEditGoal]    = useState(false);
-  const [goalInput,   setGoalInput]   = useState("");
+  const fixedIncomes = data.fixedIncomes || [];
+  const curYM = currentYM();
+  const nowY = new Date().getFullYear();
+  const [tab, setTab] = useState("mois");
+  const [ym, setYm] = useState(curYM);                    // mois affiché (onglets Mois et Catégories)
+  const [catPer, setCatPer] = useState("month");          // Catégories : "month" | "year"
+  const [cmpYM, setCmpYM] = useState(null);               // Mois : comparaison avec un autre mois
+  const [catModal, setCatModal] = useState(null);         // id de catégorie → analyse détaillée
+  const [tagsModal, setTagsModal] = useState(null);       // { tagId } | {}
+  const [editBudget, setEditBudget] = useState(null);     // { catId, draft }
+  const [noteDraft, setNoteDraft] = useState(null);
+  const [goalDraft, setGoalDraft] = useState(null);
+  const [sideType, setSideType] = useState("all");
 
-  // Enregistre les modals locaux dans le back stack
-  useEffect(() => { if (!showSavModal)   return; onPushBack?.(() => setShowSavModal(false));   return () => onPopBack?.(); }, [showSavModal]);
-  useEffect(() => { if (!showCatModal)   return; onPushBack?.(() => setShowCatModal(false));   return () => onPopBack?.(); }, [showCatModal]);
-  useEffect(() => { if (!showSuiviModal) return; onPushBack?.(() => setShowSuiviModal(false)); return () => onPopBack?.(); }, [showSuiviModal]);
-  useEffect(() => { if (!showTagsModal)  return; onPushBack?.(() => setShowTagsModal(false));  return () => onPopBack?.(); }, [showTagsModal]);
-  useEffect(() => { if (!editGoal)       return; onPushBack?.(() => setEditGoal(false));       return () => onPopBack?.(); }, [editGoal]);
+  // Bouton retour Android : ferme d'abord les fenêtres ouvertes
+  useEffect(() => { if (!catModal) return; onPushBack?.(() => setCatModal(null)); return () => onPopBack?.(); }, [catModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!tagsModal) return; onPushBack?.(() => setTagsModal(null)); return () => onPopBack?.(); }, [tagsModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const yInc = yearly.inc, yExp = yearly.exp, ySav = yearly.sav;
-  const yNet = yInc - yExp;
+  // Barre collée sous l'en-tête (même principe que l'Historique)
+  const [stickyTop, setStickyTop] = useState(0);
+  useEffect(() => {
+    const h = document.querySelector(".bp-header");
+    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
+    upd(); window.addEventListener("resize", upd);
+    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
+    ro?.observe(h);
+    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
+  }, []);
 
-  // Moyennes
-  const active  = useMemo(() => months.filter(m => m.inc > 0 || m.exp > 0), [months]);
-  const n       = active.length || 1;
-  const avgInc  = active.reduce((s,m) => s + m.inc, 0) / n;
-  const avgExp  = active.reduce((s,m) => s + m.exp, 0) / n;
-  const avgNet  = active.reduce((s,m) => s + m.net, 0) / n;
+  const [yy, mm] = ym.split("-").map(Number);
+  const ymLabel = `${MONTHS_FR[mm - 1]} ${yy}`;
+  const showYear = tab === "annee" || (tab === "cats" && catPer === "year");
+  useEffect(() => { onSubtitle?.(showYear ? `année ${currentYear}` : ymLabel.toLowerCase()); }, [showYear, currentYear, ymLabel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Classement mois
-  const ranked  = useMemo(() =>
-    [...active].sort((a, b) => b.net - a.net),
-    [active]
+  const shiftYM = (v, n) => { const d = new Date(Number(v.slice(0, 4)), Number(v.slice(5, 7)) - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; };
+  const goPrev = () => { if (showYear) setCurrentYear(y => y - 1); else { setYm(v => shiftYM(v, -1)); setCmpYM(null); } };
+  const goNext = () => { if (showYear) setCurrentYear(y => Math.min(y + 1, nowY)); else if (ym < curYM) { setYm(v => shiftYM(v, 1)); setCmpYM(null); } };
+  const atEnd = showYear ? currentYear >= nowY : ym >= curYM;
+
+  // ═════ Données « Mois » ═════
+  const firstYM = useMemo(() => firstDataYM(transactions), [transactions]);
+  const mT = useMemo(() => computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym), [transactions, fixedExpenses, fixedIncomes, ym]);
+  const mAvg = useMemo(() => {
+    const prev = [1, 2, 3].map(i => shiftYM(ym, -i)).filter(m => m >= firstYM);
+    if (!prev.length) return null;
+    const t = prev.map(m => computeMonthTotals(transactions, fixedExpenses, fixedIncomes, m));
+    const a = k => t.reduce((s, x) => s + x[k], 0) / t.length;
+    return { inc: a("inc"), exp: a("exp"), net: a("net"), n: t.length };
+  }, [transactions, fixedExpenses, fixedIncomes, ym, firstYM]); // eslint-disable-line react-hooks/exhaustive-deps
+  const recap = useMemo(() => computeMonthRecap(data, ym), [data, ym]);
+  const cmpT = useMemo(() => cmpYM ? computeMonthTotals(transactions, fixedExpenses, fixedIncomes, cmpYM) : null, [transactions, fixedExpenses, fixedIncomes, cmpYM]);
+  const catBudgets = useMemo(() => categories
+    .filter(c => categoryThresholds[c.id] > 0)
+    .map(c => ({ c, spent: categorySpentForMonth(categories, transactions, fixedExpenses, c.id, ym), limit: categoryThresholds[c.id] }))
+    .sort((a, b) => b.spent / b.limit - a.spent / a.limit), [categories, categoryThresholds, transactions, fixedExpenses, ym]);
+
+  // ═════ Données « Année » ═════
+  const months = useYearMonths(transactions, fixedExpenses, currentYear, fixedIncomes);
+  const yearly = useMemo(() => computePeriodTotals(transactions, fixedExpenses, fixedIncomes, `${currentYear}-01`, `${currentYear}-12`), [transactions, fixedExpenses, fixedIncomes, currentYear]);
+  const isCurYear = currentYear === nowY;
+  const prevSame = useMemo(() => {
+    const to = isCurYear ? `${currentYear - 1}-${String(new Date().getMonth() + 1).padStart(2, "0")}` : `${currentYear - 1}-12`;
+    return computePeriodTotals(transactions, fixedExpenses, fixedIncomes, `${currentYear - 1}-01`, to);
+  }, [transactions, fixedExpenses, fixedIncomes, currentYear, isCurYear]);
+  const lived = months.filter(m => m.hasData);
+  const nM = yearly.months || lived.length || 1;
+  const ranked = [...lived].sort((a, b) => b.net - a.net);
+  const goal = parseFloat((data.savingsGoals || {})[currentYear]) || 0;
+  const monthsLeft = isCurYear ? 12 - (new Date().getMonth() + 1) : 0;
+
+  // ═════ Données « Catégories » ═════
+  const catFrom = catPer === "year" ? `${currentYear}-01` : ym;
+  const catTo   = catPer === "year" ? `${currentYear}-12` : ym;
+  const breakdown = useMemo(() => computeCategoryBreakdown(data, catFrom, catTo), [data, catFrom, catTo]);
+  const catLivedMonths = useMemo(() => livedMonths(transactions, catFrom, catTo), [transactions, catFrom, catTo]);
+  const catSpentPeriod = id => catLivedMonths.reduce((s, m) => s + categorySpentForMonth(categories, transactions, fixedExpenses, id, m), 0);
+  const prefix = catPer === "year" ? String(currentYear) : ym;
+
+  // ── petits éléments d'interface ──
+  const segBtn = on => ({ flex: 1, textAlign: "center", fontSize: ".66rem", fontWeight: 800, padding: "7px 0", borderRadius: 8, cursor: "pointer", border: "none",
+    background: on ? "var(--accent)" : "transparent", color: on ? "#06121c" : "var(--text2)" });
+  const navBtn = off => ({ width: 32, height: 32, flexShrink: 0, borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--accent)",
+    fontSize: ".8rem", cursor: off ? "default" : "pointer", opacity: off ? .35 : 1, padding: 0 });
+  const secT = (txt, right) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 0 6px" }}>
+      <span style={{ flex: 1 }}>{txt}</span>{right}
+    </div>
   );
-
-  const { top5, topTotal } = useMemo(() => {
-    // v1.47.1 : frais fixes de tous les mois vécus de l'année (avant : le mois en cours seulement)
-    const tf    = computePeriodTotals(transactions, fixedExpenses, [], `${currentYear}-01`, `${currentYear}-12`).fixExp;
-    const yearStr = currentYear.toString();
-    const expMap = {};
-    const incMap = {};
-    if (tf > 0) expMap["__fixes__"] = tf;
-    // Dépenses
-    transactions
-      .filter(t => t.date.startsWith(yearStr) && t.type === "expense")
-      .forEach(t => {
-        // v1.47.0 : une sous-catégorie est comptée dans sa catégorie principale
-        const k = (t.categoryId && catRootId(categories, t.categoryId)) || "__other__";
-        expMap[k] = (expMap[k] || 0) + (parseFloat(t.amount) || 0);
-      });
-    // Revenus de même catégorie OU catégorie liée = déductions
-    transactions
-      .filter(t => t.date.startsWith(yearStr) && isIncome(t.type) && t.type !== "dissolution_cagnotte")
-      .forEach(t => {
-        const a   = parseFloat(t.amount)||0;
-        const cat = categories.find(c => c.id === t.categoryId);
-        const lk = cat?.linkedToId ? catRootId(categories, cat.linkedToId) : null;
-        const own = t.categoryId ? catRootId(categories, t.categoryId) : null;
-        if (lk && expMap[lk]) {
-          incMap[lk] = (incMap[lk]||0) + a;
-        } else if (own && expMap[own]) {
-          incMap[own] = (incMap[own]||0) + a;
-        }
-      });
-    // Coût net par catégorie
-    const netMap = {};
-    Object.keys(expMap).forEach(k => {
-      netMap[k] = Math.max(0, expMap[k] - (incMap[k] || 0));
-    });
-    const entries = Object.entries(netMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
-    const total   = Object.values(netMap).reduce((s, v) => s + v, 0) || 1;
-    return { top5: entries, topTotal: total };
-  }, [transactions, fixedExpenses, currentYear, categories]);
-
-  const compRows = [
-    { label: "💰 Revenus",   v1: yInc,  v0: prevY.inc,             color: "var(--success)", higherIsBetter: true  },
-    { label: "💸 Dépenses",  v1: yExp,  v0: prevY.exp,             color: "var(--danger)",  higherIsBetter: false },
-    { label: "🐷 Épargne",   v1: ySav,  v0: prevY.sav,             color: "var(--purple)",  higherIsBetter: true  },
-    { label: "📊 Solde net", v1: yNet,  v0: prevY.inc - prevY.exp, color: "var(--accent)",  higherIsBetter: true  },
-  ];
+  const link = (txt, on) => <span onClick={on} style={{ color: "var(--accent)", textTransform: "none", letterSpacing: 0, fontSize: ".64rem", cursor: "pointer" }}>{txt}</span>;
+  const card = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "4px 11px", marginBottom: 6 };
+  const rowSt = first => ({ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: first ? "none" : "1px solid var(--border-soft)", fontSize: ".72rem" });
+  const bar = (pct, col, h = 5) => (
+    <div style={{ height: h, borderRadius: 3, background: "var(--surface3)", overflow: "hidden", marginTop: 4 }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: "100%", borderRadius: 3, background: col }} />
+    </div>
+  );
+  const budCol = (spent, limit) => spent > limit + 0.004 ? "var(--danger)" : spent / limit >= .8 ? "var(--warning)" : "var(--success)";
+  const vsTxt = (v, avg, higherIsGood) => {
+    if (avg == null) return { t: "", c: "var(--text3)" };
+    if (Math.abs(v - avg) < Math.max(1, Math.abs(avg) * .03)) return { t: "= moyenne", c: "var(--text3)" };
+    const up = v > avg, good = higherIsGood ? up : !up;
+    const p = avg !== 0 ? Math.round(Math.abs((v - avg) / avg) * 100) : null;
+    return { t: `${up ? "▲" : "▼"} ${p != null && Math.abs(avg) > 50 ? `${p} %` : fmt(Math.abs(v - avg))} vs moy. ${mAvg?.n} mois`, c: good ? "var(--success)" : "var(--danger)" };
+  };
+  const kpi = (label, val, color, sub, subCol) => (
+    <div style={{ borderRadius: 11, padding: "8px 10px", background: "var(--surface2)", border: "1px solid var(--border-soft)", minWidth: 0 }}>
+      <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color }}>{label}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: "1rem", fontWeight: 800, color, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{val}</div>
+      {sub && <div style={{ fontSize: ".58rem", fontWeight: 700, color: subCol || "var(--text3)", marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+  const signed = v => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
+  const catOf = id => categories.find(c => c.id === id);
 
   return (
     <div>
-      {/* ── Navigation année ── */}
-      <div className="card" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <button className="year-nav-btn" onClick={() => setCurrentYear(y => y - 1)}>◀</button>
-        <span style={{ fontFamily: "var(--display)", fontSize: "1.3rem", fontWeight: 800 }}>{currentYear}</span>
-        <button className="year-nav-btn" onClick={() => setCurrentYear(y => Math.min(y + 1, new Date().getFullYear()))}>▶</button>
-      </div>
-
-      {/* ── Bilans mensuels (v1.47.0) : clôture du mois, consultable à tout moment ── */}
-      <button onClick={() => setRecapYM(getPrevMonth(currentYM()))}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", marginBottom: 10, borderRadius: "var(--radius)",
-          background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-        <span style={{ fontSize: "1.1rem" }}>📊</span>
-        <span style={{ flex: 1 }}>
-          <span style={{ display: "block", fontSize: ".78rem", fontWeight: 700 }}>Bilans mensuels</span>
-          <span style={{ display: "block", fontSize: ".6rem", color: "var(--text3)" }}>Le résumé de chaque mois terminé</span>
-        </span>
-        <span style={{ color: "var(--text3)" }}>›</span>
-      </button>
-      {recapYM && (
-        <MonthRecapSheet recap={computeMonthRecap(data, recapYM)} categories={data.categories}
-          onClose={() => setRecapYM(null)}
-          onPrevMonth={() => setRecapYM(ym => getPrevMonth(ym))}
-          onNextMonth={recapYM < getPrevMonth(currentYM()) ? () => setRecapYM(ym => { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }) : null} />
-      )}
-
-      {/* ── Tabs internes ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
-        {[
-          ["bilan",       "📊 Bilan"],
-          ["analyse",     "🔍 Analyse"],
-          ["comparaison", "🔀 Périodes"],
-        ].map(([k, l]) => (
-          <button key={k} onClick={() => setRapportTab(k)} style={{
-            background: rapportTab===k ? "var(--accent-glow)" : "transparent",
-            border: `1.5px solid ${rapportTab===k ? "var(--accent)" : "var(--border)"}`,
-            borderRadius: "var(--radius-sm)", padding: "9px 0",
-            color: rapportTab===k ? "var(--accent)" : "var(--text2)",
-            fontWeight: 700, fontSize: ".7rem", cursor: "pointer",
-          }}>{l}</button>
-        ))}
-      </div>
-
-      {/* ══ BILAN : hero + moyennes + graphique + classement + objectif ══ */}
-      {rapportTab === "bilan" && (<>
-
-        {/* Bouton suivi catégories */}
-        {(() => {
-          const curYM  = currentYM();
-          const alerts = data.categories.filter(c => {
-            const limit = categoryThresholds[c.id];
-            if (!limit) return false;
-            const spent = categorySpentForMonth(data.categories, data.transactions, data.fixedExpenses, c.id, curYM);
-            return spent >= limit * 0.8;
-          });
-          return (
-            <>
-              <button onClick={() => setShowSuiviModal(true)} style={{
-                width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-                background: "var(--surface)",
-                border: `1px solid ${alerts.length > 0 ? "rgba(200,112,112,.4)" : "var(--border)"}`,
-                borderLeft: `3px solid ${alerts.length > 0 ? "var(--danger)" : "var(--accent)"}`,
-                borderRadius: "var(--radius-sm)",
-                padding: "11px 14px", marginBottom: 12, cursor: "pointer", touchAction: "manipulation",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ fontSize: "1.1rem" }}>🎯</span>
-                  <div style={{ textAlign: "left" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                      <span style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Suivi des catégories</span>
-                      {alerts.length > 0 && (
-                        <span style={{ fontSize: ".52rem", background: "rgba(200,112,112,.2)", color: "var(--danger)", padding: "2px 7px", borderRadius: 10, fontWeight: 800 }}>
-                          {alerts.length} alerte{alerts.length > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>
-                      {(() => {
-                        const tracked = Object.keys(categoryThresholds).filter(k => categoryThresholds[k] > 0);
-                        return tracked.length > 0
-                          ? `${tracked.length} catégorie${tracked.length > 1 ? "s" : ""} suivie${tracked.length > 1 ? "s" : ""}  · Tap pour le détail`
-                          : "Aucun seuil configuré · Tap pour commencer";
-                      })()}
-                    </div>
-                  </div>
-                </div>
-                <span style={{ color: alerts.length > 0 ? "var(--danger)" : "var(--accent)", fontSize: ".85rem" }}>›</span>
-              </button>
-              {showSuiviModal && (
-                <SuiviModal
-                  onClose={() => setShowSuiviModal(false)}
-                  categories={data.categories}
-                  transactions={data.transactions}
-                  fixedExpenses={data.fixedExpenses}
-                  thresholds={categoryThresholds}
-                  onSaveThreshold={onSaveCategoryThreshold}
-                />
-              )}
-            </>
-          );
-        })()}
-
-        {/* Budgets par tag (v1.41.0) — mois en cours pour les budgets mensuels */}
-        {(() => {
-          const ym = currentYM();
-          return <TagBudgetBars
-            items={computeTagBudgets(data.tags, data.transactions, ym)}
-            monthLabel={MONTHS_FR[parseInt(ym.slice(5, 7), 10) - 1].toLowerCase()} />;
-        })()}
-
-        {/* Montants à part — agrégat annuel (v1.42.0 : inclut les dépenses 100 % hors compte) */}
-        {(() => {
-          const yearStr = currentYear.toString();
-          const curYM   = currentYM();
-          const isCurYear = yearStr === curYM.slice(0, 4);
-          const sideTypes = data.sideAmountTypes || [];
-          const txSideTotal = t => Object.values(t.sideAmounts || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
-
-          const sideTxs = (data.transactions || []).filter(t =>
-            t.date.startsWith(yearStr) && t.type === "expense" && txSideTotal(t) > 0);
-          const offExp  = (data.offAccountEntries || []).filter(x => x.kind === "expense" && (x.date || "").startsWith(yearStr));
-          if (sideTxs.length === 0 && offExp.length === 0) return null;
-
-          const totalOff   = offExp.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
-          const totalSide  = sideTxs.reduce((s, t) => s + txSideTotal(t), 0) + totalOff;
-          const totalPaid  = sideTxs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-          const thisMonthSide = isCurYear
-            ? sideTxs.filter(t => t.date.startsWith(curYM)).reduce((s, t) => s + txSideTotal(t), 0)
-              + offExp.filter(x => x.date.startsWith(curYM)).reduce((s, x) => s + (parseFloat(x.amount) || 0), 0)
-            : null;
-
-          const byType = {};
-          sideTxs.forEach(t => Object.entries(t.sideAmounts || {}).forEach(([k, v]) => { byType[k] = (byType[k] || 0) + (parseFloat(v) || 0); }));
-          offExp.forEach(x => { byType[x.satId] = (byType[x.satId] || 0) + (parseFloat(x.amount) || 0); });
-          const typeRows = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, amt]) => ({ st: sideTypes.find(s => s.id === k), amt }));
-
-          const box = { flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" };
-          const lab = { fontSize: ".56rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 };
-          return (
-            <div className="tr-metal-box" style={{ borderRadius: 16, padding: 16, marginBottom: 12, "--tr-fill": "#1c1710" }}>
-              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6 }}>🎫 Montants à part — {currentYear}</div>
-              <div className="tr-metal-text" style={{ fontSize: "1.7rem", fontWeight: 800 }}>{fmt(totalSide)}</div>
-              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.5)", marginTop: 4, lineHeight: 1.5 }}>
-                {totalOff > 0 && <>dont {fmt(totalOff)} de dépenses 100 % hors compte<br/></>}
-                {thisMonthSide != null && thisMonthSide > 0 && `dont ${fmt(thisMonthSide)} ce mois-ci`}
-              </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <div style={box}><div style={lab}>Payé banque</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--danger)" }}>{fmt(totalPaid)}</div></div>
-                <div style={box}><div style={lab}>Hors banque</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "var(--tr)" }}>{fmt(totalSide)}</div></div>
-                <div style={box}><div style={lab}>Budget réel</div><div style={{ fontFamily: "var(--mono)", fontSize: ".78rem", fontWeight: 800, color: "#fff" }}>{fmt(totalPaid + totalSide)}</div></div>
-              </div>
-              {typeRows.length > 1 && (
-                <div style={{ display: "flex", gap: 6, marginTop: 12, flexWrap: "wrap" }}>
-                  {typeRows.map(({ st, amt }) => (
-                    <div key={st?.id || "—"} style={{ display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.12)" }}>
-                      <span style={{ fontSize: ".68rem" }}>{st?.icon || "🎫"}</span>
-                      <span style={{ fontSize: ".62rem", color: "rgba(255,255,255,.7)" }}>{st?.label || "—"}</span>
-                      <span style={{ fontSize: ".64rem", fontWeight: 800, color: "var(--tr)" }}>{fmt(amt)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 10, lineHeight: 1.5 }}>
-                « Budget réel » = payé par la banque + hors banque (TR…). N'affecte jamais ton solde.
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Payé hors banque par catégorie (v1.42.0) — filtres type + période */}
-        {(() => {
-          const sideTypes = data.sideAmountTypes || [];
-          const curYM = currentYM();
-          const isCurYear = currentYear.toString() === curYM.slice(0, 4);
-          const typeSel = sideCatType === "all" || sideTypes.some(t => t.id === sideCatType) ? sideCatType : "all";
-          const period  = sideCatPeriod === "month" && isCurYear ? curYM : currentYear.toString();
-          const rows = computeSidePaidByCategory(data.transactions, data.offAccountEntries, typeSel, period);
-          const anyAtAll = computeSidePaidByCategory(data.transactions, data.offAccountEntries, "all", currentYear.toString()).length > 0;
-          if (!anyAtAll) return null;
-          const seg = on => ({ flex: 1, textAlign: "center", padding: "6px 4px", borderRadius: 9, fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
-            border: `1px solid ${on ? "var(--tr)" : "rgba(255,255,255,.15)"}`, color: on ? "var(--tr)" : "rgba(255,255,255,.55)", background: on ? "var(--tr-glow)" : "transparent" });
-          const selLabel = typeSel === "all" ? "hors banque" : `en ${(sideTypes.find(t => t.id === typeSel)?.label || "").toLowerCase()}`;
-          return (
-            <div className="tr-metal-box" style={{ borderRadius: 16, padding: 16, marginBottom: 12, "--tr-fill": "#1c1710" }}>
-              <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 10 }}>🎫 Payé hors banque par catégorie</div>
-              {sideTypes.length > 1 && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  {sideTypes.map(t => <div key={t.id} onClick={() => setSideCatType(t.id)} style={seg(typeSel === t.id)}>{t.icon} {t.label}</div>)}
-                  <div onClick={() => setSideCatType("all")} style={seg(typeSel === "all")}>Tous</div>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-                {isCurYear && <div onClick={() => setSideCatPeriod("month")} style={seg(sideCatPeriod === "month")}>Ce mois</div>}
-                <div onClick={() => setSideCatPeriod("year")} style={seg(sideCatPeriod !== "month" || !isCurYear)}>{currentYear}</div>
-              </div>
-              {rows.length === 0 && <div style={{ fontSize: ".64rem", color: "rgba(255,255,255,.5)", textAlign: "center", padding: 6 }}>Rien de payé {selLabel} sur cette période.</div>}
-              {rows.map(r => {
-                const cat = (data.categories || []).find(c => c.id === r.categoryId);
-                return (
-                  <div key={r.categoryId || "none"} style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".7rem", marginBottom: 5 }}>
-                      <span>{cat?.icon || "🎫"} {cat?.name || "Sans catégorie"}</span>
-                      <span><b style={{ color: "var(--tr)" }}>{fmt(r.side)}</b> <span style={{ color: "rgba(255,255,255,.45)" }}>/ {fmt(r.total)}</span></span>
-                    </div>
-                    <div style={{ height: 7, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", display: "flex" }}>
-                      <div style={{ width: `${r.pct}%`, background: "var(--tr)" }} />
-                      <div style={{ width: `${100 - r.pct}%`, background: "var(--danger)", opacity: .55 }} />
-                    </div>
-                    <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", marginTop: 4 }}>
-                      {Math.round(r.pct)} % payé {selLabel} · {fmt(r.bank)} par la banque
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ display: "flex", gap: 12, fontSize: ".56rem", color: "rgba(255,255,255,.5)" }}>
-                <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--tr)" }} /> Hors banque</span>
-                <span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: "var(--danger)", opacity: .55 }} /> Banque</span>
-              </div>
-            </div>
-          );
-        })()}
-
-        <button onClick={() => setShowTagsModal(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderLeft: "3px solid var(--purple)", borderRadius: "var(--radius-sm)",
-          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: "1.1rem" }}>🏷️</span>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>
-                Tags
-                {tags.length > 0 && <span style={{ marginLeft: 7, fontSize: ".58rem", background: "rgba(176,144,224,.15)", color: "var(--purple)", padding: "1px 7px", borderRadius: 10, fontWeight: 700 }}>{tags.length}</span>}
-              </div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Suivi par projet, événement ou période</div>
-            </div>
-          </div>
-          <span style={{ color: "var(--purple)", fontSize: ".85rem" }}>›</span>
-        </button>
-        {showTagsModal && (
-          <TagsModal
-            onClose={() => setShowTagsModal(false)}
-            tags={tags}
-            transactions={data.transactions}
-            fixedExpenses={data.fixedExpenses}
-            categories={data.categories}
-            onSaveTag={onSaveTag}
-            onDeleteTag={onDeleteTag}
-          />
-        )}
-
-        {/* Bouton analyse catégorie */}
-        <button onClick={() => setShowCatModal(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderLeft: "3px solid var(--accent)", borderRadius: "var(--radius-sm)",
-          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: "1.1rem" }}>📊</span>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Analyse par catégorie</div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Détail mensuel et annuel d'un poste</div>
-            </div>
-          </div>
-          <span style={{ color: "var(--accent)", fontSize: ".85rem" }}>›</span>
-        </button>
-
-        {/* Modal analyse catégorie */}
-        {showCatModal && (
-          <CategoryDetailModal
-            onClose={() => setShowCatModal(false)}
-            categories={data.categories}
-            transactions={data.transactions}
-            fixedExpenses={data.fixedExpenses}
-          />
-        )}
-        <button onClick={() => setShowSavModal(true)} style={{
-          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
-          background: "var(--surface)", border: "1px solid var(--border)",
-          borderLeft: "3px solid var(--purple)", borderRadius: "var(--radius-sm)",
-          padding: "11px 14px", marginBottom: 12, cursor: "pointer",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: "1.1rem" }}>🐷</span>
-            <div style={{ textAlign: "left" }}>
-              <div style={{ fontSize: ".72rem", fontWeight: 700, color: "var(--text)" }}>Taux d'épargne</div>
-              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Voir l'évolution et les objectifs</div>
-            </div>
-          </div>
-          <span style={{ color: "var(--purple)", fontSize: ".85rem" }}>›</span>
-        </button>
-
-        {/* Modal taux d'épargne */}
-        {showSavModal && (
-          <SavingsRateModal
-            onClose={() => setShowSavModal(false)}
-            transactions={data.transactions}
-            fixedExpenses={data.fixedExpenses}
-            fixedIncomes={data.fixedIncomes || []}
-            currentYear={currentYear}
-          />
-        )}
-
-      {/* ① Hero card avec donut */}
-      <div style={{
-        background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
-        borderRadius: "var(--radius)", padding: 16, marginBottom: 12,
-        boxShadow: "0 4px 24px rgba(112,184,224,.15)", position: "relative", overflow: "hidden",
-      }}>
-        <div style={{ position:"absolute", top:-40, right:-40, width:160, height:160, borderRadius:"50%", background:"radial-gradient(circle, rgba(112,184,224,.15) 0%, transparent 70%)", pointerEvents:"none" }}/>
-        <div style={{ position:"absolute", bottom:-30, left:10, width:100, height:100, borderRadius:"50%", background:"radial-gradient(circle, rgba(176,144,224,.1) 0%, transparent 70%)", pointerEvents:"none" }}/>
-        <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".12em", marginBottom: 12, position: "relative" }}>
-          📊 Bilan {currentYear}
-        </div>
-        <div style={{ position: "relative" }}>
-          <RapportDonut inc={yInc} exp={yExp} sav={ySav} />
-        </div>
-      </div>
-
-      {/* ④ Moyennes mensuelles */}
-      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-        <SectionTitle style={{ marginBottom: 10 }}>📈 Moyennes / mois ({n} mois actifs)</SectionTitle>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-          {[
-            { l: "💰 Revenu",  v: avgInc, c: "var(--success)" },
-            { l: "💸 Dépense", v: avgExp, c: "var(--danger)"  },
-            { l: "📊 Solde",   v: avgNet, c: avgNet>=0?"var(--success)":"var(--danger)" },
-          ].map(s => (
-            <div key={s.l} style={{ background: "var(--surface2)", borderRadius: "var(--radius-sm)", padding: "10px 8px", textAlign: "center", borderTop: `2.5px solid ${s.c}` }}>
-              <div style={{ fontSize: ".55rem", color: "var(--text2)", fontWeight: 700, marginBottom: 5, lineHeight: 1.3 }}>{s.l}</div>
-              <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.c, fontSize: ".72rem", fontVariantNumeric: "tabular-nums" }}>
-                {s.l==="📊 Solde"&&s.v>=0?"+":""}{fmt(s.v)}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ② Graphique avec filtre */}
-      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <div className="stat-label">Flux mensuels — tape un mois</div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[["all","Tout"],["inc","💰"],["exp","💸"]].map(([k,l]) => (
-              <button key={k} onClick={() => setChartFilter(k)} style={{
-                background: chartFilter===k ? "var(--accent-glow)" : "transparent",
-                border: `1px solid ${chartFilter===k ? "var(--accent)" : "var(--border)"}`,
-                borderRadius: 7, padding: "4px 9px",
-                color: chartFilter===k ? "var(--accent)" : "var(--text3)",
-                fontSize: ".65rem", fontWeight: 700, cursor: "pointer",
-              }}>{l}</button>
-            ))}
-          </div>
-        </div>
-        <ChartSVG months={months} chartFilter={chartFilter} onMonthClick={i => onShowMonthDetail(currentYear, i)} />
-        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {chartFilter !== "exp" && <span style={{ color: "var(--success)" }}>■ Revenus</span>}
-          {chartFilter !== "inc" && <span style={{ color: "var(--danger)"  }}>■ Dépenses</span>}
-          {chartFilter === "all" && <span style={{ color: "var(--accent)"  }}>— Solde net</span>}
-        </div>
-      </div>
-
-      {/* ③ Classement des mois */}
-      {ranked.length > 0 && (
-        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-          <SectionTitle style={{ marginBottom: 10 }}>🏆 Classement des mois</SectionTitle>
-          {ranked.map((m, i) => {
-            const maxAbs = Math.max(...ranked.map(r => Math.abs(r.net)), 1);
-            const pct    = (Math.abs(m.net) / maxAbs) * 100;
-            const medal  = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
-            const color  = m.net >= 0 ? "var(--success)" : "var(--danger)";
+      {/* ── Barre collée : onglets + période ── */}
+      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "flex", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 11, padding: 3, gap: 3 }}>
+          {[["mois", "📅 Mois"], ["annee", "📆 Année"], ["cats", "🗂️ Catégories"]].map(([k, l]) => {
+            const alerts = k === "cats" ? catBudgets.filter(b => b.spent > b.limit + 0.004).length : 0;
             return (
-              <div key={m.label}
-                style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, cursor: "pointer" }}
-                onClick={() => onShowMonthDetail(currentYear, m.idx)}>
-                <span style={{ fontSize: medal ? ".9rem" : ".65rem", width: 22, textAlign: "center", color: "var(--text3)", fontWeight: 700, flexShrink: 0 }}>
-                  {medal || `${i+1}`}
-                </span>
-                <span style={{ fontSize: ".72rem", fontWeight: 700, width: 30, flexShrink: 0 }}>{m.label}</span>
-                <div style={{ flex: 1, height: 5, background: "var(--surface3)", borderRadius: 99 }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 99 }}/>
-                </div>
-                <span style={{ fontFamily: "var(--mono)", fontSize: ".68rem", fontWeight: 800, color, width: 75, textAlign: "right", fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
-                  {m.net >= 0 ? "+" : ""}{fmt(m.net)}
-                </span>
-              </div>
+              <button key={k} onClick={() => setTab(k)} style={segBtn(tab === k)}>{l}
+                {alerts > 0 && <span style={{ marginLeft: 4, background: "var(--danger)", color: "#fff", borderRadius: 8, padding: "0 5px", fontSize: ".52rem" }}>{alerts}</span>}
+              </button>
             );
           })}
         </div>
-      )}
-
-      {/* ⑤ Objectif épargne annuel */}
-      <div className="card" style={{ padding: 14, marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          <SectionTitle>🎯 Objectif épargne {currentYear}</SectionTitle>
-          <button onClick={() => { setGoalInput(String(savGoal)); setEditGoal(e => !e); }} style={{
-            background: "var(--accent-glow)", border: "1px solid var(--accent-glow)",
-            borderRadius: 7, padding: "4px 10px", color: "var(--accent)",
-            fontSize: ".62rem", fontWeight: 700, cursor: "pointer",
-          }}>{editGoal ? "✓ OK" : "✏️"}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7 }}>
+          <button onClick={goPrev} style={navBtn(false)}>◀</button>
+          {tab === "cats"
+            ? <div style={{ flex: 1, display: "flex", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 2, gap: 2 }}>
+                <button onClick={() => setCatPer("month")} style={{ ...segBtn(catPer === "month"), padding: "6px 0" }}>{ymLabel}</button>
+                <button onClick={() => setCatPer("year")} style={{ ...segBtn(catPer === "year"), padding: "6px 0" }}>Année {currentYear}</button>
+              </div>
+            : <div style={{ flex: 1, textAlign: "center", fontFamily: "var(--display)", fontSize: ".98rem", fontWeight: 800 }}>{tab === "annee" ? currentYear : ymLabel}</div>}
+          <button onClick={goNext} style={navBtn(atEnd)}>▶</button>
         </div>
-        {editGoal && (
-          <input type="number" value={goalInput} min="0" step="100"
-            onChange={e => setGoalInput(e.target.value)}
-            onBlur={() => { setSavGoal(parseFloat(goalInput)||0); setEditGoal(false); }}
-            placeholder="Ex : 5000"
-            style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 8, padding: "8px 12px", color: "var(--text)", fontSize: ".9rem", fontFamily: "var(--mono)", boxSizing: "border-box", marginBottom: 10 }}
-            autoFocus/>
-        )}
-        {savGoal > 0 ? (() => {
-          const pct   = Math.min(100, (ySav / savGoal) * 100);
-          const color = pct >= 100 ? "var(--success)" : pct >= 60 ? "var(--accent)" : "var(--warning)";
-          return (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".62rem", color: "var(--text2)", marginBottom: 5 }}>
-                <span>{fmt(ySav)} épargné</span>
-                <span style={{ color, fontWeight: 800 }}>{pct.toFixed(0)}%</span>
-              </div>
-              <div style={{ height: 8, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, var(--accent), ${color})`, borderRadius: 99, transition: "width .5s" }}/>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "var(--text3)", marginTop: 4 }}>
-                <span>0 €</span><span>Objectif : {fmt(savGoal)}</span>
-              </div>
-            </>
-          );
-        })() : (
-          <div style={{ fontSize: ".72rem", color: "var(--text3)", textAlign: "center", padding: "8px 0" }}>
-            Tape ✏️ pour définir un objectif d'épargne annuel
+      </div>
+
+      {/* ══════════════ 📅 MOIS ══════════════ */}
+      {tab === "mois" && (<>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {(() => { const v = vsTxt(mT.inc, mAvg?.inc, true); return kpi("💰 Revenus", fmt(mT.inc), "var(--success)", v.t, v.c); })()}
+          {(() => { const v = vsTxt(mT.exp, mAvg?.exp, false); return kpi("💸 Dépenses", fmt(mT.exp), "var(--danger)", v.t, v.c); })()}
+          {kpi("🐷 Épargné", fmt(mT.sav), "var(--purple)", mT.inc > 0 ? `${Math.round(mT.sav / mT.inc * 100)} % des revenus` : "", "var(--text3)")}
+          {(() => { const v = vsTxt(mT.net, mAvg?.net, true); return kpi("📊 Net", signed(mT.net), mT.net >= 0 ? "var(--success)" : "var(--danger)", v.t, v.c); })()}
+        </div>
+
+        {!cmpYM ? (
+          <div style={{ textAlign: "right", marginTop: 6 }}>
+            {ym > firstYM && link("🔀 Comparer à un autre mois ›", () => setCmpYM(shiftYM(ym, -1)))}
+          </div>
+        ) : (
+          <div style={{ ...card, marginTop: 8, padding: "8px 11px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".68rem", marginBottom: 4 }}>
+              <b style={{ flex: 1 }}>Comparé à</b>
+              <select value={cmpYM} onChange={e => setCmpYM(e.target.value)}
+                style={{ background: "var(--surface2)", color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 8, padding: "4px 6px", fontSize: ".66rem", fontWeight: 700, fontFamily: "inherit" }}>
+                {Array.from({ length: 24 }, (_, i) => shiftYM(curYM, -i)).filter(m => m !== ym && m >= firstYM).map(m => (
+                  <option key={m} value={m}>{MONTHS_FR[Number(m.slice(5, 7)) - 1]} {m.slice(0, 4)}</option>
+                ))}
+              </select>
+            </div>
+            {[["💰 Revenus", mT.inc, cmpT.inc, true], ["💸 Dépenses", mT.exp, cmpT.exp, false], ["🐷 Épargné", mT.sav, cmpT.sav, true], ["📊 Net", mT.net, cmpT.net, true]].map(([l, a, b, hi], i) => {
+              const d = a - b, good = Math.abs(d) < .005 ? null : (hi ? d > 0 : d < 0);
+              return (
+                <div key={l} style={{ ...rowSt(i === 0), fontSize: ".68rem", padding: "6px 0" }}>
+                  <span style={{ flex: 1 }}>{l}</span>
+                  <b style={{ width: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(a)}</b>
+                  <span style={{ width: 78, textAlign: "right", color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>{fmt(b)}</span>
+                  <span style={{ width: 70, textAlign: "right", fontSize: ".6rem", fontWeight: 800, color: good == null ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" }}>{good == null ? "=" : `${d > 0 ? "▲" : "▼"} ${fmt(Math.abs(d))}`}</span>
+                </div>
+              );
+            })}
+            <div style={{ textAlign: "right", marginTop: 2 }}>{link("✕ Fermer la comparaison", () => setCmpYM(null))}</div>
           </div>
         )}
-      </div>
+
+        {recap.movers.length > 0 && <>
+          {secT(<>Ce qui a bougé <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· vs moyenne {recap.monthsCompared} mois</span></>)}
+          <div style={card}>
+            {recap.movers.map((x, i) => {
+              const c = catOf(x.catId);
+              return (
+                <div key={x.catId} style={{ ...rowSt(i === 0), cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
+                  <span>{c?.icon || "❔"}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"}</span>
+                  <span style={{ fontSize: ".62rem", fontWeight: 800, color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "▲ +" : "▼ −"}${Math.abs(x.pct)} %`}</span>
+                  <b style={{ width: 82, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(x.amount)}</b>
+                </div>
+              );
+            })}
+          </div>
+        </>}
+
+        {(catBudgets.length > 0 || recap.grocery || recap.tagBudgets.length > 0) && <>
+          {secT("Budgets du mois", link("gérer ›", () => { setCatPer("month"); setTab("cats"); }))}
+          <div style={card}>
+            {[
+              ...catBudgets.map(b => ({ k: b.c.id, label: `${b.c.icon || ""} ${b.c.name}`, spent: b.spent, limit: b.limit })),
+              ...(recap.grocery ? [{ k: "__groc", label: "🛒 Courses", tag: "budget courses", spent: recap.grocery.spent, limit: recap.grocery.average }] : []),
+              ...recap.tagBudgets.map(b => ({ k: b.tag.id, label: `${b.tag.icon} ${b.tag.name}`, tag: "tag", spent: b.spent, limit: b.budget })),
+            ].map((b, i) => {
+              const col = budCol(b.spent, b.limit);
+              return (
+                <div key={b.k} style={{ ...rowSt(i === 0), display: "block" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{b.label}{b.tag && <span style={{ marginLeft: 5, fontSize: ".52rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, background: "var(--surface3)", color: "var(--text3)" }}>{b.tag}</span>}</span>
+                    <b style={{ color: col, fontVariantNumeric: "tabular-nums" }}>{fmt(b.spent)} / {fmt(b.limit)}</b>
+                  </div>
+                  {bar(b.spent / b.limit * 100, col)}
+                </div>
+              );
+            })}
+          </div>
+        </>}
+
+        {(recap.unpointed > 0 || recap.cheques > 0) && <>
+          {secT("À faire")}
+          <div style={card}>
+            {recap.unpointed > 0 && (
+              <div style={{ ...rowSt(true), cursor: "pointer" }} onClick={() => onGoToHistorique?.("unpointed")}>
+                <span>⏳</span><span style={{ flex: 1 }}>{recap.unpointed} opération{recap.unpointed > 1 ? "s" : ""} pas pointée{recap.unpointed > 1 ? "s" : ""}</span>
+                <b style={{ color: "var(--accent)", fontSize: ".66rem" }}>Voir ›</b>
+              </div>
+            )}
+            {recap.cheques > 0 && (
+              <div style={rowSt(recap.unpointed === 0)}>
+                <span>🧾</span><span style={{ flex: 1 }}>{recap.cheques} chèque{recap.cheques > 1 ? "s" : ""} non encaissé{recap.cheques > 1 ? "s" : ""}{recap.oldestChequeDays != null ? ` (${recap.oldestChequeDays} j)` : ""}</span>
+              </div>
+            )}
+          </div>
+        </>}
+
+        {secT("📝 Note du mois")}
+        {noteDraft == null ? (
+          <div onClick={() => setNoteDraft(monthNotes[ym] || "")} style={{ ...card, padding: "9px 11px", fontSize: ".7rem", cursor: "pointer", color: monthNotes[ym] ? "var(--text)" : "var(--text3)", display: "flex", gap: 8 }}>
+            <span style={{ flex: 1, whiteSpace: "pre-wrap" }}>{monthNotes[ym] || `Ajouter une note pour ${MONTHS_FR[mm - 1].toLowerCase()}…`}</span>
+            <span style={{ color: "var(--accent)" }}>✏️</span>
+          </div>
+        ) : (
+          <div style={{ ...card, padding: 9 }}>
+            <textarea value={noteDraft} onChange={e => setNoteDraft(e.target.value)} autoFocus rows={3}
+              style={{ width: "100%", background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 8, padding: 8, color: "var(--text)", fontSize: ".74rem", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <button className="btn btn-outline" style={{ flex: 1, padding: 7 }} onClick={() => setNoteDraft(null)}>Annuler</button>
+              <button className="btn btn-primary" style={{ flex: 1, padding: 7 }} onClick={() => { onSaveMonthNote?.(ym, noteDraft); setNoteDraft(null); }}>Enregistrer</button>
+            </div>
+          </div>
+        )}
       </>)}
 
-      {/* ══ ANALYSE : top 5 + évolution + comparaison N/N-1 + analyses ══ */}
-      {rapportTab === "analyse" && (<>
-        <SectionTitle>Top 5 dépenses</SectionTitle>
-        <div className="card" style={{ padding: 14 }}>
-          {top5.length === 0
-            ? <p style={{ fontSize: ".78rem", color: "var(--text3)", textAlign: "center", padding: "12px 0" }}>Aucune dépense enregistrée</p>
-            : top5.map(([id, val], i) => {
-                const cat  = categories.find(c => c.id === id);
-                const name = id === "__fixes__" ? "📌 Frais fixes" : id === "__other__" ? "❓ Sans catégorie" : `${cat?.icon ?? ""} ${cat?.name ?? id}`;
-                const pct  = (val / topTotal * 100).toFixed(0);
-                const rank = ["🥇","🥈","🥉","4️⃣","5️⃣"][i];
+      {/* ══════════════ 📆 ANNÉE ══════════════ */}
+      {tab === "annee" && (() => {
+        const hasPrev = prevSame.inc + prevSame.exp > 0;
+        const vsY = (v, p, hi) => {
+          if (!hasPrev || !p) return { t: "", c: "var(--text3)" };
+          const d = (v - p) / Math.abs(p) * 100, good = hi ? d > 0 : d < 0;
+          return { t: `${d > 0 ? "▲" : "▼"} ${Math.abs(Math.round(d))} % vs ${currentYear - 1}`, c: Math.abs(d) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
+        };
+        const mx = Math.max(1, ...months.map(m => Math.max(m.inc, m.exp)));
+        const rate = yearly.inc > 0 ? yearly.sav / yearly.inc * 100 : 0;
+        const best = ranked[0], worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+        const rem = Math.max(0, goal - yearly.sav);
+        const proj = isCurYear && lived.length > 0 ? {
+          inc: yearly.inc + yearly.inc / nM * monthsLeft, exp: yearly.exp + yearly.exp / nM * monthsLeft,
+        } : null;
+        return (<>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {(() => { const v = vsY(yearly.inc, prevSame.inc, true); return kpi("💰 Revenus", fmt(yearly.inc), "var(--success)", v.t || `${nM} mois · ${fmt(yearly.inc / nM)}/mois`, v.c); })()}
+            {(() => { const v = vsY(yearly.exp, prevSame.exp, false); return kpi("💸 Dépenses", fmt(yearly.exp), "var(--danger)", v.t || `${fmt(yearly.exp / nM)}/mois`, v.c); })()}
+            {kpi("🐷 Épargné", fmt(yearly.sav), "var(--purple)", `taux : ${rate.toFixed(1).replace(".", ",")} %`)}
+            {(() => { const v = vsY(yearly.net, prevSame.net, true); return kpi("📊 Net", signed(yearly.net), yearly.net >= 0 ? "var(--success)" : "var(--danger)", v.t || `${signed(yearly.net / nM)}/mois`, v.c); })()}
+          </div>
+          {!hasPrev && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "6px 2px 0" }}>{currentYear - 1} : pas de données à comparer pour l'instant.</div>}
+
+          {secT(<>Mois par mois <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· touche un mois pour l'ouvrir</span></>)}
+          <div style={{ ...card, padding: "10px 8px 6px" }}>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 92 }}>
+              {months.map((m, i) => {
+                const ymI = `${currentYear}-${String(i + 1).padStart(2, "0")}`;
                 return (
-                  <div key={id} className="top3-item">
-                    <span className="top3-rank">{rank}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: ".78rem", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-                      <div className="top3-bar-bg" style={{ marginTop: 5 }}>
-                        <div className="top3-bar-fill" style={{ width: `${pct}%`, background: PALETTE[i] }} />
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0, marginLeft: 8 }}>
-                      <div style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".78rem", fontVariantNumeric: "tabular-nums", color: PALETTE[i] }}>{fmt(val)}</div>
-                      <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{pct}%</div>
-                    </div>
+                  <div key={i} onClick={() => { if (m.hasData) { setYm(ymI); setCmpYM(null); setTab("mois"); } }}
+                    style={{ flex: 1, display: "flex", gap: 1, alignItems: "flex-end", height: "100%", opacity: m.hasData ? 1 : .25, cursor: m.hasData ? "pointer" : "default" }}>
+                    {m.hasData
+                      ? <><i style={{ flex: 1, height: `${m.inc / mx * 100}%`, background: "rgba(104,212,152,.7)", borderRadius: "2px 2px 0 0" }} />
+                          <i style={{ flex: 1, height: `${m.exp / mx * 100}%`, background: "rgba(200,112,112,.7)", borderRadius: "2px 2px 0 0" }} /></>
+                      : <i style={{ flex: 1, height: 3, background: "var(--surface3)" }} />}
                   </div>
                 );
-              })
-          }
-        </div>
-
-        <SectionTitle>Évolution du solde net</SectionTitle>
-        <div className="card" style={{ padding: 14 }}>
-          <PatrimoineSVG months={months} />
-          <div style={{ display: "flex", gap: 12, fontSize: ".58rem", color: "var(--text3)", marginTop: 6, flexWrap: "wrap" }}>
-            <span style={{ color: "var(--success)" }}>■ Positif</span>
-            <span style={{ color: "var(--danger)"  }}>■ Négatif</span>
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+              {"JFMAMJJASOND".split("").map((l, i) => <span key={i} style={{ flex: 1, textAlign: "center", fontSize: ".54rem", color: "var(--text3)" }}>{l}</span>)}
+            </div>
+            {best && (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".6rem", marginTop: 8, paddingTop: 7, borderTop: "1px solid var(--border-soft)" }}>
+                <span>🥇 Meilleur : <b style={{ color: "var(--success)" }}>{MONTHS_FR[months.indexOf(best)].toLowerCase()} {signed(best.net)}</b></span>
+                {worst && <span>Moins bon : <b style={{ color: worst.net < 0 ? "var(--danger)" : "var(--warning)" }}>{MONTHS_FR[months.indexOf(worst)].toLowerCase()} {signed(worst.net)}</b></span>}
+              </div>
+            )}
           </div>
-        </div>
 
-        <SectionTitle>Comparaison Annuelle</SectionTitle>
-        <div className="card" style={{ padding: 10 }}>
-          <table className="comp-table">
-            <thead>
-              <tr>
-                <th>Poste</th>
-                <th style={{ textAlign: "right" }}>{currentYear}</th>
-                <th style={{ textAlign: "right" }}>{currentYear - 1}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {compRows.map(r => {
-                const diff = r.v1 - r.v0;
-                const isGood = diff === 0 ? null : (r.higherIsBetter ? diff > 0 : diff < 0);
-                const arrowColor = isGood === null ? "var(--text3)" : isGood ? "var(--success)" : "var(--danger)";
-                const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "—";
+          {secT("🐷 Épargne")}
+          <div style={{ ...card, padding: "10px 11px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".72rem" }}>
+              <span style={{ flex: 1 }}>Objectif {currentYear}</span>
+              {goalDraft == null
+                ? <><b style={{ fontVariantNumeric: "tabular-nums" }}>{goal > 0 ? `${fmt(yearly.sav)} / ${fmt(goal)}` : "aucun"}</b>
+                    <span onClick={() => setGoalDraft(goal ? String(goal) : "")} style={{ color: "var(--accent)", cursor: "pointer" }}>✏️</span></>
+                : <><input value={goalDraft} onChange={e => setGoalDraft(e.target.value)} inputMode="decimal" autoFocus placeholder="Ex : 3000"
+                      style={{ width: 90, background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 7, padding: "4px 7px", color: "var(--text)", fontSize: ".74rem", fontFamily: "var(--mono)", textAlign: "right" }} />
+                    <button onClick={() => { onSaveSavingsGoal?.(currentYear, parseFloat(String(goalDraft).replace(",", ".")) || 0); setGoalDraft(null); }}
+                      style={{ background: "var(--accent)", color: "var(--bg)", border: "none", borderRadius: 7, padding: "5px 9px", fontSize: ".64rem", fontWeight: 800, cursor: "pointer" }}>OK</button></>}
+            </div>
+            {goal > 0 && <>
+              {bar(yearly.sav / goal * 100, "var(--purple)", 7)}
+              <div style={{ fontSize: ".6rem", marginTop: 5, color: rem > 0 ? "var(--warning)" : "var(--success)" }}>
+                {rem <= 0 ? "✅ Objectif atteint" : monthsLeft > 0 ? <>Pour l'atteindre : <b>{fmt(rem / monthsLeft)}/mois</b> sur les {monthsLeft} mois restants</> : <>Il manque <b>{fmt(rem)}</b></>}
+              </div>
+            </>}
+            <div style={{ display: "flex", alignItems: "center", fontSize: ".72rem", marginTop: 11, paddingTop: 9, borderTop: "1px solid var(--border-soft)" }}>
+              <span style={{ flex: 1 }}>Taux d'épargne <small style={{ color: "var(--text3)" }}>(épargné ÷ revenus)</small></span>
+              <b style={{ color: "var(--purple)" }}>{rate.toFixed(1).replace(".", ",")} %</b>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 44, marginTop: 6 }}>
+              {months.map((m, i) => {
+                const r = m.hasData && m.inc > 0 ? Math.max(0, m.sav / m.inc * 100) : null;
                 return (
-                  <tr key={r.label}>
-                    <td style={{ fontWeight: 600, fontSize: ".78rem" }}>{r.label}</td>
-                    <td style={{ color: r.color }}>{fmt(r.v1)}</td>
-                    <td style={{ color: "var(--text2)" }}>
-                      {fmt(r.v0)}{" "}
-                      <span style={{ color: arrowColor, fontSize: ".65rem" }}>{arrow}</span>
-                    </td>
-                  </tr>
+                  <div key={i} style={{ flex: 1, textAlign: "center", opacity: r == null ? .25 : 1 }}>
+                    <div style={{ height: r == null ? 2 : Math.max(3, Math.min(30, r * 1.5)), background: "rgba(176,144,224,.6)", borderRadius: "3px 3px 0 0" }} />
+                    <div style={{ fontSize: ".46rem", color: "var(--text3)", marginTop: 2 }}>{r == null ? "" : `${Math.round(r)}%`}</div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
-        <AnalysteLocal data={data} currentYear={currentYear} months={months} />
-      </>)}
+            </div>
+            <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 5 }}>🎯 Repère courant : 10 % des revenus ({fmt(yearly.inc / nM * .1)}/mois)</div>
+          </div>
 
-      {/* ══ COMPARAISON : 2 périodes + notes ══ */}
-      {rapportTab === "comparaison" && (<>
-        <PeriodCompare transactions={data.transactions} fixedExpenses={data.fixedExpenses} />
-        <MonthNotes currentYear={currentYear} monthNotes={monthNotes} onSave={onSaveMonthNote} />
-      </>)}
+          {proj && <>
+            {secT("🔮 Fin d'année prévue")}
+            <div style={card}>
+              <div style={rowSt(true)}><span style={{ flex: 1 }}>Revenus prévus</span><b style={{ color: "var(--success)" }}>{fmt(proj.inc)}</b></div>
+              <div style={rowSt(false)}><span style={{ flex: 1 }}>Dépenses prévues</span><b style={{ color: "var(--danger)" }}>{fmt(proj.exp)}</b></div>
+              <div style={rowSt(false)}><span style={{ flex: 1 }}>Net prévu au 31 déc.<small style={{ display: "block", color: "var(--text3)", fontSize: ".56rem" }}>au rythme moyen des {nM} mois</small></span>
+                <b style={{ color: proj.inc - proj.exp >= 0 ? "var(--success)" : "var(--danger)" }}>{signed(proj.inc - proj.exp)}</b></div>
+            </div>
+          </>}
+        </>);
+      })()}
+
+      {/* ══════════════ 🗂️ CATÉGORIES ══════════════ */}
+      {tab === "cats" && (() => {
+        const nMonths = Math.max(1, catLivedMonths.length);
+        const sideTypes = data.sideAmountTypes || [];
+        const txSide = t => Object.entries(t.sideAmounts || {}).reduce((s, [k, v]) => s + (sideType === "all" || k === sideType ? (parseFloat(v) || 0) : 0), 0);
+        const sideTxs = transactions.filter(t => t.type === "expense" && (t.date || "").startsWith(prefix) && Object.values(t.sideAmounts || {}).some(v => parseFloat(v) > 0));
+        const offExp = (data.offAccountEntries || []).filter(x => x.kind === "expense" && (x.date || "").startsWith(prefix));
+        const anySide = sideTxs.length > 0 || offExp.length > 0;
+        const byType = {};
+        sideTxs.forEach(t => Object.entries(t.sideAmounts || {}).forEach(([k, v]) => { byType[k] = (byType[k] || 0) + (parseFloat(v) || 0); }));
+        offExp.forEach(x => { byType[x.satId] = (byType[x.satId] || 0) + (parseFloat(x.amount) || 0); });
+        const sidePaidBank = sideTxs.filter(t => txSide(t) > 0 || sideType === "all").reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+        const sideTotal = sideTxs.reduce((s, t) => s + txSide(t), 0) + offExp.filter(x => sideType === "all" || x.satId === sideType).reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+        const sideRows = computeSidePaidByCategory(transactions, data.offAccountEntries, sideType, prefix);
+        const tagRows = tags.map(tag => {
+          const txs = transactions.filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id) && (t.date || "").startsWith(prefix));
+          const spent = txs.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+          const b = parseFloat(tag.budget) || 0;
+          const limit = b > 0 ? (tag.budgetPeriod === "total" ? b : b * (catPer === "year" ? nMonths : 1)) : 0;
+          const spentForBudget = tag.budgetPeriod === "total" ? transactions.filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id)).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) : spent;
+          return { tag, count: txs.length, spent, limit, spentForBudget };
+        }).sort((a, b) => b.spent - a.spent);
+        return (<>
+          <div style={card}>
+            {breakdown.rows.length === 0 && <div style={{ fontSize: ".7rem", color: "var(--text3)", textAlign: "center", padding: 14 }}>Aucune dépense sur cette période.</div>}
+            {breakdown.rows.map((r, i) => {
+              const c = r.id.startsWith("__") ? null : catOf(r.id);
+              const name = r.id === "__fixes__" ? "Frais fixes" : r.id === "__other__" ? "Sans catégorie" : c?.name || "Catégorie supprimée";
+              const icon = r.id === "__fixes__" ? "📌" : c?.icon || "❔";
+              const pct = breakdown.total > 0 ? r.net / breakdown.total * 100 : 0;
+              const lim = c ? (categoryThresholds[c.id] || 0) : 0;
+              const limP = lim * (catPer === "year" ? nMonths : 1);
+              const spentB = lim > 0 ? catSpentPeriod(c.id) : 0;
+              const editing = editBudget?.catId === r.id;
+              return (
+                <div key={r.id} style={{ ...rowSt(i === 0), display: "block" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
+                    <span>{icon}</span>
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}
+                      {r.id === "__fixes__" && <span style={{ marginLeft: 5, fontSize: ".52rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, background: "var(--surface3)", color: "var(--text3)" }}>fixes</span>}</span>
+                    <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{Math.round(pct)} %</span>
+                    <b style={{ width: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(r.net)}</b>
+                    <span style={{ color: "var(--text3)", width: 8 }}>{c ? "›" : ""}</span>
+                  </div>
+                  {(r.subs.length > 0 || r.deducted > 0) && (
+                    <div style={{ fontSize: ".56rem", color: "var(--text3)", margin: "1px 0 0 24px" }}>
+                      {r.subs.length > 0 && <>dont {r.subs.map(s => `${catOf(s.id)?.icon || ""} ${catOf(s.id)?.name || "?"} ${fmt(s.amount)}`).join(" · ")}</>}
+                      {r.deducted > 0 && <>{r.subs.length > 0 ? " · " : ""}− {fmt(r.deducted)} de revenus liés déduits</>}
+                    </div>
+                  )}
+                  {bar(pct, "rgba(112,184,224,.7)")}
+                  {c && (editing ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
+                      <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>🎯 Budget / mois</span>
+                      <input value={editBudget.draft} onChange={e => setEditBudget({ ...editBudget, draft: e.target.value })} inputMode="decimal" autoFocus placeholder="0 = aucun"
+                        style={{ flex: 1, minWidth: 0, background: "var(--bg)", border: "1px solid var(--accent)", borderRadius: 7, padding: "5px 8px", color: "var(--text)", fontSize: ".72rem", fontFamily: "var(--mono)" }} />
+                      <button onClick={() => { onSaveCategoryThreshold?.(c.id, Math.max(0, parseFloat(String(editBudget.draft).replace(",", ".")) || 0)); setEditBudget(null); }}
+                        style={{ background: "var(--accent)", color: "var(--bg)", border: "none", borderRadius: 7, padding: "6px 10px", fontSize: ".62rem", fontWeight: 800, cursor: "pointer" }}>OK</button>
+                      <button onClick={() => setEditBudget(null)} style={{ background: "none", border: "none", color: "var(--text3)", cursor: "pointer" }}>✕</button>
+                    </div>
+                  ) : lim > 0 ? (
+                    <div onClick={() => setEditBudget({ catId: c.id, draft: String(lim) })} style={{ fontSize: ".58rem", marginTop: 3, fontWeight: 700, color: budCol(spentB, limP), cursor: "pointer" }}>
+                      🎯 {fmt(spentB)} / {fmt(limP)}{catPer === "year" ? ` (${fmt(lim)} × ${nMonths} mois)` : ""} · {spentB > limP ? `dépassé de ${fmt(spentB - limP)}` : `reste ${fmt(limP - spentB)}`}{spentB - r.gross > 0.5 ? " · fixes compris" : ""} ✏️
+                    </div>
+                  ) : (
+                    <div onClick={() => setEditBudget({ catId: c.id, draft: "" })} style={{ fontSize: ".58rem", marginTop: 3, color: "var(--text3)", cursor: "pointer" }}>+ ajouter un budget</div>
+                  ))}
+                </div>
+              );
+            })}
+            {breakdown.rows.length > 0 && (
+              <div style={{ ...rowSt(false), fontWeight: 800 }}><span style={{ flex: 1 }}>Total</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(breakdown.total)}</span></div>
+            )}
+          </div>
+
+          {anySide && <>
+            {secT("🎫 Montants à part & hors banque")}
+            <div style={{ ...card, padding: "9px 11px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
+                {[["Payé banque", sidePaidBank, "var(--danger)"], ["Hors banque", sideTotal, "var(--tr)"], ["Budget réel", sidePaidBank + sideTotal, "var(--text)"]].map(([l, v, col]) => (
+                  <div key={l} style={{ borderRadius: 9, padding: "6px 7px", background: "var(--surface2)", border: "1px solid var(--border-soft)", minWidth: 0 }}>
+                    <div style={{ fontSize: ".5rem", fontWeight: 800, textTransform: "uppercase", color: "var(--text3)" }}>{l}</div>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: ".74rem", fontWeight: 800, color: col, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fmt(v)}</div>
+                  </div>
+                ))}
+              </div>
+              {Object.keys(byType).length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+                  {[["all", "Tous", null], ...sideTypes.filter(st => byType[st.id]).map(st => [st.id, `${st.icon} ${st.label}`, byType[st.id]])].map(([k, l, v]) => (
+                    <span key={k} onClick={() => setSideType(k)} style={{ fontSize: ".6rem", fontWeight: 700, padding: "4px 9px", borderRadius: 10, cursor: "pointer",
+                      border: `1px solid ${sideType === k ? "var(--tr)" : "var(--border)"}`, color: sideType === k ? "var(--tr)" : "var(--text2)", background: sideType === k ? "var(--tr-glow)" : "transparent" }}>
+                      {l}{v != null ? ` · ${fmt(v)}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {sideRows.map((r, i) => {
+                const c = catOf(r.categoryId);
+                return (
+                  <div key={r.categoryId || i} style={rowSt(i === 0 && Object.keys(byType).length === 0)}>
+                    <span>{c?.icon || "❔"}</span><span style={{ flex: 1 }}>{c?.name || "Sans catégorie"}</span>
+                    <span style={{ fontSize: ".56rem", color: "var(--text3)" }}>{Math.round(r.pct)} % du total</span>
+                    <b style={{ color: "var(--tr)", fontVariantNumeric: "tabular-nums" }}>{fmt(r.side)}</b>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize: ".54rem", color: "var(--text3)", marginTop: 6 }}>« Budget réel » = payé par la banque + hors banque, sur les achats concernés. N'affecte jamais ton solde.</div>
+            </div>
+          </>}
+
+          {secT("🏷️ Tags", link("gérer ›", () => setTagsModal({})))}
+          <div style={card}>
+            {tagRows.length === 0 && <div style={{ fontSize: ".66rem", color: "var(--text3)", padding: "8px 0" }}>Aucun tag — « gérer » pour en créer.</div>}
+            {tagRows.map((r, i) => {
+              const col = r.limit > 0 ? budCol(r.spentForBudget, r.limit) : "var(--text)";
+              return (
+                <div key={r.tag.id} style={{ ...rowSt(i === 0), display: "block", cursor: "pointer" }} onClick={() => setTagsModal({ tagId: r.tag.id })}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>{r.tag.icon} {r.tag.name} <small style={{ color: "var(--text3)" }}>· {r.count} opération{r.count > 1 ? "s" : ""}</small></span>
+                    <b style={{ color: col, fontVariantNumeric: "tabular-nums" }}>{r.limit > 0 ? `${fmt(r.spentForBudget)} / ${fmt(r.limit)}` : fmt(r.spent)}</b>
+                    <span style={{ color: "var(--text3)" }}>›</span>
+                  </div>
+                  {r.limit > 0 && bar(r.spentForBudget / r.limit * 100, col)}
+                  {r.limit > 0 && r.tag.budgetPeriod === "total" && <div style={{ fontSize: ".54rem", color: "var(--text3)", marginTop: 2 }}>budget global (toutes périodes)</div>}
+                </div>
+              );
+            })}
+          </div>
+        </>);
+      })()}
+
+      {catModal && (
+        <CategoryDetailModal onClose={() => setCatModal(null)} initialCatId={catModal}
+          categories={categories} transactions={transactions} fixedExpenses={fixedExpenses} />
+      )}
+      {tagsModal && (
+        <TagsModal onClose={() => setTagsModal(null)} initialTagId={tagsModal.tagId}
+          tags={tags} transactions={transactions} fixedExpenses={fixedExpenses} categories={categories}
+          onSaveTag={onSaveTag} onDeleteTag={onDeleteTag} />
+      )}
     </div>
   );
 }
