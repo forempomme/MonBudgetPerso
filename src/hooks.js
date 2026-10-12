@@ -1245,3 +1245,43 @@ export function computeSurplus(data, breakdown, grocery, forecast, today = today
   return { ...r, cycleEnd, daysLeft, perDayVar: perDay, daily, raw: Math.round(raw * 100) / 100, amount,
     show: inWindow && amount >= 20 && !dismissed && (data.cagnottes || []).length > 0 };
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Répartition par catégorie sur une période — v1.52.0 (Rapport → Catégories)
+//  Même règle que l'ancien « Top 5 dépenses » : une sous-catégorie compte
+//  dans sa catégorie principale, les frais fixes forment une ligne à part,
+//  et les revenus de la même catégorie (ou d'une catégorie liée) sont
+//  déduits (coût net). → { rows: [{ id, gross, deducted, net, subs }], total }
+// ─────────────────────────────────────────────────────────────────
+export function computeCategoryBreakdown(data, fromYM, toYM) {
+  const cats = data.categories || [];
+  const inP = d => { const ym = (d || "").slice(0, 7); return ym >= fromYM && ym <= toYM; };
+  const exp = {}, sub = {}, ded = {};
+  (data.transactions || []).forEach(t => {
+    if (t.type !== "expense" || !inP(t.date)) return;
+    const a = parseFloat(t.amount) || 0;
+    const root = (t.categoryId && catRootId(cats, t.categoryId)) || "__other__";
+    exp[root] = (exp[root] || 0) + a;
+    if (t.categoryId && root !== t.categoryId) {
+      sub[root] = sub[root] || {};
+      sub[root][t.categoryId] = (sub[root][t.categoryId] || 0) + a;
+    }
+  });
+  (data.transactions || []).forEach(t => {
+    if (!isIncome(t.type) || t.type === "dissolution_cagnotte" || !inP(t.date)) return;
+    const a = parseFloat(t.amount) || 0;
+    const cat = cats.find(c => c.id === t.categoryId);
+    const lk = cat?.linkedToId ? catRootId(cats, cat.linkedToId) : null;
+    const own = t.categoryId ? catRootId(cats, t.categoryId) : null;
+    if (lk && exp[lk]) ded[lk] = (ded[lk] || 0) + a;
+    else if (own && exp[own]) ded[own] = (ded[own] || 0) + a;
+  });
+  const fix = computePeriodTotals(data.transactions || [], data.fixedExpenses || [], [], fromYM, toYM).fixExp;
+  const rows = Object.keys(exp).map(id => ({
+    id, gross: exp[id], deducted: Math.min(exp[id], ded[id] || 0), net: Math.max(0, exp[id] - (ded[id] || 0)),
+    subs: Object.entries(sub[id] || {}).map(([cid, amount]) => ({ id: cid, amount })).sort((a, b) => b.amount - a.amount),
+  }));
+  if (fix > 0) rows.push({ id: "__fixes__", gross: fix, deducted: 0, net: fix, subs: [] });
+  rows.sort((a, b) => b.net - a.net);
+  return { rows, total: rows.reduce((s, r) => s + r.net, 0) };
+}
