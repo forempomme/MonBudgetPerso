@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.52.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.53.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.52.0
+└── package.json         — version: 1.53.0
 ```
 
 ---
@@ -343,6 +343,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.53.0** | minor | **Cagnottes compact** (variante B « grille compacte ») : barre collée en haut avec le **total mis de côté**, 🔄 transfert et ＋ Cagnotte ; pastilles « épargné ce mois / retirés / année » (remplacent le bloc de 4 lignes) ; projets en bandeau horizontal (barre + trait « prévu à ce jour », statut, €/mois), détail complet au toucher ; cartes de cagnottes 2× plus basses, couleur de bordure = type, % de l'objectif, €/mois, versement auto, arrondis, projet lié. La **suppression** d'une cagnotte se fait désormais depuis ✏️ (bouton « Supprimer la cagnotte », avec confirmation) — plus de ✕ sur les cartes. 1ʳᵉ cagnotte à ~310 px au lieu de ~640 px |
+| **1.52.1** | patch | Barre du bas : libellés légèrement plus petits (.6rem, `flex: 1 1 0; min-width: 0`) — icônes toujours à égale distance, les mots ne se touchent plus (« Cagnottes » / « Historique ») |
 | **1.52.0** | minor | **Rapport refondu** en 3 onglets avec barre collée (onglets + ◀ période ▶) : **📅 Mois** (par défaut) — revenus/dépenses/épargné/net vs moyenne 3 mois, « 🔀 Comparer à un autre mois » (remplace l'onglet Périodes), ce qui a bougé, budgets du mois (catégories, budget courses, tags), à faire (à pointer → Historique, chèques), note du mois ; **📆 Année** — 4 chiffres (vs année précédente quand il y a des données), un seul graphique mois par mois (toucher un mois → onglet Mois), meilleur/moins bon mois, objectif d'épargne (**désormais enregistré**, avant il était perdu en quittant l'écran) + montant mensuel nécessaire, taux d'épargne par mois, fin d'année prévue ; **🗂️ Catégories** (mois ou année) — coût net par catégorie (sous-catégories détaillées, revenus liés déduits comme avant), budget réglable sous chaque ligne, alerte sur l'onglet, toucher → analyse de la catégorie ; montants à part & hors banque (payé banque / hors banque / budget réel, par type et par catégorie) ; tags (total, nombre d'opérations, budget). Retirés : donut, 2ᵉ graphique « évolution du solde net », bloc cagnottes, liste des notes de tous les mois, bouton « Bilans mensuels » (le bilan s'affiche toujours le 1ᵉʳ du mois). Corrigé : la comparaison de périodes ignorait les revenus fixes et ne comptait les frais fixes que pour le mois en cours |
 | **1.51.0** | minor | **Historique compact** (variante B) : une barre unique collée en haut — ◀ mois ▶, 🔍 (ouvre la recherche), ⚙️ filtres (avec compteur), ⊟/⊞ tout replier — et une ligne de pastilles (revenus, dépenses, ✓ pointées x/y, ⏳ en attente ; les 2 dernières filtrent au toucher). Retirés : donut + « budget consommé », carte rapprochement, zone de recherche à 2 lignes, ligne « Tout replier ». 1ʳᵉ dépense à ~260 px au lieu de ~685 px. Recherche aussi par **montant** (« 67,48 » ou « 67 »). Corrigés : 2 boutons 🌐 en double, « Tout reset » qui remettait la vue Liste au lieu de Par type. `overflow-x: clip` au lieu de `hidden` (html, body, .container) : l'en-tête reste maintenant réellement visible en haut, comme prévu par son `position: sticky` |
 | **1.50.1** | patch | Historique : opérations affichées **des plus récentes aux plus anciennes** par défaut — semaines dans l'ordre décroissant (vue « Par type »), et à date égale la dernière saisie en premier (opérations bancaires et hors compte) |
