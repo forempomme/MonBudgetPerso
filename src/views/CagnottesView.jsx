@@ -1,5 +1,5 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { fmt, currentYM } from "../utils.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { computeProjectStatus } from "../hooks.js";
@@ -80,10 +80,14 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
 }
 
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving }) {
+  // v1.53.0 — « grille compacte » : barre collée (total, transfert, nouvelle), pastilles
+  // du mois, projets en bandeau horizontal (détail complet au toucher), cartes basses.
+  // Suppression d'une cagnotte : dans la fenêtre ✏️ (plus de ✕ sur les cartes).
   const { cagnottes, transactions } = data;
   const curM = currentYM();
   const curY = new Date().getFullYear().toString();
   const [typeFilter, setTypeFilter] = useState("all");
+  const [openProject, setOpenProject] = useState(null);
 
   // ── Stats épargne + décagnottage ─────────────────────────────
   const { savMonth, savYear, decagMonth, decagYear } = useMemo(() => {
@@ -102,136 +106,146 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
     });
     return { savMonth, savYear, decagMonth, decagYear };
   }, [transactions, curM, curY]);
+  const total = cagnottes.reduce((s, c) => s + (parseFloat(c.current) || 0), 0);
+
+  // Barre collée sous l'en-tête (même principe que l'Historique et le Rapport)
+  const [stickyTop, setStickyTop] = useState(0);
+  useEffect(() => {
+    const h = document.querySelector(".bp-header");
+    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
+    upd(); window.addEventListener("resize", upd);
+    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
+    ro?.observe(h);
+    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
+  }, []);
+
+  const chip = (col, bg) => ({ display: "inline-flex", alignItems: "center", fontSize: ".64rem", fontWeight: 800, padding: "5px 9px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0, color: col, background: bg, fontVariantNumeric: "tabular-nums" });
+  const btn = pri => ({ height: 34, minWidth: 34, padding: "0 11px", borderRadius: 9, border: pri ? "none" : "1px solid var(--border)", background: pri ? "var(--accent)" : "var(--surface2)", color: pri ? "#06121c" : "var(--accent)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 });
+  const secT = (txt, right) => (
+    <div style={{ display: "flex", alignItems: "center", fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "4px 2px 6px" }}>
+      <span style={{ flex: 1 }}>{txt}</span>{right}
+    </div>
+  );
+  const projects = data.projects || [];
+  const projOpen = projects.find(p => p.id === openProject);
+  const plans = data.autoSavings || [];
+  const filtered = cagnottes.filter(c => typeFilter === "all" || c.cagType === typeFilter);
 
   return (
     <div>
-      {/* ── Bloc stats ── */}
-      <div className="card" style={{
-        borderLeft: "3px solid var(--accent)",
-        background: "var(--accent-glow, rgba(124,58,237,.1))",
-        padding: "12px 14px",
-        marginBottom: 10,
-      }}>
-        <div style={{ fontSize: ".67rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--accent)", marginBottom: 8 }}>
-          📊 Épargne &amp; Mouvements
-        </div>
-        {[
-          { label: "💰 Épargné ce mois",         value: savMonth,   color: "var(--success)" },
-          { label: "💰 Épargné cette année",      value: savYear,    color: "var(--success)" },
-          { label: "↩️ Décagnottage ce mois",     value: decagMonth, color: "var(--warning)" },
-          { label: "↩️ Décagnottage cette année", value: decagYear,  color: "var(--warning)" },
-        ].map(({ label, value, color }, i, arr) => (
-          <div key={label} style={{
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-            padding: "5px 0",
-            borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,.05)" : "none",
-          }}>
-            <span style={{ fontSize: ".75rem", color: "var(--text2)" }}>{label}</span>
-            <span style={{ fontFamily: "var(--mono)", fontWeight: 700, fontSize: ".78rem", color, fontVariantNumeric: "tabular-nums" }}>
-              {fmt(value)}
-            </span>
+      {/* ── Barre collée : total + actions + pastilles ── */}
+      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)" }}>Total mis de côté</div>
+            <div style={{ fontFamily: "var(--display)", fontSize: "1.15rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(total)}</div>
           </div>
-        ))}
+          <button onClick={onTransfer} style={btn(false)} title="Transfert">🔄</button>
+          <button onClick={onNewCag} style={btn(true)}>＋ Cagnotte</button>
+        </div>
+        <div style={{ display: "flex", gap: 5, marginTop: 7, overflowX: "auto", scrollbarWidth: "none" }}>
+          <span style={chip("var(--success)", "rgba(104,212,152,.1)")}>↑ +{fmt(savMonth)} ce mois</span>
+          {decagMonth > 0 && <span style={chip("var(--coral)", "rgba(224,136,112,.1)")}>↩ −{fmt(decagMonth)} retirés</span>}
+          <span style={chip("var(--purple)", "rgba(176,144,224,.1)")}>{curY} : +{fmt(savYear)}{decagYear > 0 ? ` · −${fmt(decagYear)}` : ""}</span>
+        </div>
       </div>
 
-      {/* ── Projets avec échéance (v1.47.0) ── */}
+      {/* ── Projets : bandeau horizontal, détail complet au toucher ── */}
       {onNewProject && (
-        <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em", margin: "4px 0 6px 2px" }}>🎯 Projets</div>
-          {(data.projects || []).map(p => (
-            <ProjectCard key={p.id} project={p} data={data} onEdit={onEditProject} onDelete={onDeleteProject} onAutoSaving={onProjectAutoSaving} />
-          ))}
-          <button onClick={onNewProject} style={{ width: "100%", padding: 11, borderRadius: 12, border: "1.5px dashed var(--border)", background: "none", color: "var(--text2)", fontSize: ".72rem", fontWeight: 700, cursor: "pointer" }}>
-            ＋ Nouveau projet
-          </button>
+        <div style={{ marginBottom: 10 }}>
+          {secT("🎯 Projets", <span onClick={onNewProject} style={{ color: "var(--accent)", textTransform: "none", letterSpacing: 0, fontSize: ".66rem", cursor: "pointer" }}>＋ projet</span>)}
+          {projects.length === 0 ? (
+            <button onClick={onNewProject} style={{ width: "100%", padding: 10, borderRadius: 12, border: "1.5px dashed var(--border)", background: "none", color: "var(--text2)", fontSize: ".7rem", fontWeight: 700, cursor: "pointer" }}>＋ Nouveau projet</button>
+          ) : (
+            <div style={{ display: "flex", gap: 7, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 2 }}>
+              {projects.map(p => {
+                const st = computeProjectStatus(p, data);
+                const [label, col] = PROJECT_STATUS[st.status];
+                const on = openProject === p.id;
+                return (
+                  <div key={p.id} onClick={() => setOpenProject(on ? null : p.id)}
+                    style={{ minWidth: projects.length === 1 ? "100%" : 240, flexShrink: 0, background: "var(--surface)", border: `1px solid ${on ? "var(--purple)" : "rgba(176,144,224,.35)"}`, borderRadius: 12, padding: "9px 10px", cursor: "pointer" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                      <span>{p.icon}</span>
+                      <b style={{ flex: 1, minWidth: 0, fontSize: ".74rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</b>
+                      <span style={{ fontSize: ".5rem", fontWeight: 800, padding: "2px 6px", borderRadius: 7, color: col, background: `color-mix(in srgb, ${col} 14%, transparent)`, whiteSpace: "nowrap" }}>{label}</span>
+                      <span style={{ color: "var(--text3)", fontSize: ".6rem" }}>{on ? "▴" : "▾"}</span>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: "var(--surface3)", position: "relative", marginTop: 6 }}>
+                      <div style={{ width: `${Math.min(100, st.savedPct)}%`, height: "100%", borderRadius: 3, background: "var(--purple)" }} />
+                      {st.status !== "done" && <span style={{ position: "absolute", top: -3, left: `calc(${Math.min(100, st.expectedPct)}% - 1px)`, width: 2, height: 11, background: "#fff", opacity: .8 }} />}
+                    </div>
+                    <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+                      {fmt(st.saved)} / {fmt(st.target)}{st.remaining > 0 && st.status !== "late-deadline" ? <> · <b style={{ color: "var(--purple)" }}>{fmt(st.perMonth)}/mois</b></> : null}
+                    </div>
+                  </div>
+                );
+              })}
+              {projects.length > 1 && (
+                <div onClick={onNewProject} style={{ minWidth: 120, flexShrink: 0, border: "1.5px dashed var(--border)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text2)", fontSize: ".66rem", fontWeight: 700, cursor: "pointer" }}>＋ Nouveau</div>
+              )}
+            </div>
+          )}
+          {projOpen && (
+            <div style={{ marginTop: 7 }}>
+              <ProjectCard project={projOpen} data={data} onEdit={onEditProject} onDelete={pp => { setOpenProject(null); onDeleteProject(pp); }} onAutoSaving={onProjectAutoSaving} />
+            </div>
+          )}
         </div>
       )}
 
-      {/* ── Boutons ── */}
-      <div className="grid-2" style={{ marginBottom: 12 }}>
-        <button className="btn btn-outline" style={{ width: "100%", borderColor: "var(--accent)", color: "var(--accent)" }} onClick={onTransfer}>
-          🔄 Transfert
-        </button>
-        <button className="btn btn-primary" style={{ width: "100%" }} onClick={onNewCag}>
-          ＋ Nouvelle
-        </button>
-      </div>
-
-      {/* ★ Filtre par type */}
+      {/* ── Cagnottes : filtre par type + grille compacte ── */}
+      {secT("🐷 Cagnottes")}
       {cagnottes.some(c => c.cagType) && (
-        <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:10 }}>
-          <button onClick={()=>setTypeFilter("all")} style={{
-            padding:"4px 10px", borderRadius:20, fontSize:".62rem", fontWeight:700, cursor:"pointer",
-            border:`1.5px solid ${typeFilter==="all"?"var(--accent)":"var(--border)"}`,
-            background:typeFilter==="all"?"rgba(90,184,224,.12)":"var(--surface2)",
-            color:typeFilter==="all"?"var(--accent)":"var(--text2)",
-          }}>Toutes ({cagnottes.length})</button>
-          {Object.entries(CAG_TYPES_MAP).filter(([k])=>cagnottes.some(c=>c.cagType===k)).map(([k,t])=>(
-            <button key={k} onClick={()=>setTypeFilter(k)} style={{
-              padding:"4px 10px", borderRadius:20, fontSize:".62rem", fontWeight:700, cursor:"pointer",
-              border:`1.5px solid ${typeFilter===k?t.color:"var(--border)"}`,
-              background:typeFilter===k?`color-mix(in srgb,${t.color} 14%,var(--surface2))`:"var(--surface2)",
-              color:typeFilter===k?t.color:"var(--text2)",
-            }}>{t.icon} {t.label}</button>
+        <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", marginBottom: 8 }}>
+          {[["all", `Toutes (${cagnottes.length})`, "var(--accent)"], ...Object.entries(CAG_TYPES_MAP).filter(([k]) => cagnottes.some(c => c.cagType === k)).map(([k, t]) => [k, `${t.icon} ${t.label}`, t.color])].map(([k, l, col]) => (
+            <button key={k} onClick={() => setTypeFilter(k)} style={{
+              padding: "5px 10px", borderRadius: 11, fontSize: ".62rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+              border: `1px solid ${typeFilter === k ? col : "var(--border)"}`, background: typeFilter === k ? `color-mix(in srgb, ${col} 14%, var(--surface2))` : "var(--surface2)",
+              color: typeFilter === k ? col : "var(--text2)",
+            }}>{l}</button>
           ))}
         </div>
       )}
       {cagnottes.length === 0
         ? <EmptyIllustration type="cagnottes" title="Aucune cagnotte" sub="Crée ta première cagnotte pour commencer à épargner" cta="＋ Créer une cagnotte" onCta={onNewCag} ctaColor="var(--success)" />
         : (
-          <div className="grid-2">
-            {cagnottes.filter(c => typeFilter==="all" || c.cagType===typeFilter).map(c => {
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+            {filtered.map(c => {
+              const t = CAG_TYPES_MAP[c.cagType];
               const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
-              const neededPerMonth = (() => {
+              const perMonth = (() => {
                 if (!c.target || !c.targetDate) return null;
-                const rem    = c.target - c.current;
-                const today  = new Date(), tgt = new Date(c.targetDate);
-                const months = Math.max(1,
-                  (tgt.getFullYear() - today.getFullYear()) * 12 + (tgt.getMonth() - today.getMonth())
-                );
-                return rem > 0 ? fmt(rem / months) : null;
+                const rem = c.target - c.current;
+                const today = new Date(), tgt = new Date(c.targetDate);
+                const months = Math.max(1, (tgt.getFullYear() - today.getFullYear()) * 12 + (tgt.getMonth() - today.getMonth()));
+                return rem > 0 ? rem / months : null;
               })();
-
+              const plan = plans.find(a => a.cagnotteId === c.id && a.enabled);
+              const proj = projects.find(p => p.cagId === c.id);
+              const isRounding = data.roundingEnabled && data.roundingCagnotteId === c.id;
+              const sub = [
+                c.target ? `${Math.round(pct)} % de ${fmt(c.target)}` : "pas d'objectif",
+                perMonth ? `≈ ${fmt(perMonth)}/mois` : null,
+              ].filter(Boolean).join(" · ");
+              const extra = [plan ? `🔁 ${fmt(plan.amount)} le ${plan.dayOfMonth}` : null, isRounding ? "🪙 arrondis" : null, proj ? `${proj.icon} ${proj.name}` : null].filter(Boolean).join(" · ");
               return (
-                <div key={c.id} className="cag-card" onClick={() => onShowCagHistory(c.id)}>
-                  <span className="cag-del-btn" onClick={e => { e.stopPropagation(); onDeleteCag(c.id); }}>✕</span>
-                  <button className="cag-edit-btn" onClick={e => { e.stopPropagation(); onEditCag(c.id); }}>✏️</button>
-                  {/* ★ Badge type */}
-                  {c.cagType && CAG_TYPES_MAP[c.cagType] && (
-                    <div style={{
-                      fontSize:".5rem", fontWeight:700, padding:"1px 6px", borderRadius:3,
-                      background:`color-mix(in srgb,${CAG_TYPES_MAP[c.cagType].color} 14%,transparent)`,
-                      color:CAG_TYPES_MAP[c.cagType].color,
-                      border:`1px solid color-mix(in srgb,${CAG_TYPES_MAP[c.cagType].color} 30%,transparent)`,
-                      display:"inline-flex", alignItems:"center", gap:3, marginBottom:3,
-                    }}>
-                      {CAG_TYPES_MAP[c.cagType].icon} {CAG_TYPES_MAP[c.cagType].label}
+                <div key={c.id} onClick={() => onShowCagHistory(c.id)}
+                  style={{ position: "relative", background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${t ? t.color : "var(--khaki)"}`, borderRadius: 12, padding: "9px 10px", cursor: "pointer", minWidth: 0 }}>
+                  <button onClick={e => { e.stopPropagation(); onEditCag(c.id); }}
+                    style={{ position: "absolute", right: 4, top: 4, background: "none", border: "none", fontSize: ".72rem", padding: 4, cursor: "pointer", opacity: .75 }}>✏️</button>
+                  <div style={{ fontSize: ".74rem", fontWeight: 700, paddingRight: 22, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t ? t.icon : "🐷"} {c.name}</div>
+                  <div style={{ fontFamily: "var(--mono)", fontSize: ".84rem", fontWeight: 800, color: "var(--khaki)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(c.current)}</div>
+                  {c.target ? (
+                    <div style={{ height: 5, borderRadius: 3, background: "var(--surface3)", overflow: "hidden", marginTop: 5 }}>
+                      <div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: pct >= 100 ? "var(--success)" : "var(--khaki)" }} />
                     </div>
-                  )}
-                  <div className="cag-name">🎯 {c.name}</div>
-                  <div className="cag-amt">{fmt(c.current)}{c.target ? ` / ${fmt(c.target)}` : ""}</div>
-                  {c.target && (
-                    <>
-                      <div className="progress-bg" style={{ marginTop:8, height:6 }}>
-                        <div className="progress-fill" style={{ width:`${pct}%`, boxShadow:`0 0 8px var(--khaki)44` }} />
-                      </div>
-                      <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:4, fontWeight:700, display:"flex", justifyContent:"space-between" }}>
-                        <span style={{ color: pct >= 100 ? "var(--success)" : "var(--khaki)", fontWeight:800 }}>{pct.toFixed(0)}%</span>
-                        <span>{fmt(Math.max(0, c.target - c.current))} restant</span>
-                      </div>
-                    </>
-                  )}
-                  {!c.target && (
-                    <div style={{ fontSize:".55rem", color:"var(--accent)", marginTop:6, opacity:.7 }}
-                      onClick={e => { e.stopPropagation(); onEditCag(c.id); }}>
-                      ＋ Définir un objectif
-                    </div>
-                  )}
-                  {neededPerMonth && (
-                    <div style={{ fontSize: ".58rem", color: "var(--accent)", marginTop: 5, fontFamily: "var(--mono)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                      ≈ {neededPerMonth}/mois
-                    </div>
-                  )}
+                  ) : null}
+                  <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                    onClick={!c.target ? e => { e.stopPropagation(); onEditCag(c.id); } : undefined}>
+                    {c.target ? sub : <span style={{ color: "var(--accent)" }}>＋ Définir un objectif</span>}
+                  </div>
+                  {extra && <div style={{ fontSize: ".54rem", color: "var(--text2)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</div>}
                 </div>
               );
             })}
