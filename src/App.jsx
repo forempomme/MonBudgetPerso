@@ -81,6 +81,7 @@ export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
   // Mois affiché dans l'Historique — remonté par HistoriqueView pour le sous-titre (v1.49.0)
+  const [rapSub, setRapSub] = useState("");   // v1.52.0 : sous-titre du Rapport (mois ou année affichés)
   const [histYM, setHistYM] = useState(() => ({ y: new Date().getFullYear(), m: new Date().getMonth() }));
   // Nécessaire pour l'alerte "solde bas" des notifications — même formule
   // que le solde estimé affiché sur l'accueil (voir hooks.js)
@@ -863,8 +864,10 @@ export default function App() {
         tags={data.tags || []}
         onSaveTag={saveTag}
         onDeleteTag={deleteTag}
-        onShowMonthDetail={(y, i) => setMonthModal({ year: y, monthIdx: i })}
         monthNotes={data.monthNotes || {}}
+        onSaveSavingsGoal={(year, amount) => dispatch({ type: A.SAVE_SAVINGS_GOAL, year, amount })}
+        onGoToHistorique={goToHistoriqueWithFilter}
+        onSubtitle={setRapSub}
         onSaveMonthNote={saveMonthNote}
         onPushBack={pushBack}
         onPopBack={popBack}
@@ -977,7 +980,7 @@ export default function App() {
       }
       case "historique": return `${MONTHS_LC[histYM.m]} ${histYM.y}`;
       case "fixes":      return "frais & revenus fixes";
-      case "rapport":    return `année ${year}`;
+      case "rapport":    return rapSub || `année ${year}`;
       default:           return "";
     }
   })();
