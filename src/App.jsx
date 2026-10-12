@@ -1255,6 +1255,7 @@ export default function App() {
           cagnottes={data.cagnottes}
           editingId={cagModal.editingId}
           onSave={cag => { saveCag(cag); setCagModal(null); }}
+          onDelete={id => { setCagModal(null); deleteCag(id); }}
           onClose={() => setCagModal(null)}
         />
       )}
