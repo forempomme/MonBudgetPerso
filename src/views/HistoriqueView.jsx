@@ -379,7 +379,12 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
     if (tagFilter) list = list.filter(t => (t.tagIds || []).includes(tagFilter));
     if (pointFilter === "pointed")   list = list.filter(t => isPointable(t.type) &&  t.pointed);
     if (pointFilter === "unpointed") list = list.filter(t => isPointable(t.type) && !t.pointed);
-    if (sort === "date")  list.sort((a,b) => new Date(b.date) - new Date(a.date));
+    // v1.50.1 : plus récentes d'abord ; à date égale, la dernière saisie en premier
+    // (les opérations sont ajoutées à la fin du tableau → index plus grand = plus récente)
+    if (sort === "date") {
+      const order = new Map(transactions.map((t, i) => [t.id, i]));
+      list.sort((a, b) => (b.date || "").localeCompare(a.date || "") || (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
+    }
     if (sort === "amt_d") list.sort((a,b) => parseFloat(b.amount) - parseFloat(a.amount));
     if (sort === "amt_a") list.sort((a,b) => parseFloat(a.amount) - parseFloat(b.amount));
     return list;
@@ -400,7 +405,9 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
     }
     if (minAmt) list = list.filter(e => parseFloat(e.amount) >= parseFloat(minAmt));
     if (maxAmt) list = list.filter(e => parseFloat(e.amount) <= parseFloat(maxAmt));
-    return list;
+    // v1.50.1 : plus récentes d'abord (même règle que les opérations bancaires)
+    const order = new Map((data.offAccountEntries || []).map((e, i) => [e.id, i]));
+    return [...list].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (order.get(b.id) ?? 0) - (order.get(a.id) ?? 0));
   }, [data.offAccountEntries, hideOff, tagFilter, pointFilter, filter, globalSearch, search, month, catId, categories, minAmt, maxAmt]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
@@ -991,7 +998,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
                       {monthIncomes.length > 0 && renderIncomesCard()}
                     </div>
                   )}
-                  {open && !sec.fixed && [0, 1, 2, 3].map(w => {
+                  {open && !sec.fixed && [3, 2, 1, 0].map(w => {   /* v1.50.1 : semaine la plus récente en haut */
                     const wItems = items.filter(x => weekOf(x.date) === w);
                     if (wItems.length === 0) return null;
                     const wk = `${sec.k}-${w}`;
