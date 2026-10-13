@@ -9,7 +9,7 @@ import { ToastContainer } from "./components/index.jsx";
 import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
-  ConfirmModal, DetailModal, MonthDetailModal, CagHistModal,
+  ConfirmModal, DetailModal, CagHistModal,
   QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal,
 } from "./components/modals.jsx";
 import {
@@ -453,7 +453,6 @@ export default function App() {
     // Priorité 1 : fermer le modal le plus récent (niveau app)
     if (confirmModal)  { setConfirmModal(null);   return; }
     if (cagHistModal)  { setCagHistModal(null);   return; }
-    if (monthModal)    { setMonthModal(null);     return; }
     if (detailModal)   { setDetailModal(null);    return; }
     if (deleteCatId)   { setDeleteCatId(null);    return; }
     if (importPreview) { setImportPreview(null);  return; }
@@ -521,7 +520,6 @@ export default function App() {
   const [reimbModal,    setReimbModal]    = useState(null); // v1.48.0 : {} (nouveau) | remboursement attendu
   const [confirmModal,  setConfirmModal]  = useState(null); // null | { title, msg, onConfirm }
   const [detailModal,   setDetailModal]   = useState(null); // null | { type, period }
-  const [monthModal,    setMonthModal]    = useState(null); // null | { year, monthIdx }
   const [cagHistModal,  setCagHistModal]  = useState(null); // null | cagId string
 
   // ── Dispatch helpers ─────────────────────────────────────────
@@ -843,6 +841,8 @@ export default function App() {
         onEditFixedIncome={idx  => setFixedIncomeModal({ editingIdx: idx  })}
         onDeleteFixedIncome={deleteFixedIncome}
         onQuickPauseIncome={quickPauseIncome}
+        onTogglePointFix={togglePointFix}
+        onTogglePointIncome={togglePointIncome}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
         insights={insights}
@@ -1027,7 +1027,10 @@ export default function App() {
 
       {/* ── Main content ── */}
       <div className="container" key={animKey} style={{
-        animation: slideDir !== 0 ? `tab-slide-${slideDir > 0 ? "right" : "left"} .28s ease both` : "none",
+        // v1.53.1 : « backwards » et non « both » — un transform laissé actif après l'animation
+        // faisait de ce conteneur la référence des position: fixed → les fenêtres ouvertes
+        // depuis un écran (Options, Rapport…) s'affichaient en haut de page, hors de vue.
+        animation: slideDir !== 0 ? `tab-slide-${slideDir > 0 ? "right" : "left"} .28s ease backwards` : "none",
       }}>{renderView(tab)}</div>
 
       {/* ── Tab bar ── */}
@@ -1338,17 +1341,6 @@ export default function App() {
           fixedExpenses={data.fixedExpenses}
           fixedIncomes={data.fixedIncomes || []}
           onClose={() => setDetailModal(null)}
-        />
-      )}
-      {monthModal && (
-        <MonthDetailModal
-          config={monthModal}
-          transactions={data.transactions}
-          categories={data.categories}
-          cagnottes={data.cagnottes}
-          fixedExpenses={data.fixedExpenses}
-          fixedIncomes={data.fixedIncomes || []}
-          onClose={() => setMonthModal(null)}
         />
       )}
       {cagHistModal && (
