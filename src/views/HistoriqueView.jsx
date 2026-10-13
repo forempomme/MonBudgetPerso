@@ -285,9 +285,6 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
     });
   }, [recurringTemplates, transactions, month]);
   const mStats = useMonthStats(transactions, fixedExpenses, month, data.fixedIncomes || []);
-  const savMonth = useMemo(() =>
-    transactions.filter(t => t.date.startsWith(month) && t.type === "epargne")
-      .reduce((s, t) => s + (parseFloat(t.amount)||0), 0), [transactions, month]);
 
   // Premier mois d'utilisation = mois de la première transaction
   const startYM = useMemo(() => {
@@ -1189,77 +1186,6 @@ function dateLabel(dateStr) {
   return new Date(dateStr + "T12:00:00")
     .toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 }
-
-// 1. Mini Donut
-function HistDonut({ inc, exp, sav }) {
-  const total = inc + exp + sav || 1;
-  const R = 36, cx = 44, cy = 44, stroke = 10;
-  const circ = 2 * Math.PI * R;
-  let offset = 0;
-  const segs = [
-    { pct: inc / total, color: "var(--success)" },
-    { pct: exp / total, color: "var(--danger)"  },
-    { pct: sav / total, color: "var(--purple)"  },
-  ].map(s => {
-    const dash = s.pct * circ, gap = circ - dash;
-    const rot  = offset * 360 - 90;
-    offset    += s.pct;
-    return { ...s, dash, gap, rot };
-  });
-  const net = inc - exp;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-      <svg width="88" height="88" viewBox="0 0 88 88" style={{ flexShrink: 0 }}>
-        <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--surface3)" strokeWidth={stroke}/>
-        {segs.map((s, i) => (
-          <circle key={i} cx={cx} cy={cy} r={R} fill="none"
-            stroke={s.color} strokeWidth={stroke}
-            strokeDasharray={`${s.dash} ${s.gap}`}
-            transform={`rotate(${s.rot} ${cx} ${cy})`}/>
-        ))}
-        <text x={cx} y={cy - 4} textAnchor="middle" fontSize="8"  fill="var(--text3)" fontWeight="700">NET</text>
-        <text x={cx} y={cy + 7} textAnchor="middle" fontSize="9.5" fill={net >= 0 ? "var(--success)" : "var(--danger)"} fontWeight="800">
-          {net >= 0 ? "+" : ""}{Math.round(net)}€
-        </text>
-      </svg>
-      <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: 1 }}>
-        {[
-          { l: "💰 Revenus",  v: inc, c: "var(--success)" },
-          { l: "💸 Dépenses", v: exp, c: "var(--danger)"  },
-          { l: "🐷 Épargne",  v: sav, c: "var(--purple)"  },
-        ].map(s => (
-          <div key={s.l} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 7, height: 7, borderRadius: "50%", background: s.c, flexShrink: 0 }}/>
-            <span style={{ fontSize: ".6rem", color: "var(--text2)", flex: 1 }}>{s.l}</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: ".63rem", fontWeight: 800, color: s.c, fontVariantNumeric: "tabular-nums" }}>{fmt(s.v)}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// 3. Barre budget
-function BudgetBar({ exp, inc }) {
-  const pct   = inc > 0 ? Math.min(100, (exp / inc) * 100) : 0;
-  const color = pct > 90 ? "var(--danger)" : pct > 70 ? "var(--warning)" : "var(--success)";
-  return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: ".6rem", color: "var(--text2)", fontWeight: 700 }}>
-        <span>Budget consommé</span>
-        <span style={{ color }}>{pct.toFixed(0)}%</span>
-      </div>
-      <div style={{ height: 6, background: "var(--surface3)", borderRadius: 99, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, var(--success), ${color})`, borderRadius: 99, transition: "width .5s ease" }}/>
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3, fontSize: ".55rem", color: "var(--text3)" }}>
-        <span>0 €</span><span>{fmt(inc)}</span>
-      </div>
-    </div>
-  );
-}
-
-// 4. SwipeRow — avec bouton pointage intégré
 function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [], allSideAmountTypes = [] }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
