@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { fmt, txLabel, txTypeClass, txSign, deltaInfo } from "../utils.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -75,13 +76,16 @@ export function ToastContainer({ toasts }) {
 // ─────────────────────────────────────────────────────────────────
 /** @param {{ onClose: () => void, title: string, children: React.ReactNode }} */
 export function Modal({ onClose, title, children }) {
-  return (
+  // v1.53.1 : rendu directement dans <body> — la fenêtre reste centrée à l'écran
+  // quel que soit l'écran qui l'ouvre (plus besoin de défiler pour la voir).
+  return createPortal(
     <div className="modal"
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content">
         {title && <div className="modal-title">{title}</div>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
