@@ -2034,7 +2034,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
   } else {
     const filtered = transactions.filter(t => {
       if (period === "month" || period === "year") { if (!inPeriod(t.date)) return false; }
-      if (type === "income")        return isIncome(t.type);
+      if (type === "income")        return t.type === "income";   // v1.53.1 : dissolution de cagnotte exclue
       if (type === "expense")       return t.type === "expense";
       if (type === "expense_var")   return t.type === "expense";
       if (type === "decagnottage")  return t.type === "decagnottage";
@@ -2151,84 +2151,6 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
         )}
       </div>
 
-      <button className="btn btn-outline" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Month detail modal (from chart click)
-// ─────────────────────────────────────────────────────────────────
-export function MonthDetailModal({ config, transactions, categories, cagnottes, fixedExpenses, fixedIncomes = [], onClose }) {
-  const { year, monthIdx } = config;
-  const mStr  = `${year}-${(monthIdx + 1).toString().padStart(2, "0")}`;
-  // v1.49.1 : mêmes chiffres que le graphique du Rapport (computeMonthTotals) —
-  // avant, les frais fixes n'étaient comptés que pour le mois en cours et les
-  // revenus fixes jamais.
-  const txs   = transactions.filter(t => (t.date || "").startsWith(mStr));
-  const { inc, exp, net } = computeMonthTotals(transactions, fixedExpenses, fixedIncomes, mStr);
-  const mMonths  = livedMonths(transactions, mStr, mStr);
-  const fixExpLines = fixedLinesForPeriod(fixedExpenses, mMonths, "expense");
-  const fixIncLines = fixedLinesForPeriod(fixedIncomes,  mMonths, "income");
-  const fixSection = (title, lines, cls, sign) => lines.length > 0 && (
-    <>
-      <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "8px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
-        {title} — {fmt(lines.reduce((a, l) => a + l.total, 0))}
-      </div>
-      {lines.map((l, i) => {
-        const cat = categories.find(c => c.id === l.f.categoryId);
-        return (
-          <div key={l.f.id || i} className="item-row">
-            <div className="item-icon">{cat?.icon ?? "🔄"}</div>
-            <div className="item-info"><div className="item-title">{l.f.name}</div><div className="item-sub">Mensuel</div></div>
-            <div className={`item-amount ${cls}`}>{sign}{fmt(l.total)}</div>
-          </div>
-        );
-      })}
-    </>
-  );
-
-  return (
-    <Modal onClose={onClose} title="">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <div style={{ width: 42, height: 42, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem", background: "rgba(77,159,255,.15)" }}>📅</div>
-        <div>
-          <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>Détail du mois</div>
-          <div className="modal-title" style={{ marginBottom: 0 }}>{MONTHS_SHORT[monthIdx]} {year}</div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: net >= 0 ? "var(--success)" : "var(--danger)" }}>
-            {net >= 0 ? "+" : ""}{fmt(net)}
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
-        {[["Revenus", inc, "var(--success)"], ["Dépenses", exp, "var(--danger)"]].map(([l, v, c]) => (
-          <div key={l} style={{
-            border: `1px solid ${c}`, borderRadius: 8, padding: 10,
-          }}>
-            <div style={{ fontSize: ".6rem", color: "var(--text2)", textTransform: "uppercase", fontWeight: 700 }}>{l}</div>
-            <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: c, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</div>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
-        {fixSection("Revenus fixes", fixIncLines, "type-income", "+")}
-        {fixSection("Frais fixes", fixExpLines, "type-expense", "−")}
-        {txs.length > 0 && (
-          <>
-            <div style={{ fontSize: ".65rem", color: "var(--text3)", textTransform: "uppercase", fontWeight: 700, padding: "8px 0 6px", borderBottom: "1px solid var(--border-soft)" }}>
-              Opérations ({txs.length})
-            </div>
-            {[...txs].sort((a, b) => new Date(b.date) - new Date(a.date))
-              .map(t => <ItemRow key={t.id} t={t} categories={categories} cagnottes={cagnottes} />)
-            }
-          </>
-        )}
-        {txs.length === 0 && fixExpLines.length === 0 && fixIncLines.length === 0 && (
-          <div className="empty-state"><div className="empty-icon">📭</div><p>Aucune opération ce mois</p></div>
-        )}
-      </div>
       <button className="btn btn-outline" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
     </Modal>
   );
