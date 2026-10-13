@@ -1,7 +1,7 @@
 {
   "name": "gestion-du-budget",
   "private": true,
-  "version": "1.53.0",
+  "version": "1.55.1",
   "description": "Gestionnaire de budget personnel",
   "type": "module",
   "scripts": {
