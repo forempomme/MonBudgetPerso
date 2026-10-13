@@ -785,11 +785,9 @@ function prevYMs(ym, n) {
 }
 function monthFlows(data, ym) {
   const txs = (data.transactions || []).filter(t => (t.date || "").startsWith(ym));
-  const sum = f => txs.filter(f).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  const exp = sum(t => t.type === "expense") + effectiveFixesForMonth(data.fixedExpenses || [], ym);
-  const inc = sum(t => t.type === "income") + effectiveIncomesForMonth(data.fixedIncomes || [], ym);
-  const sav = sum(t => t.type === "epargne") - sum(t => t.type === "decagnottage");
-  return { exp, inc, sav, txs };
+  // v1.53.1 : mêmes revenus / dépenses que le Rapport et le Bilan (source unique)
+  const t = computeMonthTotals(data.transactions || [], data.fixedExpenses || [], data.fixedIncomes || [], ym);
+  return { exp: t.exp, inc: t.inc, sav: t.sav - t.decag, txs };
 }
 function catSpend(data, ym) {
   const map = {};
@@ -921,10 +919,13 @@ export function computeMonthTotals(transactions, fixedExpenses, fixedIncomes, ym
   (transactions || []).forEach(t => {
     if (!(t.date || "").startsWith(ym)) return;
     const a = parseFloat(t.amount) || 0;
-    if (isIncome(t.type))               incTx += a;
+    // v1.53.1 : une dissolution de cagnotte n'est PAS un revenu (c'est ton argent
+    // qui revient sur le compte) → comptée avec les retraits de cagnotte, comme
+    // dans le bilan du 1ᵉʳ du mois. Les soldes, eux, la comptent toujours.
+    if (t.type === "income")            incTx += a;
     else if (t.type === "expense")      expTx += a;
     else if (t.type === "epargne")      sav   += a;
-    else if (t.type === "decagnottage") decag += a;
+    else if (t.type === "decagnottage" || t.type === "dissolution_cagnotte") decag += a;
   });
   const lived = ym >= firstYM && ym <= curYM;
   const fixExp = lived ? effectiveFixesForMonth(fixedExpenses || [], ym) : 0;
