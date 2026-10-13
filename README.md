@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.53.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.55.1`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -189,12 +189,11 @@ gestion-du-budget/
 │   ├── styles.css       — variables thème, animations, classes type-*
 │   └── components/
 │       ├── index.jsx
-│       ├── charts.jsx
 │       └── modals.jsx   — TransModal, FixedModal, FixedIncomeModal, CagModal, QuickTemplateSheet, QuickTemplateManagerModal…
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.53.0
+└── package.json         — version: 1.55.1
 ```
 
 ---
@@ -343,6 +342,10 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.55.1** | patch | **Ménage** : suppression de `components/charts.jsx` (ChartSVG, PatrimoineSVG), plus utilisé nulle part depuis la refonte du Rapport (v1.52.0/1.53.1). Aucun changement visible |
+| **1.55.0** | minor | **Écran Fixes refait en échéancier de tuiles** : barre collée (charges / revenus / net du mois, bascule Charges ↔ Revenus, ＋), avancement du mois (« x/y prélevés · reste à prélever »), tuiles compactes 3 par ligne (jour, icône, statut, montant du mois avec correction ponctuelle, ▲▼ si le montant a changé) rangées en groupes pliables : passés pas encore pointés, à venir, déjà pointés, en pause, commencent plus tard. Groupes dépliés par défaut, pliage mémorisé. **Pointer / dépointer directement depuis une tuile**. « Repéré pour toi » réduit à une ligne (touche pour voir). Prévisions ponctuelles en tuiles |
+| **1.54.0** | minor | **Options réorganisées par usage** : 💶 Budget & prévisions, 🐷 Épargne automatique, ✍️ Saisie & classement, 🔔 Notifications, 🔒 Sécurité, 💾 Mes données (Sauvegarder, Importer, Réinitialiser). Lignes plus denses avec une ligne d'explication sous chaque réglage (remplace le ⓘ). **Rappel de sauvegarde** en haut de l'écran si aucune sauvegarde ou si la dernière date de plus de 7 jours (bouton Sauvegarder direct). Statistiques globales en une ligne de pied de page |
+| **1.53.1** | patch | **Dissolution de cagnotte ≠ revenu** dans les totaux (Bilan, Rapport, détails, bilan du 1ᵉʳ du mois) : comptée avec les retraits de cagnotte ; les soldes la comptent toujours. Le bilan du 1ᵉʳ du mois utilise désormais exactement les mêmes revenus/dépenses que le Rapport. **Fenêtres ouvertes depuis Options (et Rapport) visibles sans défiler** : l'animation de changement d'onglet laissait un `transform` actif (fill-mode « both » → « backwards ») et `Modal` est rendu dans `<body>` (portail). **Ménage** (~800 lignes) : anciens blocs du Rapport (comparaison de périodes, notes, suivi, taux d'épargne, donut, analyses), donut et barre de budget de l'Historique, fenêtre « détail d'un mois » |
 | **1.53.0** | minor | **Cagnottes compact** (variante B « grille compacte ») : barre collée en haut avec le **total mis de côté**, 🔄 transfert et ＋ Cagnotte ; pastilles « épargné ce mois / retirés / année » (remplacent le bloc de 4 lignes) ; projets en bandeau horizontal (barre + trait « prévu à ce jour », statut, €/mois), détail complet au toucher ; cartes de cagnottes 2× plus basses, couleur de bordure = type, % de l'objectif, €/mois, versement auto, arrondis, projet lié. La **suppression** d'une cagnotte se fait désormais depuis ✏️ (bouton « Supprimer la cagnotte », avec confirmation) — plus de ✕ sur les cartes. 1ʳᵉ cagnotte à ~310 px au lieu de ~640 px |
 | **1.52.1** | patch | Barre du bas : libellés légèrement plus petits (.6rem, `flex: 1 1 0; min-width: 0`) — icônes toujours à égale distance, les mots ne se touchent plus (« Cagnottes » / « Historique ») |
 | **1.52.0** | minor | **Rapport refondu** en 3 onglets avec barre collée (onglets + ◀ période ▶) : **📅 Mois** (par défaut) — revenus/dépenses/épargné/net vs moyenne 3 mois, « 🔀 Comparer à un autre mois » (remplace l'onglet Périodes), ce qui a bougé, budgets du mois (catégories, budget courses, tags), à faire (à pointer → Historique, chèques), note du mois ; **📆 Année** — 4 chiffres (vs année précédente quand il y a des données), un seul graphique mois par mois (toucher un mois → onglet Mois), meilleur/moins bon mois, objectif d'épargne (**désormais enregistré**, avant il était perdu en quittant l'écran) + montant mensuel nécessaire, taux d'épargne par mois, fin d'année prévue ; **🗂️ Catégories** (mois ou année) — coût net par catégorie (sous-catégories détaillées, revenus liés déduits comme avant), budget réglable sous chaque ligne, alerte sur l'onglet, toucher → analyse de la catégorie ; montants à part & hors banque (payé banque / hors banque / budget réel, par type et par catégorie) ; tags (total, nombre d'opérations, budget). Retirés : donut, 2ᵉ graphique « évolution du solde net », bloc cagnottes, liste des notes de tous les mois, bouton « Bilans mensuels » (le bilan s'affiche toujours le 1ᵉʳ du mois). Corrigé : la comparaison de périodes ignorait les revenus fixes et ne comptait les frais fixes que pour le mois en cours |
