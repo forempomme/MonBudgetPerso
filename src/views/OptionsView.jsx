@@ -175,7 +175,6 @@ function LinkForm({ categories, onLink }) {
 
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings }) {
   const [catFilter,     setCatFilter]     = useState("all");
-  const [infoOpenId,    setInfoOpenId]    = useState(null);
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
@@ -297,175 +296,177 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const grocery     = useGroceryBudget(data.transactions, data.categories, groceryCfg);
   const groceryCats = groceryCategoryIds(data.categories, groceryCfg);
 
+  const backupLate = !last || daysSinceBackup > 7;
   const GROUPS = [
     {
-      title:"🔒 Sécurité", color:"var(--accent)",
+      title:"💶 Budget & prévisions",
       items:[
-        { id:"security", icon:"🔒", label:"PIN & biométrie",
-          badge: pinOn?"PIN actif":"Désactivé",
-          configured: pinOn,
-          hint: "PIN et biométrie non configurés",
-          desc: "Protège l'ouverture de l'app par code ou empreinte/FaceID." },
+        { id:"grocery", icon:"🛒", label:"Budget courses",
+          badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${Math.round(grocery.average)} €/mois` : "Actif",
+          configured: groceryCfg.enabled !== false && groceryCats.length > 0,
+          hint: "Choisis la catégorie de tes courses",
+          desc: "Reste à dépenser en courses ce mois" },
+        { id:"rest", icon:"💶", label:"Reste à vivre",
+          badge: restCfg.enabled === false ? "Masqué" : `Marge ${Math.round(parseFloat(restCfg.margin) || 0)} €`,
+          configured: restCfg.enabled !== false,
+          hint: "Reste à vivre masqué",
+          desc: "Par jour jusqu'à la paie" },
+        { id:"alert", icon:"🔔", label:"Alerte solde bas",
+          badge: alertOn ? `${thresh} €` : "Désactivé",
+          configured: alertOn,
+          hint: "Aucune alerte de solde définie",
+          desc: "Avertit quand le solde estimé passe sous un seuil" },
       ]
     },
     {
-      title:"🐷 Épargne", color:"var(--success)",
+      title:"🐷 Épargne automatique",
       items:[
         { id:"autoSavings", icon:"🎯", label:"Versements automatiques",
           badge: autoCount > 0 ? `${autoCount} plan${autoCount>1?"s":""}` : "Inactif",
           configured: autoCount > 0,
           hint: "Aucun versement automatique actif",
-          desc: "Vire un montant fixe chaque mois vers une cagnotte, sans y penser." },
-        { id:"rounding", icon:"🐷", label:"Arrondi automatique",
+          desc: "Montant fixe chaque mois vers une cagnotte" },
+        { id:"rounding", icon:"🪙", label:"Arrondi automatique",
           badge: roundOn && roundCag ? roundCag.name : "Désactivé",
           configured: roundOn && !!roundCag,
           hint: "Arrondi automatique désactivé",
-          desc: "Arrondit chaque dépense et met la différence de côté dans une cagnotte." },
-        { id:"alert", icon:"🔔", label:"Alerte solde bas",
-          badge: alertOn ? `${thresh} €` : "Désactivé",
-          configured: alertOn,
-          hint: "Aucune alerte de solde définie",
-          desc: "Prévient sur l'accueil quand ton solde estimé passe sous un seuil choisi." },
-        { id:"grocery", icon:"🛒", label:"Budget courses",
-          badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${Math.round(grocery.average)} €/mois` : "Actif",
-          configured: groceryCfg.enabled !== false && groceryCats.length > 0,
-          hint: "Choisis la catégorie de tes courses",
-          desc: "Affiche ce qu'il te reste à dépenser en courses ce mois (moyenne des derniers mois + le mois en cours au prorata), sans toucher au solde estimé." },
-        { id:"rest", icon:"💶", label:"Reste à vivre",
-          badge: restCfg.enabled === false ? "Masqué" : `Marge ${Math.round(parseFloat(restCfg.margin) || 0)} €`,
-          configured: restCfg.enabled !== false,
-          hint: "Reste à vivre masqué",
-          desc: "Ce que tu peux dépenser par jour jusqu'à la paie, après courses prévues et marge de sécurité. Indicatif, le solde estimé n'est pas modifié." },
+          desc: "Arrondit chaque dépense vers une cagnotte" },
       ]
     },
     {
-      title:"🏷️ Catégories", color:"var(--purple)",
+      title:"✍️ Saisie & classement",
       items:[
-        { id:"categories", icon:"🏷️", label:"Gestion catégories",
+        { id:"categories", icon:"🏷️", label:"Catégories",
           badge: `${data.categories.length} cat.`,
           configured: true,
           hint: "",
-          desc: "Crée, modifie ou supprime les catégories utilisées pour classer tes opérations." },
+          desc: "Créer, modifier, sous-catégories" },
         { id:"links", icon:"🔗", label:"Liaisons",
           badge: linkedCount > 0 ? `${linkedCount} lien${linkedCount>1?"s":""}` : "Aucune",
           configured: linkedCount > 0,
           hint: "Aucune liaison de catégorie créée",
-          desc: "Relie deux catégories pour les compter ensemble dans les statistiques." },
-        { id:"recurring", icon:"🔄", label:"Récurrentes",
-          badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
-          configured: recurCount > 0,
-          hint: "Aucune transaction récurrente définie",
-          desc: "Liste les dépenses/revenus qui reviennent chaque mois ou chaque année." },
-        { id:"quickTemplates", icon:"⚡", label:"Templates rapides",
-          badge: quickTplCount > 0 ? `${quickTplCount} template${quickTplCount>1?"s":""}` : "Aucun",
-          configured: quickTplCount > 0,
-          hint: "Aucun template rapide créé",
-          desc: "Enregistre une dépense fréquente en 2 taps, via un appui long sur le bouton +.",
-          action: onOpenQuickTemplates },
+          desc: "Compter 2 catégories ensemble" },
+        { id:"tags", icon:"🔖", label:"Tags",
+          badge: tagsCount > 0 ? `${tagsCount} tag${tagsCount>1?"s":""}` : "Aucun",
+          configured: tagsCount > 0,
+          hint: "Aucun tag créé",
+          desc: "Étiquettes libres (vacances, pro…)",
+          action: () => setShowTagsModalOpt(true) },
         { id:"sideAmountTypes", icon:"🎫", label:"Montants à part",
           badge: sideAmountTypesCount > 0 ? `${sideAmountTypesCount} type${sideAmountTypesCount>1?"s":""}` : "Aucun",
           configured: sideAmountTypesCount > 0,
           hint: "Aucun type de montant à part créé",
-          desc: "Note un montant payé autrement (tickets resto…), sans toucher ton solde.",
+          desc: "Tickets resto, cartes cadeaux… hors solde",
           action: () => setShowSideAmountTypesModal(true) },
-        { id:"tags", icon:"🏷️", label:"Tags",
-          badge: tagsCount > 0 ? `${tagsCount} tag${tagsCount>1?"s":""}` : "Aucun",
-          configured: tagsCount > 0,
-          hint: "Aucun tag créé",
-          desc: "Étiquette tes opérations pour les retrouver facilement (vacances, pro…).",
-          action: () => setShowTagsModalOpt(true) },
+        { id:"quickTemplates", icon:"⚡", label:"Templates rapides",
+          badge: quickTplCount > 0 ? `${quickTplCount} template${quickTplCount>1?"s":""}` : "Aucun",
+          configured: quickTplCount > 0,
+          hint: "Aucun template rapide créé",
+          desc: "Appui long sur le bouton +",
+          action: onOpenQuickTemplates },
+        { id:"recurring", icon:"🔄", label:"Récurrentes",
+          badge: recurCount > 0 ? `${recurCount} modèle${recurCount>1?"s":""}` : "Aucune",
+          configured: recurCount > 0,
+          hint: "Aucune transaction récurrente définie",
+          desc: "Opérations qui reviennent" },
       ]
     },
     {
-      title:"🔔 Notifications", color:"var(--warning)",
+      title:"🔔 Notifications",
       items:[
         { id:"notif", icon:"🔔", label:"Notifications locales",
           badge: notifOn ? "Actif" : "Désactivé",
           configured: notifOn,
           hint: "Notifications locales désactivées",
-          desc: "Reçois un rappel sur ton téléphone pour certains événements de l'app." },
+          desc: "Rappels de sauvegarde, programmées, chèques…" },
       ]
     },
     {
-      title:"💾 Données", color:"#c8b860",
+      title:"🔒 Sécurité",
       items:[
-        { id:"backup", icon:"💾", label:"Sauvegarde",
-          badge: last ? `il y a ${daysSinceBackup}j` : "Jamais",
-          configured: !!last,
-          hint: "Aucune sauvegarde effectuée",
-          desc: "Exporte toutes tes données dans un fichier à conserver en lieu sûr." },
+        { id:"security", icon:"🔒", label:"PIN & biométrie",
+          badge: pinOn?"PIN actif":"Désactivé",
+          configured: pinOn,
+          hint: "PIN et biométrie non configurés",
+          desc: "Protège l'ouverture de l'appli" },
+      ]
+    },
+    {
+      title:"💾 Mes données",
+      items:[
+        { id:"backup", icon:"💾", label:"Sauvegarder",
+          badge: last ? (daysSinceBackup === 0 ? "aujourd'hui" : `il y a ${daysSinceBackup} j`) : "Jamais",
+          configured: !backupLate,
+          hint: "",
+          desc: "Exporter un fichier à garder en lieu sûr" },
+        { id:"import", icon:"⬆️", label:"Importer une sauvegarde",
+          configured: true, hint: "",
+          desc: "Remplace les données actuelles",
+          action: onImport },
+        { id:"reset", icon:"⚠️", label:"Réinitialiser toutes les données", danger: true,
+          configured: true, hint: "",
+          desc: "Efface tout — irréversible",
+          action: onReset },
       ]
     },
   ];
 
+  const openItem = item => { if (item.action) item.action(); else setOpenSheet(item.id); };
+
   return (
     <div>
+      {/* ── Rappel de sauvegarde (> 7 jours ou jamais) ── */}
+      {backupLate && (
+        <div data-testid="backup-alert" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:13, border:"1px solid rgba(200,112,112,.45)", background:"rgba(200,112,112,.08)", marginBottom:6 }}>
+          <span style={{ fontSize:"1rem" }}>💾</span>
+          <span style={{ flex:1, minWidth:0 }}>
+            <span style={{ display:"block", fontSize:".76rem", fontWeight:800 }}>{last ? `Dernière sauvegarde il y a ${daysSinceBackup} jours` : "Aucune sauvegarde"}</span>
+            <span style={{ display:"block", fontSize:".6rem", color:"var(--text2)", marginTop:1 }}>Si le téléphone est perdu, tes données le sont aussi.</span>
+          </span>
+          <button
+            onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onExport?.(); }}
+            onClick={()=>onExport?.()}
+            style={{ border:"none", background:"var(--accent)", color:"#06121c", borderRadius:8, padding:"7px 10px", fontSize:".7rem", fontWeight:800, whiteSpace:"nowrap", flexShrink:0, cursor:"pointer" }}>
+            Sauvegarder
+          </button>
+        </div>
+      )}
+
       {/* ── Menu groupé ── */}
-      <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
-        {GROUPS.map(group => (
-          <div key={group.title}>
-            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", marginBottom:6, paddingLeft:4 }}>
-              {group.title}
-            </div>
-            <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
-              {group.items.map((item, i) => (
-                <Fragment key={item.id}>
-                <div
-                  onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
-                  onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
-                  onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint + " · Paramétrez ci-dessous"); if (item.action) item.action(); else setOpenSheet(item.id); }}
-                  onClick={()=> item.action ? item.action() : setOpenSheet(item.id)}
-                  style={{
-                    display:"flex", alignItems:"center", gap:10, padding:"14px 16px",
-                    borderBottom: (i<group.items.length-1 && infoOpenId!==item.id) ? "1px solid var(--border-soft)" : "none",
-                    cursor:"pointer", touchAction:"manipulation",
-                  }}>
-                  <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>{item.icon}</span>
-                  <span style={{ display:"flex", alignItems:"center", gap:5, flex:1, minWidth:0 }}>
-                    <span style={{ fontSize:".76rem", fontWeight:600 }}>{item.label}</span>
-                    {item.desc && (
-                      <span
-                        onClick={e=>{ e.stopPropagation(); setInfoOpenId(id => id===item.id ? null : item.id); }}
-                        onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setInfoOpenId(id => id===item.id ? null : item.id); }}
-                        style={{
-                          width:15, height:15, borderRadius:"50%",
-                          background: infoOpenId===item.id ? "var(--accent-glow)" : "var(--surface2)",
-                          border: `1px solid ${infoOpenId===item.id ? "var(--accent)" : "var(--border)"}`,
-                          color: infoOpenId===item.id ? "var(--accent)" : "var(--text2)",
-                          fontSize:".52rem", fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center",
-                          flexShrink:0, cursor:"pointer",
-                        }}>ⓘ</span>
-                    )}
-                  </span>
-                  <span style={{ fontSize:".58rem", fontWeight:700, color: item.configured ? "var(--success)" : "var(--warning)", padding:"2px 8px", background: item.configured ? "#1a3a2a" : "#3a2500", borderRadius:10, flexShrink:0 }}>
+      {GROUPS.map(group => (
+        <div key={group.title}>
+          <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"12px 2px 6px" }}>
+            {group.title}
+          </div>
+          <div style={{ background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)" }}>
+            {group.items.map((item, i) => (
+              <div key={item.id}
+                data-opt={item.id}
+                onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
+                onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
+                onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint); openItem(item); }}
+                onClick={()=> openItem(item)}
+                style={{
+                  display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
+                  borderTop: i>0 ? "1px solid var(--border-soft)" : "none",
+                  cursor:"pointer", touchAction:"manipulation",
+                }}>
+                <span style={{ fontSize:".95rem", width:20, textAlign:"center", flexShrink:0 }}>{item.icon}</span>
+                <span style={{ flex:1, minWidth:0 }}>
+                  <span style={{ display:"block", fontSize:".78rem", fontWeight:600, color: item.danger ? "var(--danger)" : undefined }}>{item.label}</span>
+                  <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.desc}</span>
+                </span>
+                {item.badge && (
+                  <span style={{ fontSize:".6rem", fontWeight:800, color: item.configured ? "var(--success)" : "var(--warning)", padding:"2px 8px", background: item.configured ? "rgba(104,212,152,.12)" : "rgba(200,184,96,.12)", borderRadius:8, flexShrink:0, whiteSpace:"nowrap", maxWidth:110, overflow:"hidden", textOverflow:"ellipsis" }}>
                     {item.badge}
                   </span>
-                  <span style={{ color:"var(--text3)", fontSize:".8rem", flexShrink:0 }}>›</span>
-                </div>
-                {infoOpenId === item.id && (
-                  <div
-                    onClick={e=>e.stopPropagation()}
-                    onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); }}
-                    style={{
-                      padding:"2px 16px 12px", background:"var(--surface)",
-                      borderBottom: i<group.items.length-1 ? "1px solid var(--border-soft)" : "none",
-                    }}>
-                    <div style={{
-                      background:"var(--surface3)", border:"1px solid var(--accent)", borderRadius:10,
-                      padding:"9px 12px", fontSize:".62rem", color:"var(--text2)", lineHeight:1.5,
-                    }}>
-                      {item.desc}
-                    </div>
-                  </div>
                 )}
-                </Fragment>
-              ))}
-            </div>
+                <span style={{ color: item.danger ? "var(--danger)" : "var(--text3)", opacity: item.danger ? .5 : 1, fontSize:".75rem", flexShrink:0 }}>›</span>
+              </div>
+            ))}
           </div>
-        ))}
-
-        {/* Actions directes */}
-        <div style={{ background:"var(--surface)", borderRadius:12, overflow:"hidden", border:"1px solid var(--border)" }}>
+        </div>
+      ))}
 
       {/* Toast "non configuré" */}
       {tooltip && (
@@ -480,44 +481,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           ⚙️ {tooltip}
         </div>
       )}
-          <div onClick={onImport} style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", borderBottom:"1px solid var(--border-soft)", cursor:"pointer" }}>
-            <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>⬆️</span>
-            <span style={{ flex:1, fontSize:".76rem", fontWeight:600 }}>Importer des données</span>
-            <span style={{ color:"var(--text3)", fontSize:".8rem" }}>›</span>
-          </div>
-          <div onClick={onReset} style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 16px", cursor:"pointer" }}>
-            <span style={{ fontSize:"1rem", width:22, textAlign:"center" }}>⚠️</span>
-            <span style={{ flex:1, fontSize:".76rem", fontWeight:600, color:"var(--danger)" }}>Réinitialiser toutes les données</span>
-            <span style={{ color:"var(--danger)", fontSize:".8rem", opacity:.5 }}>›</span>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Stats globales ── */}
-      {globalStats && (
-        <div style={{ background:"linear-gradient(135deg,#0c1830,#182a48)", borderRadius:"var(--radius)", padding:"14px 16px", marginTop:16, boxShadow:"0 4px 18px rgba(112,184,224,.12)" }}>
-          <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.5)", fontWeight:700, textTransform:"uppercase", letterSpacing:".12em", marginBottom:10 }}>
-            📊 Statistiques globales
+      {/* ── Statistiques + version, en pied de page ── */}
+      <div data-testid="opt-foot" style={{ marginTop:16, textAlign:"center", color:"var(--text3)", fontSize:".62rem", lineHeight:1.6, fontWeight:600 }}>
+        {globalStats && (
+          <div>
+            {globalStats.count} opération{globalStats.count>1?"s":""} depuis {new Date(globalStats.earliest+"T12:00:00").toLocaleDateString("fr-FR",{month:"long",year:"numeric"})} · {fmt(globalStats.totalGere)} gérés · {data.categories.length} catégorie{data.categories.length>1?"s":""}
           </div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-            {[
-              { icon:"📋", label:"Transactions",       value:globalStats.count },
-              { icon:"📅", label:"Première opération", value:new Date(globalStats.earliest+"T12:00:00").toLocaleDateString("fr-FR",{month:"short",year:"numeric"}) },
-              { icon:"💶", label:"Total géré",         value:fmt(globalStats.totalGere) },
-              { icon:"🏷️", label:"Catégories",         value:data.categories.length },
-            ].map(s=>(
-              <div key={s.label} style={{ background:"rgba(255,255,255,.06)", borderRadius:10, padding:"10px 12px" }}>
-                <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.45)", marginBottom:4 }}>{s.icon} {s.label}</div>
-                <div style={{ fontFamily:"var(--mono)", fontWeight:800, color:"#fff", fontSize:".85rem" }}>{s.value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Version */}
-      <div style={{ marginTop:32, textAlign:"center", color:"var(--text3)", fontSize:".65rem", letterSpacing:".06em", fontWeight:600 }}>
-        {APP_NAME} — v{APP_VERSION}
+        )}
+        <div style={{ letterSpacing:".06em" }}>{APP_NAME} — v{APP_VERSION}</div>
       </div>
 
       {/* ══════════════════════════════════════════════════════ */}
