@@ -1,33 +1,96 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
-import { useState } from "react";
-import { fmt, currentYM } from "../utils.js";
-import { effectiveFixesForMonth, effectiveIncomesForMonth } from "../hooks.js";
-import { EmptyIllustration, SectionTitle } from "./shared.jsx";
+// v1.55.0 : écran refait en « échéancier en tuiles » — barre collée (charges /
+// revenus / net, bascule, ＋), avancement du mois, tuiles compactes 3 par ligne
+// rangées par statut (passés non pointés / à venir / pointés / en pause /
+// commencent plus tard), groupes pliables, pointage direct depuis une tuile.
+import { useState, useEffect, Fragment } from "react";
+import { fmt, currentYM, todayISO } from "../utils.js";
+import { effectiveFixesForMonth, effectiveIncomesForMonth, isActiveForMonth } from "../hooks.js";
+import { EmptyIllustration } from "./shared.jsx";
 import { InsightsList } from "./InsightPanels.jsx";
 
-// ─────────────────────────────────────────────────────────────────
-//  FIXES
-// ─────────────────────────────────────────────────────────────────
-export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onSaveProvisional, onDeleteProvisional, insights = [], onDismissInsight, onUpdateRecurringInsight, onCreateFixedInsight }) {
+const FOLD_KEY = "fixes_fold_v1";
+const MONTHS_SHORT_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+const MONTHS_LONG_FR  = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+const ymShort = ym => { if (!ym) return ""; const [y, m] = ym.split("-").map(Number); return `${MONTHS_SHORT_FR[m - 1]}${y !== new Date().getFullYear() ? " " + String(y).slice(2) : ""}`; };
+const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m, 0).getDate(); };
+
+// Classe un frais/revenu fixe pour le mois courant (source : isActiveForMonth + pointedMonths)
+//   late  : jour passé (ou aujourd'hui), pas encore pointé
+//   next  : à venir ce mois (ou jour non renseigné), pas pointé
+//   ok    : pointé ce mois
+//   pause : en pause ce mois
+//   later : commence un mois futur (startYM)
+export function fixedStatusForMonth(f, ym, todayDay) {
+  if (!isActiveForMonth(f, ym)) return (f.startYM && ym < f.startYM) ? "later" : "pause";
+  if (f.pointedMonths?.[ym]) return "ok";
+  const d = parseInt(f.day, 10);
+  if (!d) return "next";
+  return Math.min(d, lastDayOf(ym)) <= todayDay ? "late" : "next";
+}
+
+const GROUPS = [
+  { g: "late",  title: "⏳ Passés, pas encore pointés", color: "var(--warning)" },
+  { g: "next",  title: "📅 À venir ce mois",            color: "var(--text2)" },
+  { g: "ok",    title: "✓ Déjà pointés",                color: "var(--success)" },
+  { g: "pause", title: "⏸️ En pause",                   color: "var(--text3)", noTotal: true },
+  { g: "later", title: "🗓️ Commencent plus tard",       color: "var(--text3)", noTotal: true },
+];
+
+export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onTogglePointFix, onTogglePointIncome, onSaveProvisional, onDeleteProvisional, insights = [], onDismissInsight, onUpdateRecurringInsight, onCreateFixedInsight }) {
   const { fixedExpenses, categories } = data;
-  const fixedIncomes         = data.fixedIncomes || [];
-  const provisionalExpenses  = data.provisionalExpenses || [];
-  const [selected,     setSelected]    = useState(null);
-  const [activeSection,setActiveSection]= useState("depenses");
-  const [showProvForm, setShowProvForm] = useState(false);
-  const [provName,     setProvName]    = useState("");
-  const [provAmt,      setProvAmt]     = useState("");
-  const [provErr,      setProvErr]     = useState({});
-  const [pauseFilterOn,setPauseFilterOn]= useState(false);
-  const [pauseTooltipId, setPauseTooltipId] = useState(null);
-  const pausedFixCount = fixedExpenses.filter(f => f.paused).length;
-  const pausedIncCount = fixedIncomes.filter(f => f.paused).length;
-  const pausedCount    = pausedFixCount + pausedIncCount;
-  const curYM        = currentYM();
-  const totalFixes    = effectiveFixesForMonth(fixedExpenses, curYM);
-  const totalIncomes  = effectiveIncomesForMonth(fixedIncomes, curYM);
+  const fixedIncomes        = data.fixedIncomes || [];
+  const provisionalExpenses = data.provisionalExpenses || [];
+  const [selected,      setSelected]      = useState(null);
+  const [activeSection, setActiveSection] = useState("depenses");
+  const [showInsights,  setShowInsights]  = useState(false);
+  const [showProvForm,  setShowProvForm]  = useState(false);
+  const [provName,      setProvName]      = useState("");
+  const [provAmt,       setProvAmt]       = useState("");
+  const [provErr,       setProvErr]       = useState({});
+  // Groupes pliés — mémorisés sur le téléphone (tout déplié par défaut)
+  const [fold, setFold] = useState(() => { try { return JSON.parse(localStorage.getItem(FOLD_KEY)) || {}; } catch { return {}; } });
+  const toggleFold = key => setFold(o => {
+    const n = { ...o, [key]: !o[key] };
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(n)); } catch { /* stockage indisponible : on garde en mémoire */ }
+    return n;
+  });
+
+  const curYM    = currentYM();
+  const todayDay = parseInt(todayISO().slice(8, 10), 10);
+  const totalFixes   = effectiveFixesForMonth(fixedExpenses, curYM);
+  const totalIncomes = effectiveIncomesForMonth(fixedIncomes, curYM);
+  const net          = totalIncomes - totalFixes;
   const provTotal    = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
-  const total = totalFixes; // alias pour compatibilité
+  const isExp        = activeSection === "depenses";
+  const list         = isExp ? fixedExpenses : fixedIncomes;
+  const mainColor    = isExp ? "var(--danger)" : "var(--success)";
+  const sign         = isExp ? "−" : "+";
+
+  // Barre collée sous l'en-tête (même principe que l'Historique, le Rapport et les Cagnottes)
+  const [stickyTop, setStickyTop] = useState(0);
+  useEffect(() => {
+    const h = document.querySelector(".bp-header");
+    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
+    upd(); window.addEventListener("resize", upd);
+    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
+    ro?.observe(h);
+    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
+  }, []);
+
+  // Éléments enrichis + rangés par groupe
+  const items = list.map((f, idx) => {
+    const ov  = f.monthlyOverrides?.[curYM];
+    const amt = parseFloat(ov?.amount ?? f.amount) || 0;
+    return { f, idx, amt, st: fixedStatusForMonth(f, curYM, todayDay), icon: categories.find(c => c.id === f.categoryId)?.icon ?? (isExp ? "📌" : "💰") };
+  });
+  const byGroup = {};
+  GROUPS.forEach(({ g }) => { byGroup[g] = items.filter(x => x.st === g).sort((a, b) => (parseInt(a.f.day, 10) || 99) - (parseInt(b.f.day, 10) || 99)); });
+  const active    = items.filter(x => x.st === "late" || x.st === "next" || x.st === "ok");
+  const doneCount = byGroup.ok.length;
+  const remaining = [...byGroup.late, ...byGroup.next].reduce((s, x) => s + x.amt, 0);
+  const pct       = active.length ? Math.round(doneCount / active.length * 100) : 0;
+  const monthName = MONTHS_LONG_FR[parseInt(curYM.slice(5, 7), 10) - 1];
 
   function handleAddProv() {
     const e = {};
@@ -37,390 +100,213 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
     setProvErr(e);
     if (Object.keys(e).length) return;
     onSaveProvisional({ name: provName.trim(), amount: a });
-    setProvName(""); setProvAmt(""); setShowProvForm(false); setProvErr({});
+    setProvName(""); setProvAmt(""); setProvErr({}); setShowProvForm(false);
   }
 
-  // Style partagé pour une carte 4-col
-  const card4 = (selKey, accentColor) => ({
-    background: accentColor === "var(--danger)"
-      ? "linear-gradient(135deg,rgba(200,112,112,.07),rgba(200,112,112,.02))"
-      : accentColor === "var(--success)"
-      ? "linear-gradient(135deg,rgba(104,212,152,.07),rgba(104,212,152,.02))"
-      : "var(--card-bg, #1e1e2e)",
-    borderRadius: 10,
-    borderTop: `3px solid ${accentColor}`,
-    padding: "8px 5px 6px",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 3,
-    cursor: "pointer",
-    outline: selected === selKey ? `2px solid ${accentColor}` : "none",
-    transition: "outline .1s",
-    position: "relative",
-  });
+  // ── Styles ──
+  const kp = { borderRadius: 9, padding: "5px 8px", background: "var(--surface2)", border: "1px solid var(--border-soft)", minWidth: 0 };
+  const kpL = { display: "block", fontSize: ".53rem", fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text3)" };
+  const kpV = col => ({ display: "block", fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, color: col, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" });
+  const segBtn = (on, col, bg) => ({ flex: 1, textAlign: "center", fontSize: ".69rem", fontWeight: 800, padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer", whiteSpace: "nowrap", background: on ? bg : "transparent", color: on ? col : "var(--text2)" });
+  const grid = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 };
+  const actBtn = col => ({ fontSize: ".66rem", fontWeight: 800, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: col || "var(--text2)", whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 });
+
+  const tile = ({ key, icon, name, amount, dayLabel, dot, top, late, dim, extra }) => (
+    <div key={key} data-tile={key} onClick={() => setSelected(selected === key ? null : key)}
+      style={{
+        position: "relative", minWidth: 0, cursor: "pointer", textAlign: "center",
+        background: late ? "rgba(200,184,96,.07)" : "var(--surface)", border: "1px solid var(--border)", borderTop: `3px solid ${top}`,
+        borderRadius: 10, padding: "4px 6px 5px", opacity: dim ? .5 : 1,
+        outline: selected === key ? "2px solid var(--accent)" : "none", outlineOffset: 1,
+      }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 16 }}>
+        <span style={{ fontSize: ".53rem", fontWeight: 800, color: "var(--text3)", minWidth: 28, textAlign: "left", whiteSpace: "nowrap" }}>{dayLabel}</span>
+        <span style={{ fontSize: ".82rem", lineHeight: 1 }}>{icon}</span>
+        <span style={{ minWidth: 28, display: "flex", justifyContent: "flex-end" }}>{dot && <i style={{ width: 7, height: 7, borderRadius: "50%", background: dot, display: "block" }} />}</span>
+      </div>
+      <div style={{ fontSize: ".66rem", fontWeight: 700, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+      <div style={{ fontFamily: "var(--mono)", fontSize: ".69rem", fontWeight: 800, color: top, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+        {amount}{extra}
+      </div>
+    </div>
+  );
+
+  const actionBar = (x, g) => {
+    const { f, idx } = x;
+    const onPause  = isExp ? onQuickPauseFixed  : onQuickPauseIncome;
+    const onEdit   = isExp ? onEditFixed        : onEditFixedIncome;
+    const onDelete = isExp ? onDeleteFixed      : onDeleteFixedIncome;
+    const onPoint  = isExp ? onTogglePointFix   : onTogglePointIncome;
+    const canPoint = g === "late" || g === "next" || g === "ok";
+    return (
+      <div key="abar" data-testid="fix-actions" onClick={e => e.stopPropagation()}
+        style={{ gridColumn: "1 / -1", padding: "7px 8px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--accent)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: ".69rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.icon} {f.name}</span>
+          {canPoint && f.id && (
+            <button style={actBtn(g === "ok" ? "var(--text2)" : "var(--success)")}
+              onClick={() => { onPoint?.(f.id, curYM); setSelected(null); }}>
+              {g === "ok" ? "↩ Dépointer" : "✓ Pointer"}
+            </button>
+          )}
+          {g !== "later" && <button style={actBtn()} onClick={() => onPause?.(idx)}>{f.paused ? "▶️ Reprendre" : "⏸️ Pause"}</button>}
+          <button style={actBtn()} onClick={() => onEdit(idx)}>✏️</button>
+          <button style={actBtn("var(--danger)")} onClick={() => { onDelete(idx); setSelected(null); }}>🗑</button>
+        </div>
+        {(g === "pause" || g === "later" || x.amt !== (parseFloat(f.amount) || 0)) && (
+          <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 5, lineHeight: 1.45 }}>
+            {g === "pause" && <>⏸️ En pause depuis {ymShort(f.pausedFrom) || "?"} · {f.pausedUntil ? `reprend automatiquement après ${ymShort(f.pausedUntil)}` : "aucune reprise programmée"}</>}
+            {g === "later" && <>🗓️ Commence en {ymShort(f.startYM)}</>}
+            {g !== "pause" && g !== "later" && <>✏️ Montant corrigé pour ce mois : {fmt(x.amt)} (habituellement {fmt(parseFloat(f.amount) || 0)})</>}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const group = ({ g, title, color, noTotal }) => {
+    const L = byGroup[g];
+    if (!L.length) return null;
+    const fk = `${activeSection}_${g}`;
+    const folded = !!fold[fk];
+    const cells = L.map(x => {
+      const key = `${activeSection}_${x.f.id ?? x.idx}`;
+      const rise = isExp && x.f.prevAmount != null && x.f.prevAmount !== x.f.amount && x.f.prevAmountYM !== curYM;
+      return {
+        key, x,
+        el: tile({
+          key, icon: x.icon, name: x.f.name, amount: fmt(x.amt), top: mainColor,
+          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.f.day ? `le ${x.f.day}` : "jour ?"),
+          dot: g === "ok" ? "var(--success)" : (g === "pause" || g === "later") ? "var(--text3)" : "var(--warning)",
+          late: g === "late", dim: g === "pause" || g === "later",
+          extra: rise ? <span style={{ marginLeft: 3, fontSize: ".53rem", color: x.f.amount > x.f.prevAmount ? "var(--danger)" : "var(--success)" }}>{x.f.amount > x.f.prevAmount ? "▲" : "▼"}</span> : null,
+        }),
+      };
+    });
+    const out = cells.map(c => c.el);
+    const si = cells.findIndex(c => c.key === selected);
+    if (si >= 0) out.splice(Math.min(Math.floor(si / 3) * 3 + 3, out.length), 0, actionBar(cells[si].x, g));
+    return (
+      <Fragment key={g}>
+        <div data-group={g} onClick={() => { toggleFold(fk); setSelected(null); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 2px 6px", cursor: "pointer", userSelect: "none" }}>
+          <span style={{ width: 12, color: "var(--text2)", fontSize: ".62rem" }}>{folded ? "▸" : "▾"}</span>
+          <span>{title}</span>
+          <span style={{ fontSize: ".56rem", letterSpacing: 0, textTransform: "none", fontWeight: 700 }}>({L.length})</span>
+          {!noTotal && <span style={{ marginLeft: "auto", letterSpacing: 0, fontSize: ".69rem", fontFamily: "var(--mono)", color, fontVariantNumeric: "tabular-nums" }}>{sign}{fmt(L.reduce((s, x) => s + x.amt, 0))}</span>}
+        </div>
+        {!folded && <div style={grid}>{out}</div>}
+      </Fragment>
+    );
+  };
 
   return (
     <div>
-      {/* ── 🔍 Repéré pour toi (v1.50.0) — seulement s'il y a quelque chose ── */}
-      <InsightsList items={insights} categories={categories}
-        onDismiss={onDismissInsight} onUpdateRecurring={onUpdateRecurringInsight} onCreateFixed={onCreateFixedInsight} />
-
-      {/* ── Hero récap charges / revenus / net ── */}
-      <div style={{
-        background: "linear-gradient(135deg, #0c1830 0%, #182a48 100%)",
-        borderRadius: 14, padding: "13px 16px", marginBottom: 12,
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        boxShadow: "0 4px 18px rgba(112,184,224,.15)",
-      }}>
-        <div>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>📌 Charges</div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>−{fmt(totalFixes)}</div>
-          <div style={{ fontSize: ".55rem", color: "rgba(255,255,255,.35)", marginTop: 1 }}>{fixedExpenses.length} récurrentes</div>
+      {/* ── Barre collée : charges / revenus / net + bascule + ＋ ── */}
+      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5, marginBottom: 7 }}>
+          <div style={kp}><small style={kpL}>Charges</small><b style={kpV("var(--danger)")}>−{fmt(totalFixes)}</b></div>
+          <div style={kp}><small style={kpL}>Revenus</small><b style={kpV("var(--success)")}>+{fmt(totalIncomes)}</b></div>
+          <div style={kp}><small style={kpL}>Net / mois</small><b style={kpV(net >= 0 ? "var(--success)" : "var(--danger)")}>{net >= 0 ? "+" : "−"}{fmt(Math.abs(net))}</b></div>
         </div>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>💰 Revenus fixes</div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>+{fmt(totalIncomes)}</div>
-          <div style={{ fontSize: ".55rem", color: "rgba(255,255,255,.35)", marginTop: 1 }}>{fixedIncomes.length} récurrents</div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.5)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 2 }}>= Net fixe</div>
-          <div style={{ fontFamily: "var(--mono)", fontSize: "1.2rem", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: totalIncomes - totalFixes >= 0 ? "var(--success)" : "var(--danger)" }}>
-            {totalIncomes - totalFixes >= 0 ? "+" : "−"}{fmt(Math.abs(totalIncomes - totalFixes))}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", flex: 1, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 11, padding: 3, gap: 3 }}>
+            <button style={segBtn(isExp, "var(--danger)", "rgba(200,112,112,.2)")} onClick={() => { setActiveSection("depenses"); setSelected(null); }}>📌 Charges ({fixedExpenses.length})</button>
+            <button style={segBtn(!isExp, "var(--success)", "rgba(104,212,152,.18)")} onClick={() => { setActiveSection("revenus"); setSelected(null); }}>💰 Revenus ({fixedIncomes.length})</button>
           </div>
-          {provTotal > 0 && <div style={{ fontSize: ".55rem", color: "var(--warning)", marginTop: 1 }}>−{fmt(provTotal)} prév.</div>}
+          <button aria-label={isExp ? "Ajouter une charge fixe" : "Ajouter un revenu fixe"} onClick={isExp ? onNewFixed : onNewFixedIncome}
+            style={{ height: 36, minWidth: 36, padding: "0 11px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#06121c", fontSize: ".8rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>＋</button>
         </div>
       </div>
 
-      {/* ── Badge en pause ── */}
-      {pausedCount > 0 && (
-        <button onClick={() => setPauseFilterOn(v => !v)} style={{
-          display: "flex", alignItems: "center", gap: 6, marginBottom: 12,
-          padding: "6px 12px", borderRadius: 20, cursor: "pointer",
-          background: pauseFilterOn ? "rgba(200,184,96,.18)" : "rgba(200,184,96,.1)",
-          border: `1px solid ${pauseFilterOn ? "var(--warning)" : "rgba(200,184,96,.3)"}`,
-          color: "var(--warning)", fontSize: ".66rem", fontWeight: 800,
-        }}>
-          ⏸️ {pausedCount} en pause {pauseFilterOn ? "· afficher tout" : ""}
-        </button>
-      )}
-
-      {/* ── Onglets Charges / Revenus ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-        <button onClick={() => { setActiveSection("depenses"); setSelected(null); }} style={{
-          padding: "11px 8px", borderRadius: 12, cursor: "pointer",
-          border: `2px solid ${activeSection === "depenses" ? "var(--danger)" : "rgba(200,112,112,.25)"}`,
-          background: activeSection === "depenses" ? "rgba(200,112,112,.12)" : "var(--surface2)",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-        }}>
-          <span style={{ fontSize: "1.1rem" }}>📌</span>
-          <span style={{ fontSize: ".68rem", fontWeight: 800, color: activeSection === "depenses" ? "var(--danger)" : "rgba(200,112,112,.55)" }}>Charges fixes</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: ".6rem", fontWeight: 700, color: "var(--danger)" }}>−{fmt(totalFixes)}</span>
-        </button>
-        <button onClick={() => { setActiveSection("revenus"); setSelected(null); }} style={{
-          padding: "11px 8px", borderRadius: 12, cursor: "pointer",
-          border: `2px solid ${activeSection === "revenus" ? "var(--success)" : "rgba(104,212,152,.25)"}`,
-          background: activeSection === "revenus" ? "rgba(104,212,152,.12)" : "var(--surface2)",
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-        }}>
-          <span style={{ fontSize: "1.1rem" }}>💰</span>
-          <span style={{ fontSize: ".68rem", fontWeight: 800, color: activeSection === "revenus" ? "var(--success)" : "rgba(104,212,152,.55)" }}>Revenus fixes</span>
-          <span style={{ fontFamily: "var(--mono)", fontSize: ".6rem", fontWeight: 700, color: "var(--success)" }}>+{fmt(totalIncomes)}</span>
-        </button>
-      </div>
-
-      {/* ── Section Charges ── */}
-      {activeSection === "depenses" && (
-        fixedExpenses.length === 0
+      {list.length === 0 ? (
+        isExp
           ? <EmptyIllustration type="fixes" title="Aucune charge fixe" sub="Ajoute tes charges récurrentes pour les déduire automatiquement" cta="+ Ajouter" onCta={onNewFixed} ctaColor="var(--danger)" />
-          : (() => {
-            const visibleExp = fixedExpenses
-              .map((f, idx) => ({ f, idx }))
-              .filter(({ f }) => !pauseFilterOn || f.paused);
-            return visibleExp.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)", fontSize:".72rem" }}>Aucune charge en pause</div>
-            ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
-              {visibleExp.map(({ f, idx }) => {
-                const cat    = categories.find(c => c.id === f.categoryId);
-                const selKey = f.id ?? idx;
-                return (
-                  <div key={selKey} style={{ ...card4(selKey, "var(--danger)"), opacity: f.paused ? .5 : 1 }}
-                    onClick={() => setSelected(selected === selKey ? null : selKey)}>
-                    <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "📌"}</span>
-                  {/* Nom sur 2 lignes max, jamais tronqué */}
-                  <div style={{
-                    fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
-                    textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
-                    width: "100%", padding: "0 2px",
-                    minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    {f.name}
-                  </div>
-                  <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>
-                    {fmt(f.amount)}
-                  </div>
-                  {f.prevAmount != null && f.prevAmount !== f.amount && f.prevAmountYM !== currentYM() && (
-                    <div style={{
-                      fontSize: ".5rem", fontWeight: 800,
-                      color: f.amount > f.prevAmount ? "var(--danger)" : "var(--success)",
-                      display: "flex", alignItems: "center", gap: 2, marginTop: 1,
-                    }}>
-                      {f.amount > f.prevAmount ? "▲" : "▼"}
-                      {Math.abs(f.amount - f.prevAmount).toFixed(2)} €
-                    </div>
-                  )}
-                  {/* Badge en pause */}
-                  {f.paused && (
-                    <div style={{
-                      fontSize: ".48rem", fontWeight: 700,
-                      color: "var(--warning)", marginTop: 2,
-                      background: "rgba(200,184,96,.12)", borderRadius: 3,
-                      padding: "1px 4px", border: "1px solid rgba(200,184,96,.25)",
-                    }}>
-                      ⏸️ En pause{f.pausedUntil ? ` jusqu'à ${f.pausedUntil}` : ""}
-                    </div>
-                  )}
-                  {/* Badge startYM */}
-                  {f.startYM && !f.paused && (
-                    <div style={{
-                      fontSize: ".48rem", fontWeight: 700,
-                      color: "var(--accent)", marginTop: 2,
-                      background: "rgba(90,184,224,.1)", borderRadius: 3,
-                      padding: "1px 4px", border: "1px solid rgba(90,184,224,.2)",
-                    }}>
-                      📅 {f.startYM}
-                    </div>
-                  )}
-                  {/* Boutons visibles au tap uniquement */}
-                  {selected === selKey && (
-                    <div style={{ display: "flex", gap: 4, marginTop: 4, position: "relative" }}>
-                      <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                        onClick={e => { e.stopPropagation(); onQuickPauseFixed?.(idx); }}
-                        onDoubleClick={e => e.stopPropagation()}
-                        title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
-                      {f.paused && (
-                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                          onClick={e => { e.stopPropagation(); setPauseTooltipId(v => v === selKey ? null : selKey); }}
-                          title="Depuis quand ?">ℹ️</button>
-                      )}
-                      <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                        onClick={e => { e.stopPropagation(); onEditFixed(idx); }}>✏️</button>
-                      <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                        onClick={e => { e.stopPropagation(); onDeleteFixed(idx); }}>✕</button>
-                      {pauseTooltipId === selKey && f.paused && (
-                        <div onClick={e => e.stopPropagation()} style={{
-                          position: "absolute", top: 28, left: 0, zIndex: 20, width: 190,
-                          background: "var(--surface3)", border: "1px solid var(--warning)", borderRadius: 10,
-                          padding: "10px 12px", boxShadow: "0 8px 24px rgba(0,0,0,.5)",
-                        }}>
-                          <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--warning)", marginBottom: 4 }}>
-                            ⏸️ En pause depuis {f.pausedFrom || "?"}
-                          </div>
-                          <div style={{ fontSize: ".58rem", color: "var(--text2)", lineHeight: 1.5 }}>
-                            {f.pausedUntil
-                              ? `Reprend automatiquement après ${f.pausedUntil}.`
-                              : "Aucune reprise programmée — réactive-la toi-même avec ▶️."}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          );
-          })()
-      )}
-
-      {/* ── Bouton ajouter charge fixe ── */}
-      {activeSection === "depenses" && (
-        <button style={{
-          width:"100%", padding:"11px", borderRadius:12, marginBottom:16,
-          border:"2px dashed rgba(200,112,112,.35)",
-          background:"rgba(200,112,112,.06)",
-          color:"var(--danger)", fontSize:".75rem", fontWeight:700, cursor:"pointer",
-          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-        }} onClick={onNewFixed}>
-          <span style={{ fontSize:"1.1rem" }}>＋</span> Ajouter une charge fixe
-        </button>
-      )}
-
-      {/* ── Section Revenus fixes ── */}
-      {activeSection === "revenus" && (
-        fixedIncomes.length === 0
-          ? <EmptyIllustration type="fixes" title="Aucun revenu fixe" sub="Ajoute tes revenus récurrents (salaire, loyer perçu…)" cta="+ Ajouter" onCta={onNewFixedIncome} ctaColor="var(--success)" />
-          : (() => {
-            const visibleInc = fixedIncomes
-              .map((f, idx) => ({ f, idx }))
-              .filter(({ f }) => !pauseFilterOn || f.paused);
-            return visibleInc.length === 0 ? (
-              <div style={{ textAlign:"center", padding:"24px 0", color:"var(--text3)", fontSize:".72rem" }}>Aucun revenu en pause</div>
-            ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
-              {visibleInc.map(({ f, idx }) => {
-                const cat    = categories.find(c => c.id === f.categoryId);
-                const selKey = `inc_${f.id ?? idx}`;
-                return (
-                  <div key={selKey} style={{ ...card4(selKey, "var(--success)"), opacity: f.paused ? .5 : 1 }}
-                    onClick={() => setSelected(selected === selKey ? null : selKey)}>
-                    <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>{cat?.icon ?? "💰"}</span>
-                    <div style={{
-                      fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
-                      textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
-                      width: "100%", padding: "0 2px",
-                      minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
-                    }}>{f.name}</div>
-                    <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>
-                      +{fmt(f.amount)}
-                    </div>
-                    {f.paused && (
-                      <div style={{ fontSize:".48rem", fontWeight:700, color:"var(--warning)", marginTop:2, background:"rgba(200,184,96,.12)", borderRadius:3, padding:"1px 4px", border:"1px solid rgba(200,184,96,.25)" }}>
-                        ⏸️ En pause{f.pausedUntil ? ` jusqu'à ${f.pausedUntil}` : ""}
-                      </div>
-                    )}
-                    {f.startYM && !f.paused && (
-                      <div style={{ fontSize:".48rem", fontWeight:700, color:"var(--accent)", marginTop:2, background:"rgba(90,184,224,.1)", borderRadius:3, padding:"1px 4px", border:"1px solid rgba(90,184,224,.2)" }}>
-                        📅 {f.startYM}
-                      </div>
-                    )}
-                    {selected === selKey && (
-                      <div style={{ display: "flex", gap: 4, marginTop: 4, position: "relative" }}>
-                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                          onClick={e => { e.stopPropagation(); onQuickPauseIncome?.(idx); }}
-                          title={f.paused ? "Réactiver" : "Mettre en pause"}>{f.paused ? "▶️" : "⏸️"}</button>
-                        {f.paused && (
-                          <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                            onClick={e => { e.stopPropagation(); setPauseTooltipId(v => v === selKey ? null : selKey); }}
-                            title="Depuis quand ?">ℹ️</button>
-                        )}
-                        <button className="btn-action" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                          onClick={e => { e.stopPropagation(); onEditFixedIncome(idx); }}>✏️</button>
-                        <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                          onClick={e => { e.stopPropagation(); onDeleteFixedIncome(idx); }}>✕</button>
-                        {pauseTooltipId === selKey && f.paused && (
-                          <div onClick={e => e.stopPropagation()} style={{
-                            position: "absolute", top: 28, left: 0, zIndex: 20, width: 190,
-                            background: "var(--surface3)", border: "1px solid var(--warning)", borderRadius: 10,
-                            padding: "10px 12px", boxShadow: "0 8px 24px rgba(0,0,0,.5)",
-                          }}>
-                            <div style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--warning)", marginBottom: 4 }}>
-                              ⏸️ En pause depuis {f.pausedFrom || "?"}
-                            </div>
-                            <div style={{ fontSize: ".58rem", color: "var(--text2)", lineHeight: 1.5 }}>
-                              {f.pausedUntil
-                                ? `Reprend automatiquement après ${f.pausedUntil}.`
-                                : "Aucune reprise programmée — réactive-le toi-même avec ▶️."}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            );
-          })()
-      )}
-
-      {/* ── Bouton ajouter revenu fixe ── */}
-      {activeSection === "revenus" && (
-        <button style={{
-          width:"100%", padding:"11px", borderRadius:12, marginBottom:16,
-          border:"2px dashed rgba(104,212,152,.35)",
-          background:"rgba(104,212,152,.06)",
-          color:"var(--success)", fontSize:".75rem", fontWeight:700, cursor:"pointer",
-          display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-        }} onClick={onNewFixedIncome}>
-          <span style={{ fontSize:"1.1rem" }}>＋</span> Ajouter un revenu fixe
-        </button>
-      )}
-
-      {/* ── Section prévisionnels ── */}
-      <SectionTitle style={{ marginTop: 4 }}>🔮 Frais prévisionnels</SectionTitle>
-      <div className="card" style={{
-        fontSize: ".75rem", color: "var(--text2)",
-        borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 10,
-      }}>
-        <span>Dépenses ponctuelles — déduites du solde estimé.</span>
-        {provTotal > 0 && (
-          <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: "var(--warning)", fontVariantNumeric: "tabular-nums", flexShrink: 0, marginLeft: 10 }}>
-            −{fmt(provTotal)}
-          </span>
-        )}
-      </div>
-
-      {/* ── Grille 4 colonnes — prévisionnels ── */}
-      {provisionalExpenses.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 7, marginBottom: 10 }}>
-          {provisionalExpenses.map(p => {
-            const selKey = `p_${p.id}`;
-            return (
-              <div key={p.id} style={card4(selKey, "var(--warning)")}
-                onClick={() => setSelected(selected === selKey ? null : selKey)}>
-                <span style={{ fontSize: "1.3rem", lineHeight: 1 }}>📋</span>
-                <div style={{
-                  fontSize: ".6rem", fontWeight: 700, color: "var(--text1)",
-                  textAlign: "center", lineHeight: 1.3, wordBreak: "break-word",
-                  width: "100%", padding: "0 2px",
-                  minHeight: "2.6em", display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {p.name}
-                </div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".65rem", color: "var(--warning)", fontVariantNumeric: "tabular-nums" }}>
-                  −{fmt(p.amount)}
-                </div>
-                {selected === selKey && (
-                  <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                    <button className="btn-action btn-del" style={{ fontSize: ".65rem", padding: "3px 6px" }}
-                      onClick={e => { e.stopPropagation(); onDeleteProvisional(p.id); }}>✕</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Formulaire / bouton ajout prévision ── */}
-      {showProvForm ? (
-        <div className="card" style={{ padding: 14, borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)" }}>
-          <div className="form-group">
-            <label>Nom</label>
-            <input type="text" value={provName} placeholder="Ex : Réparation voiture"
-              className={provErr.name ? "error" : ""}
-              onChange={e => { setProvName(e.target.value); setProvErr(v => ({...v, name: ""})); }} />
-            {provErr.name && <div className="field-error">⚠ {provErr.name}</div>}
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Montant (€)</label>
-            <input type="number" step="0.01" min="0" value={provAmt}
-              className={provErr.amt ? "error" : ""}
-              onChange={e => { setProvAmt(e.target.value); setProvErr(v => ({...v, amt: ""})); }} />
-            {provErr.amt && <div className="field-error">⚠ {provErr.amt}</div>}
-          </div>
-          <div className="grid-2" style={{ marginTop: 12, marginBottom: 0 }}>
-            <button className="btn btn-outline" style={{ width: "100%" }}
-              onClick={() => { setShowProvForm(false); setProvName(""); setProvAmt(""); setProvErr({}); }}>
-              Annuler
-            </button>
-            <button className="btn btn-primary" style={{ width: "100%", background: "var(--warning)" }}
-              onClick={handleAddProv}>
-              Ajouter
-            </button>
-          </div>
-        </div>
+          : <EmptyIllustration type="fixes" title="Aucun revenu fixe" sub="Ajoute tes revenus récurrents (salaire, loyer perçu…)" cta="+ Ajouter" onCta={onNewFixedIncome} ctaColor="var(--success)" />
       ) : (
-        <button className="btn btn-outline"
-          style={{ width: "100%", borderColor: "var(--warning)", color: "var(--warning)" }}
-          onClick={() => setShowProvForm(true)}>
-          + Ajouter une prévision
-        </button>
+        <>
+          {/* ── Avancement du mois ── */}
+          {active.length > 0 && (
+            <div className="card" data-testid="fix-progress" style={{ padding: "9px 11px", marginBottom: 9 }}>
+              <div style={{ display: "flex", fontSize: ".72rem", gap: 6 }}>
+                <span style={{ flex: 1 }}>{monthName} : <b>{doneCount}/{active.length}</b> {isExp ? "prélevés" : "reçus"}</span>
+                <span style={{ color: "var(--text2)", whiteSpace: "nowrap" }}>{isExp ? "reste à prélever" : "reste à recevoir"} <b style={{ fontFamily: "var(--mono)", color: mainColor, fontVariantNumeric: "tabular-nums" }}>{fmt(remaining)}</b></span>
+              </div>
+              <div style={{ height: 6, borderRadius: 4, background: "var(--surface3)", overflow: "hidden", marginTop: 6 }}>
+                <i style={{ display: "block", height: "100%", width: `${pct}%`, background: "linear-gradient(90deg,var(--success),var(--accent))" }} />
+              </div>
+            </div>
+          )}
+        </>
       )}
+
+      {/* ── 🔍 Repéré pour toi : une ligne, détail au toucher ── */}
+      {insights.length > 0 && (
+        <>
+          <div data-testid="insights-line" onClick={() => setShowInsights(v => !v)}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", marginBottom: showInsights ? 8 : 0, borderRadius: 13, border: "1px solid rgba(112,184,224,.45)", background: "rgba(112,184,224,.06)", fontSize: ".69rem", cursor: "pointer" }}>
+            <span>🔍</span>
+            <span style={{ flex: 1 }}>{insights.length} élément{insights.length > 1 ? "s" : ""} repéré{insights.length > 1 ? "s" : ""} pour toi</span>
+            <b style={{ color: "var(--accent)" }}>{showInsights ? "Masquer ▴" : "Voir ›"}</b>
+          </div>
+          {showInsights && (
+            <InsightsList items={insights} categories={categories}
+              onDismiss={onDismissInsight} onUpdateRecurring={onUpdateRecurringInsight} onCreateFixed={onCreateFixedInsight} />
+          )}
+        </>
+      )}
+
+      {/* ── Groupes de l'échéancier ── */}
+      {GROUPS.map(group)}
+
+      {/* ── 🔮 Prévisions ponctuelles (dépenses seulement) ── */}
+      {isExp && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 2px 6px" }}>
+            <span>🔮 Prévisions ponctuelles</span>
+            {provTotal > 0 && <span style={{ letterSpacing: 0, fontFamily: "var(--mono)", fontSize: ".69rem", color: "var(--warning)" }}>−{fmt(provTotal)}</span>}
+            <span onClick={() => setShowProvForm(v => !v)} style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontSize: ".69rem", color: "var(--accent)", cursor: "pointer" }}>{showProvForm ? "Annuler" : "＋ prévision"}</span>
+          </div>
+          {provisionalExpenses.length === 0 && !showProvForm && (
+            <div style={{ fontSize: ".64rem", color: "var(--text3)", padding: "0 2px" }}>Dépenses ponctuelles à venir — déduites du solde estimé.</div>
+          )}
+          {provisionalExpenses.length > 0 && (() => {
+            const out = provisionalExpenses.map(p => tile({ key: `p_${p.id}`, icon: "📋", name: p.name, amount: fmt(p.amount), top: "var(--warning)", dayLabel: "", dot: null }));
+            const si = provisionalExpenses.findIndex(p => `p_${p.id}` === selected);
+            if (si >= 0) {
+              const p = provisionalExpenses[si];
+              out.splice(Math.min(Math.floor(si / 3) * 3 + 3, out.length), 0,
+                <div key="abar" onClick={e => e.stopPropagation()} style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--accent)" }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: ".69rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📋 {p.name} · déduite du solde estimé</span>
+                  <button style={actBtn("var(--danger)")} onClick={() => { onDeleteProvisional(p.id); setSelected(null); }}>🗑</button>
+                </div>);
+            }
+            return <div style={grid}>{out}</div>;
+          })()}
+          {showProvForm && (
+            <div className="card" style={{ padding: 14, marginTop: 8, borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)" }}>
+              <div className="form-group">
+                <label>Nom</label>
+                <input type="text" value={provName} placeholder="Ex : Réparation voiture"
+                  className={provErr.name ? "error" : ""}
+                  onChange={e => { setProvName(e.target.value); setProvErr(v => ({ ...v, name: "" })); }} />
+                {provErr.name && <div className="field-error">⚠ {provErr.name}</div>}
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label>Montant (€)</label>
+                <input type="number" step="0.01" min="0" value={provAmt}
+                  className={provErr.amt ? "error" : ""}
+                  onChange={e => { setProvAmt(e.target.value); setProvErr(v => ({ ...v, amt: "" })); }} />
+                {provErr.amt && <div className="field-error">⚠ {provErr.amt}</div>}
+              </div>
+              <button className="btn btn-primary" style={{ width: "100%", marginTop: 12, background: "var(--warning)" }} onClick={handleAddProv}>
+                Ajouter
+              </button>
+            </div>
+          )}
+        </>
+      )}
+      <div style={{ height: 12 }} />
     </div>
   );
 }
