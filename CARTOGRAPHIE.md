@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.53.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.55.1**.
 
 ---
 
@@ -32,8 +32,7 @@ src/
 │   └── LockScreen.jsx
 └── components/
     ├── index.jsx          Delta, ItemRow, Modal, ToastContainer
-    ├── modals.jsx         tous les formulaires modaux + NumPad + briques communes (TypeButtons, TextField, IconNameField, CategoryField, DateField, MonthField, OptionsField, FormActions)
-    └── charts.jsx         ChartSVG, PatrimoineSVG
+    └── modals.jsx         tous les formulaires modaux + NumPad + briques communes (TypeButtons, TextField, IconNameField, CategoryField, DateField, MonthField, OptionsField, FormActions)
 ```
 
 Hors `src/` : `package.json`, `capacitor.config.cjs` — **tous vus en v1.40.0**. Seul `vite.config.js` n'a jamais été transmis.
@@ -56,7 +55,6 @@ Un composant utilisé par une seule vue vit dans le fichier de cette vue ; dès 
 | `styles.css` | Variables du thème, animations, classes `type-*`, `.fab`, etc. | ~410 lignes |
 | `utils.js` | `fmt`, `isIncome`, `currentYM`, `todayISO`, `daysAgoISO`, `getPrevMonth`, `txLabel`, `txTypeClass`, `txSign`, `deltaInfo`, `APP_VERSION` (à bumper avec `package.json`), `uid`, `LS_KEY` | ~140 lignes |
 | `components/index.jsx` | `Delta`, `ItemRow`, `Modal`, `ToastContainer` (`Sparkline`/`useSpark` supprimés en 1.41.1) | ~90 lignes |
-| `components/charts.jsx` | `ChartSVG`, `PatrimoineSVG` (Rapport) | ~150 lignes |
 
 ---
 
@@ -193,9 +191,13 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **v1.55.1** : `components/charts.jsx` supprimé (plus aucun import ; bundle identique au octet près).
+- **v1.55.0** : `FixesView` réécrit. `fixedStatusForMonth(f, ym, todayDay)` (exporté par FixesView.jsx) → late/next/ok/pause/later, basé sur `isActiveForMonth` + `pointedMonths` + `day` (borné au dernier jour du mois ; sans jour → « à venir »). Montant affiché = `monthlyOverrides[ym].amount ?? amount`. Nouvelles props `onTogglePointFix` / `onTogglePointIncome` (mêmes handlers que l'Historique). Pliage des groupes en `localStorage` (`fixes_fold_v1`, préférence d'affichage, pas dans les données). Supprimés car remplacés : bloc hero, 2 gros boutons, pastille « en pause », info-bulle de pause (→ ligne dans la barre d'actions), boutons « Ajouter » en pointillés (→ ＋ de la barre collée).
+- **v1.54.0** : `OptionsView` — `GROUPS` réordonné par usage (budget, épargne auto, saisie, notifications, sécurité, données) ; `desc` court affiché en sous-titre (plus de ⓘ ni `infoOpenId`) ; Importer/Réinitialiser sont des items de « Mes données » (`action`, `danger`) ; bandeau `backup-alert` si `!last || daysSinceBackup > 7` ; stats globales en pied de page.
+- **v1.53.1** : `computeMonthTotals` — revenus = type `income` uniquement, `dissolution_cagnotte` ajoutée à `decag` (les soldes/rapprochement ne changent pas) ; `monthFlows` (bilan mensuel) dérive de `computeMonthTotals`. ⚠️ Ne jamais remettre `animation-fill-mode: both` sur `.container` (le transform résiduel casse tous les `position: fixed` des écrans). `Modal` (components/index.jsx) passe par `createPortal(document.body)`. Code mort supprimé ; `components/charts.jsx` (ChartSVG, PatrimoineSVG) n'est plus importé nulle part (fichier supprimé en v1.55.1).
 - **v1.53.0** : CagnottesView en grille compacte avec barre collée (même `stickyTop` que Historique/Rapport) ; projets en bandeau, `ProjectCard` affichée sous le bandeau au toucher ; `CagModal` reçoit `onDelete` (suppression déplacée depuis la carte). La prop `onDeleteCag` de CagnottesView n'est plus utilisée.
-- **v1.52.0** : Rapport en 3 onglets (`tab` mois/annee/cats, `ym` propre au Rapport, `catPer`). `computeCategoryBreakdown(data, fromYM, toYM)` (hooks) = ancien Top 5 généralisé (sous-catégories → principale, frais fixes en ligne à part, revenus liés déduits) ; `savingsGoals` + `SAVE_SAVINGS_GOAL` ; `CategoryDetailModal` accepte `initialCatId`, `TagsModal` `initialTagId` ; sous-titre de l'en-tête remonté par `onSubtitle`. Plus utilisés (suppression à confirmer) : PeriodCompare, MonthNotes, SavingsRateModal, SuiviModal, RapportDonut, buildInsights, AnalysteLocal, import ChartSVG/PatrimoineSVG/MonthRecapSheet dans RapportView, MonthDetailModal + `monthModal` dans App.
-- **v1.51.0** : Historique — barre collée (`position: sticky; top: stickyTop` = hauteur mesurée de `.bp-header`, ResizeObserver), `activeCount`/`activePills` remontés au niveau du composant, recherche par montant. ⚠️ Ne jamais remettre `overflow-x: hidden` sur html/body/.container : ça casse tout `position: sticky` (utiliser `clip`). `HistDonut`, `BudgetBar` et `savMonth` ne sont plus utilisés (suppression à confirmer).
+- **v1.52.0** : Rapport en 3 onglets (`tab` mois/annee/cats, `ym` propre au Rapport, `catPer`). `computeCategoryBreakdown(data, fromYM, toYM)` (hooks) = ancien Top 5 généralisé (sous-catégories → principale, frais fixes en ligne à part, revenus liés déduits) ; `savingsGoals` + `SAVE_SAVINGS_GOAL` ; `CategoryDetailModal` accepte `initialCatId`, `TagsModal` `initialTagId` ; sous-titre de l'en-tête remonté par `onSubtitle`. (Code mort supprimé en v1.53.1.)
+- **v1.51.0** : Historique — barre collée (`position: sticky; top: stickyTop` = hauteur mesurée de `.bp-header`, ResizeObserver), `activeCount`/`activePills` remontés au niveau du composant, recherche par montant. ⚠️ Ne jamais remettre `overflow-x: hidden` sur html/body/.container : ça casse tout `position: sticky` (utiliser `clip`). (`HistDonut`, `BudgetBar`, `savMonth` supprimés en v1.53.1.)
 - **v1.50.1** : Historique trié du plus récent au plus ancien (semaines `[3,2,1,0]`, départage à date égale par ordre de saisie = index dans `transactions` / `offAccountEntries`).
 - **v1.50.0** : `OVERRIDE_INCOME_MONTH` (correction d'un revenu fixe pour un mois, `effectiveIncomesForMonth` la respecte) ; `categoryBudgetFor` / `categorySpentForMonth` (budget catégorie, aussi utilisés par l'alerte du Rapport) ; `simulateProjection` / `scenarioEffectForMonth` (simulation, jamais enregistrée) ; `detectInsights` (hausses de récurrentes, dépenses régulières non déclarées — `insightDismissed` + `DISMISS_INSIGHT`) ; `dailyVariableSpend` / `computeSurplus` (surplus = `computeRestToLive.available` − dépenses courantes estimées ; « ✕ » mémorisé sous `insightDismissed.surplus` = fin de cycle). Les frais fixes gardaient déjà `prevAmount`/`prevAmountYM` (affiché dans Fixes) : rien à détecter côté frais fixes.
 - **Détails (DetailModal, MonthDetailModal) alignés sur `computePeriodTotals` / `computeMonthTotals`** ; helpers `livedMonths` (mois vécus d'une période) et `fixedLinesForPeriod` (fixes ligne par ligne, somme = fixExp/fixInc) dans hooks.js — v1.49.1. Toute nouvelle vue de détail doit passer par ces helpers, jamais par `useTotalFixes` + filtre de dates à la main.
@@ -215,6 +217,6 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 
 ## 9. Ce que ce document ne couvre pas
 
-- Le contenu exact de `utils.js`, `components/index.jsx`, `components/charts.jsx` — à demander si besoin.
+- Le contenu exact de `utils.js`, `components/index.jsx` — à demander si besoin.
 - La configuration de build (`vite.config.js`, `capacitor.config.js`, workflow GitHub Actions) — voir `README.md`, section *Build APK*.
 - Le détail changelog version par version — voir `README.md`, section *Changelog*.
