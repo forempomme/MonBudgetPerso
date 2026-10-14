@@ -1,16 +1,10 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect } from "react";
-import { fmt, currentYM } from "../utils.js";
+import { fmt, currentYM, cagTypeOf, DEFAULT_CAG_TYPES } from "../utils.js";
 import { EmptyIllustration } from "./shared.jsx";
-import { computeProjectStatus } from "../hooks.js";
+import { computeProjectStatus, computeCagnottesSummary } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
-const CAG_TYPES_MAP = {
-  projet:         { icon:"🎯", label:"Projet",         color:"var(--accent)"  },
-  urgence:        { icon:"🛡️", label:"Urgence",        color:"var(--danger)"  },
-  plaisir:        { icon:"✈️", label:"Plaisir",        color:"var(--purple)"  },
-  investissement: { icon:"📈", label:"Investissement", color:"var(--success)" },
-};
 
 
 // ─────────────────────────────────────────────────────────────────
@@ -80,33 +74,24 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
 }
 
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving }) {
-  // v1.53.0 — « grille compacte » : barre collée (total, transfert, nouvelle), pastilles
-  // du mois, projets en bandeau horizontal (détail complet au toucher), cartes basses.
+  // v1.53.0 — « grille compacte » : barre collée (total, transfert, nouvelle), récap
+  // (v1.57.0 : net du mois, répartition par type, détail au toucher), projets en bandeau horizontal (détail complet au toucher), cartes basses.
   // Suppression d'une cagnotte : dans la fenêtre ✏️ (plus de ✕ sur les cartes).
   const { cagnottes, transactions } = data;
   const curM = currentYM();
-  const curY = new Date().getFullYear().toString();
   const [typeFilter, setTypeFilter] = useState("all");
   const [openProject, setOpenProject] = useState(null);
 
-  // ── Stats épargne + décagnottage ─────────────────────────────
-  const { savMonth, savYear, decagMonth, decagYear } = useMemo(() => {
-    let savMonth = 0, savYear = 0, decagMonth = 0, decagYear = 0;
-    transactions.forEach(t => {
-      const a = parseFloat(t.amount) || 0;
-      const inMonth = t.date.startsWith(curM);
-      const inYear  = t.date.startsWith(curY);
-      if (t.type === "epargne") {
-        if (inMonth) savMonth += a;
-        if (inYear)  savYear  += a;
-      } else if (t.type === "decagnottage") {
-        if (inMonth) decagMonth += a;
-        if (inYear)  decagYear  += a;
-      }
-    });
-    return { savMonth, savYear, decagMonth, decagYear };
-  }, [transactions, curM, curY]);
-  const total = cagnottes.reduce((s, c) => s + (parseFloat(c.current) || 0), 0);
+  // ── Récap (v1.57.0) : une seule source, computeCagnottesSummary (hooks.js) ──
+  const sum = useMemo(() => computeCagnottesSummary(data, curM), [data, curM]);
+  const RECAP_KEY = "cag_recap_open_v1";
+  const [recapOpen, setRecapOpen] = useState(() => { try { return localStorage.getItem(RECAP_KEY) === "1"; } catch { return false; } });
+  const toggleRecap = () => setRecapOpen(o => { try { localStorage.setItem(RECAP_KEY, o ? "0" : "1"); } catch { /* préférence non mémorisée */ } return !o; });
+  const MONTHS_ABBR = ["Janv.", "Févr.", "Mars", "Avr.", "Mai", "Juin", "Juil.", "Août", "Sept.", "Oct.", "Nov.", "Déc."];
+  const MONTHS_FULL = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+  const mIdx = ym => parseInt(ym.slice(5, 7), 10) - 1;
+  const signed = n => `${n >= 0 ? "+" : "−"}${fmt(Math.abs(n))}`;
+  const netCol = n => n >= 0 ? "var(--success)" : "var(--coral)";
 
   // Barre collée sous l'en-tête (même principe que l'Historique et le Rapport)
   const [stickyTop, setStickyTop] = useState(0);
@@ -119,7 +104,6 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
     return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
   }, []);
 
-  const chip = (col, bg) => ({ display: "inline-flex", alignItems: "center", fontSize: ".64rem", fontWeight: 800, padding: "5px 9px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0, color: col, background: bg, fontVariantNumeric: "tabular-nums" });
   const btn = pri => ({ height: 34, minWidth: 34, padding: "0 11px", borderRadius: 9, border: pri ? "none" : "1px solid var(--border)", background: pri ? "var(--accent)" : "var(--surface2)", color: pri ? "#06121c" : "var(--accent)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 });
   const secT = (txt, right) => (
     <div style={{ display: "flex", alignItems: "center", fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "4px 2px 6px" }}>
@@ -129,26 +113,76 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
   const projects = data.projects || [];
   const projOpen = projects.find(p => p.id === openProject);
   const plans = data.autoSavings || [];
-  const filtered = cagnottes.filter(c => typeFilter === "all" || c.cagType === typeFilter);
+  const cagTypes = data.cagTypes || DEFAULT_CAG_TYPES;
+  // Filtre sur un type supprimé ou plus utilisé → retour à « Toutes »
+  const activeFilter = typeFilter !== "all" && cagnottes.some(c => c.cagType === typeFilter && cagTypeOf(cagTypes, typeFilter)) ? typeFilter : "all";
+  const filtered = cagnottes.filter(c => activeFilter === "all" || c.cagType === activeFilter);
 
   return (
     <div>
-      {/* ── Barre collée : total + actions + pastilles ── */}
+      {/* ── Barre collée : total + net du mois + actions, répartition, résumé (v1.57.0) ── */}
       <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)" }}>Total mis de côté</div>
-            <div style={{ fontFamily: "var(--display)", fontSize: "1.15rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(total)}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
+              <span data-testid="cag-total" style={{ fontFamily: "var(--display)", fontSize: "1.15rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(sum.total)}</span>
+              {(sum.month.sav > 0 || sum.month.decag > 0) && (
+                <span data-testid="cag-month-net" style={{ fontSize: ".62rem", fontWeight: 800, color: netCol(sum.month.net), fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis" }}>{signed(sum.month.net)} ce mois</span>
+              )}
+            </div>
           </div>
           <button onClick={onTransfer} style={btn(false)} title="Transfert">🔄</button>
           <button onClick={onNewCag} style={btn(true)}>＋ Cagnotte</button>
         </div>
-        <div style={{ display: "flex", gap: 5, marginTop: 7, overflowX: "auto", scrollbarWidth: "none" }}>
-          <span style={chip("var(--success)", "rgba(104,212,152,.1)")}>↑ +{fmt(savMonth)} ce mois</span>
-          {decagMonth > 0 && <span style={chip("var(--coral)", "rgba(224,136,112,.1)")}>↩ −{fmt(decagMonth)} retirés</span>}
-          <span style={chip("var(--purple)", "rgba(176,144,224,.1)")}>{curY} : +{fmt(savYear)}{decagYear > 0 ? ` · −${fmt(decagYear)}` : ""}</span>
+        {sum.total > 0 && sum.byType.some(t => t.amount > 0) && (
+          <div data-testid="cag-type-bar" style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", marginTop: 7, background: "var(--surface3)" }}>
+            {sum.byType.filter(t => t.amount > 0).map(t => <i key={t.id || "none"} title={`${t.label} ${Math.round(t.pct)} %`} style={{ display: "block", height: "100%", width: `${t.pct}%`, background: t.color }} />)}
+          </div>
+        )}
+        <div data-testid="cag-recap-line" onClick={toggleRecap} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: ".66rem", color: "var(--text2)", cursor: "pointer" }}>
+          <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontVariantNumeric: "tabular-nums" }}>
+            {MONTHS_ABBR[mIdx(sum.ym)]} <b style={{ color: netCol(sum.month.net) }}>{signed(sum.month.net)}</b>
+            {sum.goal > 0
+              ? <> · {sum.year} <b style={{ color: "var(--purple)" }}>{Math.round(sum.goalPct)} %</b> de l'objectif</>
+              : <> · {sum.year} <b style={{ color: netCol(sum.yearFlows.net) }}>{signed(sum.yearFlows.net)}</b></>}
+            {sum.auto.monthly > 0 && <> · 🔁 {fmt(sum.auto.monthly)}/mois</>}
+          </span>
+          <b style={{ color: "var(--accent)", flexShrink: 0 }}>{recapOpen ? "Moins ▴" : "Détail ▾"}</b>
         </div>
       </div>
+
+      {/* ── Détail du récap : défile avec la page (pas collé) ── */}
+      {recapOpen && (() => {
+        const h6 = (t, first) => <div style={{ margin: first ? "0 0 3px" : "8px 0 3px", fontSize: ".54rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)" }}>{t}</div>;
+        const row = (l, v, k) => (
+          <div key={k || l} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "4px 0", borderTop: "1px solid var(--border-soft)", fontSize: ".7rem" }}>
+            <span style={{ color: "var(--text2)", whiteSpace: "nowrap" }}>{l}</span>
+            <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{v}</span>
+          </div>
+        );
+        const flow = f => <><span style={{ color: "var(--success)" }}>+{fmt(f.sav)}</span> / <span style={{ color: "var(--coral)" }}>−{fmt(f.decag)}</span> = <b style={{ color: netCol(f.net) }}>{signed(f.net)}</b></>;
+        return (
+          <div data-testid="cag-recap-detail" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "9px 11px", marginBottom: 10 }}>
+            {h6("Répartition", true)}
+            {sum.byType.length === 0 && row("Aucune cagnotte", "—")}
+            {sum.byType.map(t => row(<>{t.icon} {t.label} <span style={{ color: "var(--text3)" }}>· {t.count}</span></>, <><b>{fmt(t.amount)}</b> <span style={{ color: "var(--text3)" }}>· {Math.round(t.pct)} %</span></>, t.id || "none"))}
+            {h6("Mouvements")}
+            {row(MONTHS_FULL[mIdx(sum.ym)], flow(sum.month))}
+            {row(MONTHS_FULL[mIdx(sum.prevYM)], <span style={{ color: "var(--text2)" }}>{signed(sum.prev.net)} net</span>)}
+            {row(`Année ${sum.year}`, flow(sum.yearFlows))}
+            {row(`Objectif ${sum.year}`, sum.goal > 0
+              ? <><b>{Math.round(sum.goalPct)} %</b> de {fmt(sum.goal)}{sum.goal > sum.yearFlows.sav ? ` · reste ${fmt(sum.goal - sum.yearFlows.sav)}` : " · atteint 🎉"}</>
+              : <span style={{ color: "var(--text3)" }}>aucun (à fixer dans le Rapport)</span>)}
+            {h6("Objectifs & automatique")}
+            {row("Objectifs des cagnottes", sum.objectives.count > 0
+              ? <><b>{Math.round(sum.objectives.pct)} %</b> · {fmt(sum.objectives.saved)} / {fmt(sum.objectives.target)}</>
+              : <span style={{ color: "var(--text3)" }}>aucun objectif</span>)}
+            {row("Versements auto", sum.auto.count > 0 ? <>{fmt(sum.auto.monthly)}/mois ({sum.auto.count})</> : <span style={{ color: "var(--text3)" }}>aucun</span>)}
+            {row("Arrondis ce mois", sum.rounding.cag ? <>{fmt(sum.rounding.month)} → {cagTypeOf(cagTypes, sum.rounding.cag.cagType)?.icon || "🐷"} {sum.rounding.cag.name}</> : <span style={{ color: "var(--text3)" }}>désactivés</span>)}
+          </div>
+        );
+      })()}
 
       {/* ── Projets : bandeau horizontal, détail complet au toucher ── */}
       {onNewProject && (
@@ -196,13 +230,13 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 
       {/* ── Cagnottes : filtre par type + grille compacte ── */}
       {secT("🐷 Cagnottes")}
-      {cagnottes.some(c => c.cagType) && (
+      {cagnottes.some(c => cagTypeOf(cagTypes, c.cagType)) && (
         <div style={{ display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", marginBottom: 8 }}>
-          {[["all", `Toutes (${cagnottes.length})`, "var(--accent)"], ...Object.entries(CAG_TYPES_MAP).filter(([k]) => cagnottes.some(c => c.cagType === k)).map(([k, t]) => [k, `${t.icon} ${t.label}`, t.color])].map(([k, l, col]) => (
+          {[["all", `Toutes (${cagnottes.length})`, "var(--accent)"], ...cagTypes.filter(t => cagnottes.some(c => c.cagType === t.id)).map(t => [t.id, `${t.icon} ${t.label}`, t.color])].map(([k, l, col]) => (
             <button key={k} onClick={() => setTypeFilter(k)} style={{
               padding: "5px 10px", borderRadius: 11, fontSize: ".62rem", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-              border: `1px solid ${typeFilter === k ? col : "var(--border)"}`, background: typeFilter === k ? `color-mix(in srgb, ${col} 14%, var(--surface2))` : "var(--surface2)",
-              color: typeFilter === k ? col : "var(--text2)",
+              border: `1px solid ${activeFilter === k ? col : "var(--border)"}`, background: activeFilter === k ? `color-mix(in srgb, ${col} 14%, var(--surface2))` : "var(--surface2)",
+              color: activeFilter === k ? col : "var(--text2)",
             }}>{l}</button>
           ))}
         </div>
@@ -212,7 +246,7 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
         : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
             {filtered.map(c => {
-              const t = CAG_TYPES_MAP[c.cagType];
+              const t = cagTypeOf(cagTypes, c.cagType);
               const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
               const perMonth = (() => {
                 if (!c.target || !c.targetDate) return null;
