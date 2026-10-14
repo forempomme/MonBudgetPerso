@@ -10,7 +10,7 @@ import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
   ConfirmModal, DetailModal, CagHistModal,
-  QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal,
+  QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal, CagTypesModal,
 } from "./components/modals.jsx";
 import {
   AccueilView, CagnottesView, HistoriqueView,
@@ -452,6 +452,7 @@ export default function App() {
   backHandlerRef.current = () => {
     // Priorité 1 : fermer le modal le plus récent (niveau app)
     if (confirmModal)  { setConfirmModal(null);   return; }
+    if (cagTypesOpen)  { setCagTypesOpen(false);  return; }
     if (cagHistModal)  { setCagHistModal(null);   return; }
     if (detailModal)   { setDetailModal(null);    return; }
     if (deleteCatId)   { setDeleteCatId(null);    return; }
@@ -507,6 +508,7 @@ export default function App() {
   // Dépenses hors compte / rechargements (v1.42.0) : null | { mode, entry?, satId? }
   const [offModal,       setOffModal]       = useState(null);
   const [quickEditTpl,   setQuickEditTpl]   = useState(null);    // template en cours de saisie (sheet montant/date)
+  const [cagTypesOpen, setCagTypesOpen] = useState(false); // v1.56.0 : gestion des types de cagnotte
   const [quickManagerOpen, setQuickManagerOpen] = useState(false); // gestion des templates (⚙️ dans l'éventail)
   const [fixedModal,       setFixedModal]       = useState(null);
   const [fixedIncomeModal, setFixedIncomeModal] = useState(null); // null | { editingIdx: number|null }
@@ -891,6 +893,7 @@ export default function App() {
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
         onOpenQuickTemplates={() => setQuickManagerOpen(true)}
+        onOpenCagTypes={() => setCagTypesOpen(true)}
         onSaveSideAmountType={saveSideAmountType}
         onDeleteSideAmountType={deleteSideAmountType}
         onSaveTag={saveTag}
@@ -1256,6 +1259,8 @@ export default function App() {
       {cagModal && (
         <CagModal
           cagnottes={data.cagnottes}
+          cagTypes={data.cagTypes}
+          onManageTypes={() => setCagTypesOpen(true)}
           editingId={cagModal.editingId}
           onSave={cag => { saveCag(cag); setCagModal(null); }}
           onDelete={id => { setCagModal(null); deleteCag(id); }}
@@ -1265,6 +1270,7 @@ export default function App() {
       {transferModal && (
         <TransferModal
           cagnottes={data.cagnottes}
+          cagTypes={data.cagTypes}
           onSave={executeTransfer}
           onClose={() => setTransferModal(false)}
         />
@@ -1290,7 +1296,7 @@ export default function App() {
           onClose={() => setReimbModal(null)} />
       )}
       {projectModal && (
-        <ProjectModal project={projectModal.id ? projectModal : null} cagnottes={data.cagnottes} tags={data.tags || []}
+        <ProjectModal project={projectModal.id ? projectModal : null} cagnottes={data.cagnottes} cagTypes={data.cagTypes} tags={data.tags || []}
           onSave={payload => { dispatch({ type: A.SAVE_PROJECT, ...payload }); setProjectModal(null); }}
           onClose={() => setProjectModal(null)} />
       )}
@@ -1324,6 +1330,21 @@ export default function App() {
             setDeleteCatId(null);
           }}
           onClose={() => setDeleteCatId(null)}
+        />
+      )}
+      {cagTypesOpen && (
+        <CagTypesModal
+          cagTypes={data.cagTypes}
+          cagnottes={data.cagnottes}
+          onSave={cagType => { dispatch({ type: A.SAVE_CAG_TYPE, cagType }); addToast(cagType.id ? "Type modifié" : "Type créé"); }}
+          onDelete={(t, n) => setConfirmModal({
+            title: `Supprimer le type « ${t.label} » ?`,
+            msg: n > 0
+              ? `${n} cagnotte${n > 1 ? "s passeront" : " passera"} « sans type » (🐷). Leur argent et leurs objectifs ne changent pas.`
+              : "Aucune cagnotte n'utilise ce type.",
+            onConfirm: () => { dispatch({ type: A.DELETE_CAG_TYPE, id: t.id }); addToast("Type supprimé"); },
+          })}
+          onClose={() => setCagTypesOpen(false)}
         />
       )}
       {confirmModal && (
