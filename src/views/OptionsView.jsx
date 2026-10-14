@@ -173,7 +173,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
@@ -288,6 +288,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const quickTplCount = (data.quickTemplates||[]).length;
   const sideAmountTypesCount = (data.sideAmountTypes||[]).length;
   const tagsCount = (data.tags||[]).length;
+  const cagTypesCount = (data.cagTypes||[]).length;
   const last        = (data.backupHistory||[])[0];
   // Reste à vivre (v1.48.0)
   const restCfg = data.restSettings || { enabled: true, margin: 0 };
@@ -331,6 +332,11 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: roundOn && !!roundCag,
           hint: "Arrondi automatique désactivé",
           desc: "Arrondit chaque dépense vers une cagnotte" },
+        { id:"cagTypes", icon:"🗂️", label:"Types de cagnotte",
+          badge: `${cagTypesCount} type${cagTypesCount>1?"s":""}`,
+          configured: true, hint: "",
+          desc: "Projet, urgence, plaisir… à ta façon",
+          action: onOpenCagTypes },
       ]
     },
     {
