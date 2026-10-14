@@ -447,10 +447,11 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
     return () => ro?.disconnect();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [heroIndex]);
-  const heroPill = (col, bg) => ({ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".62rem", fontWeight: 700, cursor: "pointer", padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0,
+  const heroPill = (col, bg) => ({ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".66rem", fontWeight: 700, cursor: "pointer", padding: "5px 10px", borderRadius: 11, whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis",
     color: col, background: bg, border: `1px solid color-mix(in srgb, ${col} 35%, transparent)`, fontVariantNumeric: "tabular-nums" });
-  const heroRowTitle = { fontSize: ".5rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", margin: "9px 0 4px" };
-  const heroRow = { display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 1 };
+  // v1.59.1 : pastilles qui passent à la ligne (plus de défilement horizontal), carte plus aérée
+  const heroRowTitle = { fontSize: ".54rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", margin: "16px 0 7px" };
+  const heroRow = { display: "flex", flexWrap: "wrap", gap: 7 };
 
   // ── Couleur dynamique du solde ────────────────────────────────
   // Blanc par défaut, jaune sous 100 €, rouge en négatif
@@ -480,7 +481,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           border: "none",
           boxShadow: "0 4px 24px rgba(112,184,224,.2)",
           overflow: "hidden",
-          padding: "14px 14px 13px",
+          padding: "18px 16px 16px",
         }}
       >
         {/* Shimmer */}
@@ -527,10 +528,10 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             {heroSwitch(0)}
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
             <div className="hero-value" role="button" data-testid="hero-balance"
               onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
-              style={{ color: balanceColor, margin: 0, cursor: "pointer", fontSize: "1.95rem" }}>
+              style={{ color: balanceColor, margin: 0, cursor: "pointer" }}>
               <CountUp target={balance} color={balanceColor} duration={1000} />
             </div>
             {evo.deltaPct !== null && (
@@ -604,7 +605,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                 )}
               </div>
               {totalPointable > 0 && (
-                <div style={{ height: 4, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden", marginTop: 8 }}>
+                <div style={{ height: 5, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden", marginTop: 14 }}>
                   <div style={{ width: `${(nbPointed / totalPointable) * 100}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .4s ease" }} />
                 </div>
               )}
