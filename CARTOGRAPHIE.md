@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.55.1**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.57.0**.
 
 ---
 
@@ -191,6 +191,8 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **v1.57.0** : `computeCagnottesSummary(data, ym)` (hooks.js) — **seule source** du récap Cagnottes : `total`, `byType` (ordre de `cagTypes`, « Sans type » en dernier, y compris type supprimé), `month`/`prev`/`yearFlows` via `computeMonthTotals`/`computePeriodTotals` (versé = `epargne`, retiré = `decagnottage` + `dissolution_cagnotte`, virements ignorés), `goalPct` = versé de l'année / `savingsGoals[année]` (identique au Rapport), objectifs plafonnés à la cible de chaque cagnotte, versements auto actifs vers une cagnotte existante, arrondis du mois (`isRounding`). Ouverture du détail mémorisée en `localStorage` (`cag_recap_open_v1`). Anciennes pastilles du mois supprimées.
+- **v1.56.0** : `data.cagTypes` `[{ id, icon, label, color }]` (défaut `DEFAULT_CAG_TYPES` dans utils.js, couleurs en hex ; `normalizeData` ne remet les défauts que si le champ est absent — une liste vide est respectée). Actions `SAVE_CAG_TYPE` (id `ct…` à la création) et `DELETE_CAG_TYPE` (cagnottes concernées → `cagType: null`). Helpers utils `cagTypeOf(cagTypes, id)` / `cagIconOf(cagTypes, c)` — **seule source** pour l'icône/couleur d'une cagnotte (les anciennes constantes `CAG_TYPES`, `CAG_TYPES_MAP`, `CAG_ICONS` sont supprimées). `CagTypesModal` (modals.jsx, rendu par App, état `cagTypesOpen`), ouvert depuis Options (`onOpenCagTypes`) ou la fiche (`CagModal.onManageTypes`). `TypeButtons` passe à la ligne au-delà de 4 options. Le type n'entre dans aucun calcul.
 - **v1.55.1** : `components/charts.jsx` supprimé (plus aucun import ; bundle identique au octet près).
 - **v1.55.0** : `FixesView` réécrit. `fixedStatusForMonth(f, ym, todayDay)` (exporté par FixesView.jsx) → late/next/ok/pause/later, basé sur `isActiveForMonth` + `pointedMonths` + `day` (borné au dernier jour du mois ; sans jour → « à venir »). Montant affiché = `monthlyOverrides[ym].amount ?? amount`. Nouvelles props `onTogglePointFix` / `onTogglePointIncome` (mêmes handlers que l'Historique). Pliage des groupes en `localStorage` (`fixes_fold_v1`, préférence d'affichage, pas dans les données). Supprimés car remplacés : bloc hero, 2 gros boutons, pastille « en pause », info-bulle de pause (→ ligne dans la barre d'actions), boutons « Ajouter » en pointillés (→ ＋ de la barre collée).
 - **v1.54.0** : `OptionsView` — `GROUPS` réordonné par usage (budget, épargne auto, saisie, notifications, sécurité, données) ; `desc` court affiché en sous-titre (plus de ⓘ ni `infoOpenId`) ; Importer/Réinitialiser sont des items de « Mes données » (`action`, `danger`) ; bandeau `backup-alert` si `!last || daysSinceBackup > 7` ; stats globales en pied de page.
