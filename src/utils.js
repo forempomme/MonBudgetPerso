@@ -6,15 +6,11 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.57.0";
+export const APP_VERSION = "1.59.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 export const MONTHS_MINI  = ["J","F","M","A","M","J","J","A","S","O","N","D"];
-export const PALETTE = [
-  "#4d9fff","#a78bfa","#fb923c","#34d399","#f87171",
-  "#38bdf8","#c084fc","#4ade80","#fbbf24","#f472b6","#22d3ee","#a3e635",
-];
 export const LS_KEY = "budget_ultimate_2026_v10";
 
 // ─── Types de cagnotte (v1.56.0 : personnalisables dans Options) ──
@@ -43,13 +39,6 @@ export function fmt(n) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }) + " €";
-}
-
-// ─── Geometry (donut chart) ──────────────────────────────────────
-/** @returns {{ x: number, y: number }} */
-export function polar(cx, cy, r, angleDeg) {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
 // ─── ID generator ────────────────────────────────────────────────
