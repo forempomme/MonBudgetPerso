@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useState, useCallback, useRef } from "react";
+import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
 import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
@@ -845,6 +845,7 @@ export default function App() {
         onQuickPauseIncome={quickPauseIncome}
         onTogglePointFix={togglePointFix}
         onTogglePointIncome={togglePointIncome}
+        onSetFixedDay={(kind, id, day) => dispatch({ type: A.SET_FIXED_DAY, kind, id, day })}
         onSaveProvisional={saveProvisional}
         onDeleteProvisional={deleteProvisional}
         insights={insights}
@@ -957,6 +958,11 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
+  // ── 🔍 Repéré pour toi (v1.50.0) : calculé ici pour le point sur l'onglet Fixes ──
+  // v1.58.0 : recalculé seulement quand les données changent (avant : à chaque
+  // rendu, donc à chaque chiffre tapé sur le clavier de saisie).
+  const insights = useMemo(() => detectInsights(data), [data]);
+
   if (locked) {
     return (
       <LockScreen
@@ -967,8 +973,6 @@ export default function App() {
     );
   }
 
-  // ── 🔍 Repéré pour toi (v1.50.0) : calculé ici pour le point sur l'onglet Fixes ──
-  const insights = detectInsights(data);
 
   // ── Sous-titre de contexte sous le titre de page (v1.49.0) ──
   const pageSubtitle = (() => {
