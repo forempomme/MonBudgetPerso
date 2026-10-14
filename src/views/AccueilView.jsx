@@ -422,6 +422,8 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, fixedExpenses, data.fixedIncomes, balance]);
   const [evoOpen, setEvoOpen] = useState(false);
+  const [projInfo, setProjInfo] = useState(false);   // v1.61.0 : explication du calcul (ⓘ)
+  const [accOpen,  setAccOpen]  = useState(false);   // v1.61.0 : détail de la fiabilité
 
   // Bascule Solde / Projection (remplace les points du carrousel)
   const heroCardRefs = [useRef(null), useRef(null)];
@@ -452,6 +454,21 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
   // v1.59.1 : pastilles qui passent à la ligne (plus de défilement horizontal), carte plus aérée
   const heroRowTitle = { fontSize: ".54rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", margin: "16px 0 7px" };
   const heroRow = { display: "flex", flexWrap: "wrap", gap: 7 };
+
+  // ── v1.60.0 : cartes différenciées (fond teinté + pastille d'icône + titres de section) ──
+  const CARD_COL = { chq: "#8fb4f0", ven: "#d2dff5", cag: "#b090e0", fix: "#e8944a", bil: "#70b8e0" };
+  const tintCard = col => ({ background: `linear-gradient(135deg, color-mix(in srgb, ${col} 20%, var(--surface)), var(--surface) 75%)`, border: `1px solid color-mix(in srgb, ${col} 35%, var(--border))` });
+  const iconBox = (col, emoji, size = 34) => (
+    <span style={{ width: size, height: size, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      fontSize: size > 30 ? "1.05rem" : ".92rem", background: `color-mix(in srgb, ${col} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${col} 40%, transparent)` }}>{emoji}</span>
+  );
+  const secTitle = (txt, id) => (
+    <div data-testid={id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 2px 8px" }}>
+      <span>{txt}</span><span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
+    </div>
+  );
+  const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0
+    || unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0;
 
   // ── Couleur dynamique du solde ────────────────────────────────
   // Blanc par défaut, jaune sous 100 €, rouge en négatif
@@ -618,7 +635,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       <div className="hero-card" ref={heroCardRefs[1]} style={{
         background: "linear-gradient(135deg, #101f18 0%, #16321f 45%, #0e1e18 100%)",
         border: "none", boxShadow: "0 4px 24px rgba(104,212,152,.15)",
-        overflow: "hidden", paddingBottom: 18,
+        overflow: "hidden", padding: "18px 16px 16px",
       }}>
         <div style={{
           position: "absolute", top: -30, right: -30, width: 130, height: 130,
@@ -626,7 +643,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           background: "radial-gradient(circle, rgba(104,212,152,.18) 0%, transparent 70%)",
         }} />
         <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ flex: 1 }}>{simOn ? "Projection à 6 mois" : "Projection à 3 mois"}</span>
+          <span style={{ flex: 1, cursor: simOn ? "default" : "pointer" }} onClick={() => { if (!simOn) setProjInfo(v => !v); }}>{simOn ? "Projection à 6 mois" : "Projection à 3 mois"}{!simOn && <span style={{ color: "var(--accent)" }}> ⓘ</span>}</span>
           {simOn && <span style={{ fontSize: ".56rem", fontWeight: 800, color: "var(--purple)", border: "1px solid rgba(176,144,224,.5)", background: "rgba(176,144,224,.12)", borderRadius: 10, padding: "2px 8px", letterSpacing: 0, textTransform: "none" }}>🧪 simulation</span>}
           <span style={{ letterSpacing: 0, textTransform: "none" }}>{heroSwitch(1)}</span>
         </div>
@@ -636,70 +653,99 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             margin={Math.max(0, parseFloat(data.restSettings?.margin) || 0)}
             onEdit={() => setSimSheet(true)} onQuit={() => { setSimOn(false); setSimScenarios([]); }} />
         )}
-        {!simOn && <>
-
-        {/* Alerte : passera sous le seuil configuré */}
-        {projection.thresholdBreachMonth && (
-          <div style={{ display: "flex", alignItems: "center", gap:6, marginTop: 8, padding: "6px 9px", borderRadius: 8, background: "rgba(200,112,112,.14)", border: "1px solid rgba(200,112,112,.35)", position: "relative" }}>
-            <span style={{ fontSize: ".75rem" }}>⚠️</span>
-            <span style={{ fontSize: ".62rem", color: "#ffd4d4", fontWeight: 700 }}>
-              Passera sous ton seuil d'alerte ({fmt(alertThreshold)}) dès {projection.thresholdBreachMonth.label}
-            </span>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 7, marginTop: 12, position: "relative" }}>
-          {projection.months.map((m, i) => {
-            const color = m.value < 0 ? "var(--danger)" : m.value < (alertThreshold || 0) ? "var(--warning)" : "var(--success)";
-            return (
-              <div key={m.ym} style={{ display: "flex", alignItems: "center", flex: 1 }}>
-                {i > 0 && <div style={{ color: "rgba(255,255,255,.3)", fontSize: ".65rem", marginRight: 7 }}>→</div>}
-                <div style={{ flex: 1, textAlign: "center", padding: "9px 4px", borderRadius: 10, background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.55)", fontWeight: 700, textTransform: "uppercase", marginBottom: 3 }}>{m.label}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, color }}>{fmt(m.value)}</div>
-                </div>
+        {!simOn && (() => {
+          // v1.61.0 — variante C : point le plus bas en grand, courbe aujourd'hui → 3 mois
+          // avec la ligne du seuil d'alerte, pastilles « Points d'attention » / « Hypothèses ».
+          const months = projection.months || [];
+          if (!months.length) return null;
+          const low = months.reduce((m, x) => x.value < m.value ? x : m, months[0]);
+          const th  = alertEnabled && alertThreshold > 0 ? alertThreshold : null;
+          const lvl = v => v < 0 ? "#c87070" : th != null && v < th ? "#c8b860" : "#68d498";
+          const pts = [{ label: "Auj.", value: balance, today: true }, ...months];
+          const W = 340, H = 96, pad = 20;
+          const vals = pts.map(p => p.value).concat(th != null ? [th] : []);
+          // échelle serrée sur les valeurs (sinon une courbe autour de 3 400 € paraît plate)
+          const rawMx = Math.max(...vals), rawMn = Math.min(...vals), rng = Math.max(rawMx - rawMn, Math.abs(rawMx) * .05, 50);
+          const mx = rawMx + rng * .15, mn = rawMn - rng * .25, span = mx - mn;
+          const X = i => pad + i * (W - 2 * pad) / (pts.length - 1);
+          const Y = v => H - 16 - (v - mn) / span * (H - 34);
+          const n0 = v => `${v < 0 ? "−" : ""}${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v))} €`;
+          const line = pts.map((p, i) => `${X(i)},${Y(p.value)}`).join(" ");
+          const acc = projectionAccuracy.slice(0, 3);
+          const accAvg = acc.length ? acc.reduce((s, a) => s + Math.abs(a.delta), 0) / acc.length : null;
+          const pill = (col, bg) => ({ ...heroPill(col, bg), marginRight: 0 });
+          return (
+            <div style={{ position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                <span data-testid="proj-low" style={{ fontFamily: "var(--mono)", fontSize: "1.75rem", fontWeight: 800, color: lvl(low.value), fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em" }}>{fmt(low.value)}</span>
+                <span style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)" }}>au plus bas, en {low.label}</span>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Explication : la plus grosse programmée qui pèse sur la projection */}
-        {projection.biggestSchedItem && (
-          <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", marginTop: 9, position: "relative" }}>
-            💡 <b style={{ color: "#fff" }}>{projection.biggestSchedMonth.label}</b> : ta programmée "{projection.biggestSchedItem.note || "sans nom"}" de {fmt(projection.biggestSchedItem.amount)} tombe ce mois-là.
-          </div>
-        )}
-
-        <div style={{ marginTop: 9, paddingTop: 9, borderTop: "1px solid rgba(255,255,255,.1)", display: "flex", justifyContent: "space-between", fontSize: ".6rem", color: "rgba(255,255,255,.55)", position: "relative" }}>
-          <span>Flux courant net estimé (médiane/6 mois)</span>
-          <span style={{ fontWeight: 800, color: projection.variableNetMedian >= 0 ? "var(--success)" : "var(--danger)" }}>
-            {projection.variableNetMedian >= 0 ? "+" : ""}{fmt(projection.variableNetMedian)}/mois
-          </span>
-        </div>
-        <div style={{ fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginTop: 8, lineHeight: 1.5, position: "relative" }}>
-          Dépenses et revenus ponctuels (courses, freelance, remboursements…), fixes/récurrentes/programmées connues incluses. Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
-        </div>
-
-        {/* Fiabilité : ce qu'on avait annoncé vs la réalité, mois par mois */}
-        {projectionAccuracy.length > 0 && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,.1)", position: "relative" }}>
-            <div style={{ fontSize: ".6rem", fontWeight: 700, color: "rgba(255,255,255,.6)", marginBottom: 6 }}>Fiabilité de la projection</div>
-            {projectionAccuracy.slice(0, 3).map(a => {
-              const good = Math.abs(a.delta) <= 50;
-              return (
-                <div key={a.ym} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".6rem", padding: "3px 0", color: "rgba(255,255,255,.65)" }}>
-                  <span>{a.ym}</span>
-                  <span>Prévu {fmt(a.predicted)} → Réel {fmt(a.actual)}</span>
-                  <span style={{ fontWeight: 800, color: good ? "var(--success)" : Math.abs(a.delta) <= 150 ? "var(--warning)" : "var(--danger)" }}>
-                    {a.delta >= 0 ? "+" : ""}{fmt(a.delta)}
-                  </span>
+              {projInfo && (
+                <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", lineHeight: 1.5, margin: "6px 0 2px" }}>
+                  Calcul : ton solde d'aujourd'hui, plus tes fixes, récurrentes et programmées connues, plus ton flux courant habituel (médiane des 6 derniers mois : courses, freelance, remboursements…). Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
                 </div>
-              );
-            })}
-          </div>
-        )}
-        <button onClick={() => setSimSheet(true)} style={{ width: "100%", marginTop: 12, padding: "9px", borderRadius: 10, fontSize: ".66rem", fontWeight: 800, cursor: "pointer", background: "transparent", border: "1px dashed rgba(176,144,224,.6)", color: "var(--purple)", position: "relative" }}>🧪 Et si… ?</button>
-        </>}
+              )}
+              <svg data-testid="proj-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block", marginTop: 6 }}>
+                {th != null && <>
+                  <line x1="0" x2={W} y1={Y(th)} y2={Y(th)} stroke="#c8b860" strokeDasharray="4 4" strokeWidth="1" opacity=".7" />
+                  <text x={(X(1) + X(2)) / 2} y={Y(th) + 12} fill="#c8b860" fontSize="9" textAnchor="middle">seuil {n0(th)}</text>
+                </>}
+                <polygon points={`${X(0)},${H - 16} ${line} ${X(pts.length - 1)},${H - 16}`} fill="rgba(104,212,152,.12)" />
+                <polyline points={line} fill="none" stroke="#68d498" strokeWidth="2.5" strokeLinejoin="round" />
+                {pts.map((p, i) => (
+                  <g key={i}>
+                    <circle cx={X(i)} cy={Y(p.value)} r={p.today ? 3.5 : 4.5} fill={p.today ? "#70b8e0" : lvl(p.value)} stroke="#0e1e18" strokeWidth="2" />
+                    <text x={X(i)} y={Y(p.value) - 9} fill={p.today ? "#70b8e0" : lvl(p.value)} fontSize="10.5" fontWeight="800" textAnchor="middle">{n0(p.value)}</text>
+                    <text x={X(i)} y={H - 2} fill="rgba(255,255,255,.5)" fontSize="9" fontWeight="700" textAnchor="middle">{p.label}</text>
+                  </g>
+                ))}
+              </svg>
+
+              {(projection.thresholdBreachMonth || projection.biggestSchedItem || low.value < 0) && (
+                <>
+                  <div style={heroRowTitle}>Points d'attention</div>
+                  <div data-testid="proj-row-alert" style={heroRow}>
+                    {low.value < 0 && <span style={pill("#c87070", "rgba(200,112,112,.12)")}>🚨 Découvert en {low.label}</span>}
+                    {projection.thresholdBreachMonth && low.value >= 0 && (
+                      <span style={pill("#c87070", "rgba(200,112,112,.12)")}>⚠️ Sous ton seuil ({fmt(alertThreshold)}) en {projection.thresholdBreachMonth.label}</span>
+                    )}
+                    {projection.biggestSchedItem && (
+                      <span style={pill("#c8b860", "rgba(200,184,96,.1)")}>📅 {projection.biggestSchedItem.note || "Programmée"} −{fmt(projection.biggestSchedItem.amount)} en {projection.biggestSchedMonth.label}</span>
+                    )}
+                  </div>
+                </>
+              )}
+
+              <div style={heroRowTitle}>Hypothèses</div>
+              <div data-testid="proj-row-hyp" style={heroRow}>
+                <span style={pill(projection.variableNetMedian >= 0 ? "#68d498" : "#c87070", "rgba(104,212,152,.08)")}>
+                  〰 Flux courant {projection.variableNetMedian >= 0 ? "+" : ""}{fmt(projection.variableNetMedian)}/mois
+                </span>
+                {accAvg != null && (
+                  <span role="button" data-testid="proj-acc" onClick={() => setAccOpen(o => !o)} style={pill("#70b8e0", "rgba(112,184,224,.1)")}>
+                    🎯 Fiabilité ±{fmt(accAvg)} {accOpen ? "▴" : "›"}
+                  </span>
+                )}
+                <span role="button" data-testid="proj-sim" onClick={() => setSimSheet(true)} style={pill("#b090e0", "rgba(176,144,224,.12)")}>🧪 Et si… ? ›</span>
+              </div>
+              {accOpen && acc.length > 0 && (
+                <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid rgba(255,255,255,.08)" }}>
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", marginBottom: 4 }}>Ce qu'on avait annoncé, comparé à la réalité :</div>
+                  {acc.map(a => {
+                    const good = Math.abs(a.delta) <= 50;
+                    return (
+                      <div key={a.ym} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".6rem", padding: "3px 0", color: "rgba(255,255,255,.65)", fontVariantNumeric: "tabular-nums" }}>
+                        <span>{MONTHS_FR[parseInt(a.ym.slice(5, 7), 10) - 1]}</span>
+                        <span>Prévu {fmt(a.predicted)} → Réel {fmt(a.actual)}</span>
+                        <span style={{ fontWeight: 800, color: good ? "var(--success)" : Math.abs(a.delta) <= 150 ? "var(--warning)" : "var(--danger)" }}>{a.delta >= 0 ? "+" : ""}{fmt(a.delta)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
       </div>
       {simSheet && (
@@ -761,6 +807,8 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         </Modal>
       )}
 
+      {hasTodo && secTitle("À traiter", "sec-todo")}
+
       {/* ── 💡 Surplus de fin de cycle → cagnotte (v1.50.0) ── */}
       {surplus?.show && (
         <SurplusCard key={surplus.cycleEnd + surplus.amount} surplus={surplus} cagnottes={cagnottes} cagTypes={data.cagTypes}
@@ -778,13 +826,13 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         const oldest = pend[0];
         const alertCol = oldest.level === "expired" || oldest.level === "veryold" ? "var(--danger)" : oldest.level === "old" ? "var(--warning)" : "var(--text2)";
         return (
-          <div onClick={() => setChequesOpen(true)} style={{
-            display: "flex", alignItems: "center", gap: 10, margin: "0 0 12px", padding: "10px 13px", borderRadius: 14,
-            background: "var(--chq-glow)", border: "1px solid var(--chq-border)", cursor: "pointer",
+          <div data-testid="card-cheques" onClick={() => setChequesOpen(true)} style={{
+            display: "flex", alignItems: "center", gap: 11, margin: "0 0 10px", padding: "10px 13px", borderRadius: 14,
+            ...tintCard(CARD_COL.chq), cursor: "pointer",
           }}>
-            <span style={{ fontSize: "1rem" }}>🧾</span>
+            {iconBox(CARD_COL.chq, "🧾")}
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: ".7rem", fontWeight: 800, color: "var(--chq)" }}>
+              <div style={{ fontSize: ".7rem", fontWeight: 800, color: CARD_COL.chq }}>
                 {pend.length} chèque{pend.length > 1 ? "s" : ""} non encaissé{pend.length > 1 ? "s" : ""} · {fmt(total)}
               </div>
               <div style={{ fontSize: ".58rem", color: alertCol, marginTop: 2 }}>
@@ -914,12 +962,12 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             <style>{`@keyframes av-sh{0%{left:-60%;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:110%;opacity:0}}`}</style>
 
             {/* Carte déclencheur — état fermé, inchangée visuellement */}
-            <div onClick={()=>setOpenUpcoming(true)} style={{ overflow:"hidden", borderRadius:14, border:`1px solid ${Cbord}`, background:"linear-gradient(135deg,rgba(220,228,240,.09),rgba(200,215,235,.03))", position:"relative", marginBottom:12, cursor:"pointer", userSelect:"none" }}>
+            <div data-testid="card-upcoming" onClick={()=>setOpenUpcoming(true)} style={{ overflow:"hidden", borderRadius:14, ...tintCard(CARD_COL.ven), position:"relative", marginBottom:10, cursor:"pointer", userSelect:"none" }}>
               <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(255,255,255,.18),rgba(200,220,255,.08),transparent)", zIndex:1 }}/>
               <div style={{ position:"absolute", top:0, left:"-60%", width:"55%", height:"100%", background:"linear-gradient(105deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%)", animation:"av-sh 4s ease-in-out infinite", pointerEvents:"none", zIndex:1 }}/>
               <div style={{ position:"absolute", top:-20, right:-20, width:70, height:70, borderRadius:"50%", background:"radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%)", pointerEvents:"none" }}/>
               <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px 4px", position:"relative", zIndex:2 }}>
-                <span style={{ fontSize:".9rem" }}>⏳</span>
+                {iconBox(CARD_COL.ven, "⏳")}
                 <span style={{ fontSize:".68rem", fontWeight:800, color:C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
                 <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                   {recurItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(220,228,240,.10)", color:C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>}
@@ -1051,19 +1099,26 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       {/* ── 🐷 Cagnottes + 📌 Fixes ── v1.49.0 : cartes sur une ligne ;
            le taux d'épargne du mois est affiché dans le détail (tap). */}
       <Sec id="cagnottes_fixes">
+      {secTitle("Patrimoine", "sec-patrimoine")}
       <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="stat-mini dash-cagnotte2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5 }}
+        <div className="stat-mini" data-testid="card-cagnottes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, ...tintCard(CARD_COL.cag) }}
           onClick={() => {
             const rate     = curMonth.inc > 0 ? Math.round((savMonth / curMonth.inc) * 100) : null;
             const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
             onShowDetail("cagnottes", "all", { rate, prevRate });
           }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>🐷 Cagnottes</div>
-          <div className="stat-val" style={{ margin: 0, color: "var(--purple)", whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
+          {iconBox(CARD_COL.cag, "🐷", 30)}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.cag }}>Cagnottes</div>
+            <div className="stat-val" style={{ margin: "2px 0 0", color: CARD_COL.cag, whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
+          </div>
         </div>
-        <div className="stat-mini dash-fixe2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "default" }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>📌 Fixes/mois</div>
-          <div className="stat-val" style={{ margin: 0, color: "#e8944a", whiteSpace: "nowrap" }}>{fmt(tf)}</div>
+        <div className="stat-mini" data-testid="card-fixes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, ...tintCard(CARD_COL.fix), cursor: "default" }}>
+          {iconBox(CARD_COL.fix, "📌", 30)}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.fix }}>Fixes / mois</div>
+            <div className="stat-val" style={{ margin: "2px 0 0", color: CARD_COL.fix, whiteSpace: "nowrap" }}>{fmt(tf)}</div>
+          </div>
         </div>
       </div>
       </Sec>
@@ -1157,6 +1212,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       {/* ── 📊 Bilan ── v1.49.0 : « Mois en cours » + « Année en cours » fusionnés,
            sélecteur Mois | Année (revient toujours sur le mois à l'ouverture). */}
       <Sec id="mois">
+      {secTitle("Résultats", "sec-resultats")}
       {(() => {
         const isM = bilanPer === "month";
         const B = isM
@@ -1171,9 +1227,10 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         const val  = color => ({ fontFamily: "var(--mono)", fontSize: ".98rem", fontWeight: 800, marginTop: 3, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
         const arrow = <span className="stat-arrow">›</span>;
         return (
-          <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 11px 8px" }}>
-              <span style={{ flex: 1, fontWeight: 800, fontSize: ".56rem", letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text2)" }}>📊 Bilan</span>
+          <div className="card" data-testid="card-bilan" style={{ padding: 0, overflow: "hidden", marginBottom: 12, ...tintCard(CARD_COL.bil) }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px 8px" }}>
+              {iconBox(CARD_COL.bil, "📊")}
+              <span style={{ flex: 1, fontWeight: 800, fontSize: ".6rem", letterSpacing: ".1em", textTransform: "uppercase", color: CARD_COL.bil }}>Bilan</span>
               <div style={{ display: "flex", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 3, gap: 3, width: 168 }}>
                 {[["month", MONTHS_FR[now.getMonth()]], ["year", String(now.getFullYear())]].map(([k, l]) => (
                   <button key={k} onClick={() => setBilanPer(k)}
