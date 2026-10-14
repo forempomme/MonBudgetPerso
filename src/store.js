@@ -1,4 +1,4 @@
-import { uid, todayISO, getPrevMonth, currentYM } from "./utils.js";
+import { uid, todayISO, getPrevMonth, currentYM, DEFAULT_CAG_TYPES } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  JSDoc Types
@@ -21,7 +21,7 @@ import { uid, todayISO, getPrevMonth, currentYM } from "./utils.js";
  * @property {number}  current
  * @property {number|null}  target
  * @property {string|null}  targetDate  – ISO "YYYY-MM-DD"
- * @property {string|null}  cagType     – "projet"|"urgence"|"plaisir"|"investissement"|null
+ * @property {string|null}  cagType     – id d'un type de data.cagTypes (défaut : "projet"|"urgence"|"plaisir"|"investissement") ou null
  *
  * @typedef {Object} Category
  * @property {string}  id
@@ -94,6 +94,8 @@ export const A = /** @type {const} */ ({
   SAVE_TAG:                 "SAVE_TAG",
   DELETE_TAG:               "DELETE_TAG",
   SAVE_SIDE_AMOUNT_TYPE:    "SAVE_SIDE_AMOUNT_TYPE",
+  SAVE_CAG_TYPE:            "SAVE_CAG_TYPE",      // v1.56.0
+  DELETE_CAG_TYPE:          "DELETE_CAG_TYPE",    // v1.56.0
   DELETE_SIDE_AMOUNT_TYPE:  "DELETE_SIDE_AMOUNT_TYPE",
   SAVE_CATEGORY_THRESHOLD:  "SAVE_CATEGORY_THRESHOLD",
   IMPORT_DATA:              "IMPORT_DATA",
@@ -206,6 +208,9 @@ export const DEFAULT_DATA = {
   // Déclenchés par un appui long sur le bouton +. Le montant et la date
   // restent à saisir à chaque fois (jamais mémorisés).
   quickTemplates:            [],
+  // Types de cagnotte (v1.56.0) — [{ id, icon, label, color }], gérés dans Options.
+  // Purement visuels : n'entrent dans aucun calcul.
+  cagTypes:                  DEFAULT_CAG_TYPES,
   // Types de "montants à part" (v1.39.32) — [{ id, label, icon }]. Purement
   // informatif : jamais compté dans aucun calcul de solde. "Tickets resto"
   // préconfiguré comme premier type, d'autres peuvent être ajoutés depuis
@@ -279,6 +284,7 @@ export function normalizeData(saved) {
     restSettings: { ...DEFAULT_DATA.restSettings, ...(src.restSettings || {}) },
     insightDismissed: src.insightDismissed || {},
     savingsGoals: src.savingsGoals || {},
+    cagTypes: Array.isArray(src.cagTypes) ? src.cagTypes : DEFAULT_CAG_TYPES,
   };
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
@@ -906,6 +912,24 @@ export function reducer(state, action) {
         transactions: state.transactions.map(t => ({
           ...t, tagIds: (t.tagIds || []).filter(tid => tid !== action.id)
         })),
+      };
+
+    case A.SAVE_CAG_TYPE: {
+      const { cagType } = action;
+      const list = state.cagTypes || DEFAULT_CAG_TYPES;
+      if (cagType.id && list.some(t => t.id === cagType.id)) {
+        return { ...state, cagTypes: list.map(t => t.id === cagType.id ? { ...t, ...cagType } : t) };
+      }
+      return { ...state, cagTypes: [...list, { ...cagType, id: uid("ct") }] };
+    }
+
+    // Supprime un type : les cagnottes qui l'utilisaient passent « sans type »
+    // (argent, objectif et historique inchangés).
+    case A.DELETE_CAG_TYPE:
+      return {
+        ...state,
+        cagTypes: (state.cagTypes || DEFAULT_CAG_TYPES).filter(t => t.id !== action.id),
+        cagnottes: state.cagnottes.map(c => c.cagType === action.id ? { ...c, cagType: null } : c),
       };
 
     case A.SAVE_SIDE_AMOUNT_TYPE: {
