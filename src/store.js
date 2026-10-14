@@ -76,6 +76,7 @@ export const A = /** @type {const} */ ({
   TOGGLE_POINT_TX:     "TOGGLE_POINT_TX",
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
   TOGGLE_POINT_INCOME: "TOGGLE_POINT_INCOME",
+  SET_FIXED_DAY:       "SET_FIXED_DAY",       // v1.58.0 : jour choisi depuis une tuile des Fixes
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   OVERRIDE_INCOME_MONTH: "OVERRIDE_INCOME_MONTH",   // v1.50.0
   SAVE_RECURRING:      "SAVE_RECURRING",
@@ -524,9 +525,19 @@ export function reducer(state, action) {
       if (cag.id) {
         return {
           ...state,
-          cagnottes: state.cagnottes.map(c =>
-            c.id === cag.id ? { ...c, ...cag } : c
-          ),
+          cagnottes: state.cagnottes.map(c => {
+            if (c.id !== cag.id) return c;
+            // v1.58.0 : un changement manuel de « Déjà épargné » laisse une trace
+            // dans l'historique de la cagnotte (c.adjustments). Ce n'est PAS une
+            // transaction : aucun effet sur le solde bancaire ni sur le versé/retiré.
+            const before = parseFloat(c.current) || 0;
+            const after  = cag.current != null ? (parseFloat(cag.current) || 0) : before;
+            const diff   = Math.round((after - before) * 100) / 100;
+            const adjustments = diff !== 0
+              ? [...(c.adjustments || []), { id: uid("adj"), date: todayISO(), amount: diff, before, after }]
+              : c.adjustments;
+            return { ...c, ...cag, ...(adjustments ? { adjustments } : {}) };
+          }),
         };
       }
       return {
@@ -811,6 +822,13 @@ export function reducer(state, action) {
         transactions: state.transactions.map(t => t.id !== action.id ? t
           : { ...t, pointed: true, issuedDate: t.issuedDate || t.date, date: action.date }),
       };
+
+    // v1.58.0 : change uniquement le jour de prélèvement/versement (aucun autre champ touché)
+    case A.SET_FIXED_DAY: {
+      const key = action.kind === "income" ? "fixedIncomes" : "fixedExpenses";
+      const day = Math.min(31, Math.max(1, parseInt(action.day, 10) || 1));
+      return { ...state, [key]: (state[key] || []).map(f => f.id === action.id ? { ...f, day } : f) };
+    }
 
     case A.TOGGLE_POINT_FIX:
       return {
