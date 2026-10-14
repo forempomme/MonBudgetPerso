@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -1285,4 +1285,58 @@ export function computeCategoryBreakdown(data, fromYM, toYM) {
   if (fix > 0) rows.push({ id: "__fixes__", gross: fix, deducted: 0, net: fix, subs: [] });
   rows.sort((a, b) => b.net - a.net);
   return { rows, total: rows.reduce((s, r) => s + r.net, 0) };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  computeCagnottesSummary — v1.57.0 : récap de l'écran Cagnottes
+//  Versé / retiré = mêmes règles que le Rapport (computeMonthTotals /
+//  computePeriodTotals : épargne vs décagnottage + dissolution).
+//  Objectif annuel = savingsGoals[année] comparé au versé de l'année,
+//  exactement comme la carte « Objectif » du Rapport.
+//  Purement informatif : ne modifie aucun solde.
+// ─────────────────────────────────────────────────────────────────
+export function computeCagnottesSummary(data, ym = currentYM()) {
+  const txs = data.transactions || [];
+  const cags = data.cagnottes || [];
+  const types = data.cagTypes || DEFAULT_CAG_TYPES;
+  const amt = c => parseFloat(c.current) || 0;
+  const total = cags.reduce((s, c) => s + amt(c), 0);
+
+  // Répartition par type (types dans l'ordre choisi, « Sans type » en dernier)
+  const known = new Set(types.map(t => t.id));
+  const byType = types
+    .map(t => { const list = cags.filter(c => c.cagType === t.id); return { id: t.id, icon: t.icon, label: t.label, color: t.color, count: list.length, amount: list.reduce((s, c) => s + amt(c), 0) }; })
+    .filter(t => t.count > 0);
+  const untyped = cags.filter(c => !c.cagType || !known.has(c.cagType));
+  if (untyped.length) byType.push({ id: null, icon: "🐷", label: "Sans type", color: "var(--khaki)", count: untyped.length, amount: untyped.reduce((s, c) => s + amt(c), 0) });
+  const pos = byType.reduce((s, t) => s + Math.max(0, t.amount), 0);
+  byType.forEach(t => { t.pct = pos > 0 ? Math.max(0, t.amount) / pos * 100 : 0; });
+
+  const flows = (sav, decag) => ({ sav, decag, net: sav - decag });
+  const m = computeMonthTotals(txs, data.fixedExpenses, data.fixedIncomes, ym);
+  const prevYM = getPrevMonth(ym);
+  const p = computeMonthTotals(txs, data.fixedExpenses, data.fixedIncomes, prevYM);
+  const year = ym.slice(0, 4);
+  const y = computePeriodTotals(txs, data.fixedExpenses, data.fixedIncomes, `${year}-01`, `${year}-12`);
+  const goal = parseFloat((data.savingsGoals || {})[year]) || 0;
+
+  // Objectifs des cagnottes : part atteinte (plafonnée à l'objectif de chacune)
+  const withTarget = cags.filter(c => parseFloat(c.target) > 0);
+  const objTarget = withTarget.reduce((s, c) => s + parseFloat(c.target), 0);
+  const objSaved  = withTarget.reduce((s, c) => s + Math.min(Math.max(0, amt(c)), parseFloat(c.target)), 0);
+
+  const plans = (data.autoSavings || []).filter(a => a.enabled && cags.some(c => c.id === a.cagnotteId));
+  const roundCag = data.roundingEnabled ? cags.find(c => c.id === data.roundingCagnotteId) : null;
+  const roundingMonth = txs.filter(t => t.isRounding && (t.date || "").startsWith(ym)).reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+
+  return {
+    total, byType, ym, prevYM, year,
+    month: flows(m.sav, m.decag),
+    prev:  flows(p.sav, p.decag),
+    yearFlows: flows(y.sav, y.decag),
+    goal, goalPct: goal > 0 ? y.sav / goal * 100 : null,
+    objectives: { count: withTarget.length, saved: objSaved, target: objTarget, pct: objTarget > 0 ? objSaved / objTarget * 100 : null },
+    auto: { count: plans.length, monthly: plans.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0) },
+    rounding: { cag: roundCag || null, month: roundingMonth },
+  };
 }
