@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
 const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -1077,7 +1077,7 @@ function plusDaysISO(n) {
 /** Boutons de type — même rendu que les 4 types de la saisie d'une dépense */
 function TypeButtons({ options, value, onChange, locked }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${options.length}, 1fr)`, gap: 6, marginBottom: 10 }}>
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(options.length, 4)}, 1fr)`, gap: 6, marginBottom: 10 }}>
       {options.map(({ k, emoji, label, color }) => {
         const sel = value === k;
         const dim = locked && !sel;
@@ -1091,7 +1091,7 @@ function TypeButtons({ options, value, onChange, locked }) {
               cursor: locked ? "default" : "pointer", touchAction: "manipulation", opacity: dim ? .35 : 1,
             }}>
             <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>{emoji}</span>
-            <span style={{ fontSize: ".6rem", fontWeight: 700, color: sel ? color : "var(--text3)", whiteSpace: "nowrap" }}>{label}</span>
+            <span style={{ fontSize: ".6rem", fontWeight: 700, color: sel ? color : "var(--text3)", whiteSpace: "nowrap", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
           </button>
         );
       })}
@@ -1453,13 +1453,8 @@ export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, edit
 // ─────────────────────────────────────────────────────────────────
 //  Cagnotte modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
-const CAG_TYPES = [
-  { id:"projet",         icon:"🎯", label:"Projet",          color:"var(--accent)"   },
-  { id:"urgence",        icon:"🛡️", label:"Urgence",         color:"var(--danger)"   },
-  { id:"plaisir",        icon:"✈️", label:"Plaisir",         color:"var(--purple)"   },
-  { id:"investissement", icon:"📈", label:"Invest.",         color:"var(--success)"  },
-];
-export function CagModal({ cagnottes, editingId, onSave, onDelete, onClose }) {
+// v1.56.0 : les types viennent de data.cagTypes (gérés dans Options › Types de cagnotte)
+export function CagModal({ cagnottes, cagTypes = DEFAULT_CAG_TYPES, editingId, onSave, onDelete, onClose, onManageTypes }) {
   const toast = useToast();
   const c     = editingId ? cagnottes.find(x => x.id === editingId) : null;
 
@@ -1491,7 +1486,8 @@ export function CagModal({ cagnottes, editingId, onSave, onDelete, onClose }) {
       target: amountOf(target) || null,
       targetDate: targetDate || null,
       current: amountOf(current) || 0,
-      cagType: cagType || null,
+      // un type supprimé pendant que la fiche était ouverte → « sans type »
+      cagType: cagTypes.some(t => t.id === cagType) ? cagType : null,
     });
     toast(editingId ? "Cagnotte modifiée" : "Cagnotte créée");
   }
@@ -1514,8 +1510,15 @@ export function CagModal({ cagnottes, editingId, onSave, onDelete, onClose }) {
 
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier la cagnotte" : "Nouvelle cagnotte"}>
-      <TypeButtons value={cagType} onChange={k => setCagType(cagType === k ? null : k)}
-        options={CAG_TYPES.map(t => ({ k: t.id, emoji: t.icon, label: t.label, color: t.color }))} />
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+        <span style={{ flex: 1, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)" }}>Type</span>
+        {onManageTypes && <button type="button" data-testid="manage-cag-types" {...tap(onManageTypes)}
+          style={{ background: "none", border: "none", padding: "2px 0", color: "var(--accent)", fontSize: ".66rem", fontWeight: 800, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit" }}>⚙️ Gérer les types</button>}
+      </div>
+      {cagTypes.length > 0
+        ? <TypeButtons value={cagType} onChange={k => setCagType(cagType === k ? null : k)}
+            options={cagTypes.map(t => ({ k: t.id, emoji: t.icon, label: t.label, color: t.color }))} />
+        : <div style={{ fontSize: ".64rem", color: "var(--text3)", marginBottom: 10 }}>Aucun type — crée-en avec « ⚙️ Gérer les types ».</div>}
       <TextField label="Nom" value={name} error={errors.name} placeholder="Ex : Vacances Bretagne"
         onChange={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
       <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
@@ -1543,7 +1546,7 @@ export function CagModal({ cagnottes, editingId, onSave, onDelete, onClose }) {
 // ─────────────────────────────────────────────────────────────────
 //  Transfer modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
-export function TransferModal({ cagnottes, onSave, onClose }) {
+export function TransferModal({ cagnottes, cagTypes = DEFAULT_CAG_TYPES, onSave, onClose }) {
   const toast  = useToast();
   const [mode,   setMode]  = useState("transfer"); // "transfer" | "withdraw"
   const [amt,    setAmt]   = useState("");
@@ -1552,7 +1555,7 @@ export function TransferModal({ cagnottes, onSave, onClose }) {
   const [reason, setReason]= useState("");
   const [errors, setErrors] = useState({});
   const isWithdraw = mode === "withdraw";
-  const cagItems = cagnottes.map(c => ({ id: c.id, icon: CAG_TYPES.find(t => t.id === c.cagType)?.icon || "🐷", name: c.name, sub: fmt(c.current) }));
+  const cagItems = cagnottes.map(c => ({ id: c.id, icon: cagIconOf(cagTypes, c), name: c.name, sub: fmt(c.current) }));
 
   function handleSave() {
     const e = {};
@@ -1867,7 +1870,7 @@ export function ImportPreviewModal({ fileName, fileData, currentData, appVersion
 //  ProjectModal — v1.47.0 : projet avec échéance (cagnotte + tag)
 //  « __new__ » = créer la cagnotte / le tag au nom du projet.
 // ─────────────────────────────────────────────────────────────────
-export function ProjectModal({ project = null, cagnottes = [], tags = [], onSave, onClose }) {
+export function ProjectModal({ project = null, cagnottes = [], cagTypes = DEFAULT_CAG_TYPES, tags = [], onSave, onClose }) {
   const toast = useToast();
   const [icon, setIcon]   = useState(project?.icon || "");
   const [name, setName]   = useState(project?.name || "");
@@ -1880,7 +1883,7 @@ export function ProjectModal({ project = null, cagnottes = [], tags = [], onSave
   const [errors, setErrors] = useState({});
   const target = amountOf(amt);
   const cagItems = [{ id: "__new__", icon: "＋", name: "Nouvelle cagnotte" },
-    ...cagnottes.map(c => ({ id: c.id, icon: CAG_TYPES.find(t => t.id === c.cagType)?.icon || "🐷", name: c.name, sub: fmt(c.current) }))];
+    ...cagnottes.map(c => ({ id: c.id, icon: cagIconOf(cagTypes, c), name: c.name, sub: fmt(c.current) }))];
   const tagItems = [{ id: "__new__", icon: "＋", name: "Nouveau tag" }, ...tags.map(t => ({ id: t.id, icon: t.icon, name: t.name }))];
   const savedNow = cagId !== "__new__" ? (parseFloat(cagnottes.find(c => c.id === cagId)?.current) || 0) : 0;
   const months = (() => { const [ty, tm] = (deadline || "").split("-").map(Number); const n = new Date();
@@ -1980,6 +1983,93 @@ export function ReimbursementModal({ reimbursement = null, onSave, onDelete, onR
 // ─────────────────────────────────────────────────────────────────
 //  Confirm modal
 // ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+//  Types de cagnotte — v1.56.0 (Options › Épargne automatique, ou
+//  « ⚙️ Gérer les types » depuis la fiche d'une cagnotte)
+// ─────────────────────────────────────────────────────────────────
+export function CagTypesModal({ cagTypes = DEFAULT_CAG_TYPES, cagnottes = [], onSave, onDelete, onClose }) {
+  const [editing, setEditing] = useState(null);   // null | "new" | id
+  const [icon,  setIcon]  = useState("");
+  const [name,  setName]  = useState("");
+  const [color, setColor] = useState(CAG_TYPE_COLORS[0]);
+  const [errors, setErrors] = useState({});
+  const countOf = id => cagnottes.filter(c => c.cagType === id).length;
+
+  function start(t) {
+    setEditing(t ? t.id : "new");
+    setIcon(t?.icon || ""); setName(t?.label || "");
+    setColor(t?.color || CAG_TYPE_COLORS[cagTypes.length % CAG_TYPE_COLORS.length]);
+    setErrors({});
+  }
+  function save() {
+    const e = {};
+    if (!name.trim()) e.name = "Nom requis";
+    else if (cagTypes.some(t => t.id !== editing && t.label.trim().toLowerCase() === name.trim().toLowerCase())) e.name = "Ce type existe déjà";
+    setErrors(e);
+    if (Object.keys(e).length) return;
+    onSave({ ...(editing !== "new" ? { id: editing } : {}), icon: icon.trim() || "🗂️", label: name.trim(), color });
+    setEditing(null);
+  }
+  const smallBtn = col => ({ background: "transparent", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 9px", color: col || "var(--text2)", fontSize: ".72rem", cursor: "pointer", minHeight: 30, touchAction: "manipulation", fontFamily: "inherit" });
+
+  return (
+    <Modal onClose={onClose} title="">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <div className="modal-title" style={{ marginBottom: 0 }}>🗂️ Types de cagnotte</div>
+        <button type="button" {...tap(onClose)} style={smallBtn()}>✕</button>
+      </div>
+      <div style={{ fontSize: ".66rem", color: "var(--text2)", lineHeight: 1.5, marginBottom: 12 }}>
+        Le type sert à classer et filtrer tes cagnottes (icône + couleur de bordure). Il ne change aucun calcul.
+      </div>
+
+      {cagTypes.length === 0 && <div style={{ textAlign: "center", fontSize: ".7rem", color: "var(--text3)", padding: "10px 0" }}>Aucun type pour l'instant.</div>}
+      {cagTypes.map(t => {
+        const n = countOf(t.id);
+        return (
+          <div key={t.id} data-cagtype={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", marginBottom: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderLeft: `3px solid ${t.color}`, borderRadius: 10, outline: editing === t.id ? "1.5px solid var(--accent)" : "none" }}>
+            <span style={{ fontSize: "1.05rem" }}>{t.icon}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: ".78rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.label}</div>
+              <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>{n} cagnotte{n > 1 ? "s" : ""}</div>
+            </div>
+            <button type="button" aria-label="Modifier" {...tap(() => start(t))} style={smallBtn()}>✏️</button>
+            <button type="button" aria-label="Supprimer" {...tap(() => { if (editing === t.id) setEditing(null); onDelete(t, n); })} style={smallBtn("var(--text3)")}>✕</button>
+          </div>
+        );
+      })}
+
+      {editing === null ? (
+        <button type="button" data-testid="new-cag-type" {...tap(() => start(null))}
+          style={{ width: "100%", marginTop: 4, background: "transparent", border: "1.5px dashed var(--accent)", borderRadius: 10, padding: 11, color: "var(--accent)", fontWeight: 700, fontSize: ".75rem", cursor: "pointer", fontFamily: "inherit" }}>
+          ＋ Nouveau type
+        </button>
+      ) : (
+        <div style={{ marginTop: 8, border: "1.5px solid var(--accent)", borderRadius: 12, padding: 12, background: "var(--bg)" }}>
+          <div style={{ fontSize: ".68rem", fontWeight: 800, color: "var(--accent)", marginBottom: 8 }}>{editing === "new" ? "Nouveau type" : "Modifier le type"}</div>
+          <IconNameField icon={icon} onIcon={setIcon} name={name} onName={v => { setName(v); setErrors({}); }} errors={errors}
+            namePlaceholder="Ex : Voiture" iconPlaceholder="🚗" />
+          <SectionLabel color="#a8b4c2">Couleur</SectionLabel>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 12 }}>
+            {CAG_TYPE_COLORS.map(col => (
+              <button type="button" key={col} aria-label={col} {...tap(() => setColor(col))}
+                style={{ width: 28, height: 28, borderRadius: "50%", background: col, border: `2.5px solid ${color === col ? "#fff" : "transparent"}`, cursor: "pointer", padding: 0 }} />
+            ))}
+          </div>
+          <SectionLabel color="#a8b4c2">Aperçu</SectionLabel>
+          <div style={{ width: 150, padding: "8px 10px", borderRadius: 12, border: "1px solid var(--border)", borderLeft: `3px solid ${color}`, background: "var(--surface)", marginBottom: 12 }}>
+            <div style={{ fontSize: ".74rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{icon.trim() || "🗂️"} Ma cagnotte</div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: ".84rem", fontWeight: 800, color: "var(--khaki)", marginTop: 2 }}>{fmt(1250)}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" className="btn btn-outline" style={{ flex: 1 }} {...tap(() => setEditing(null))}>Annuler</button>
+            <button type="button" data-testid="save-cag-type" className="btn btn-primary" style={{ flex: 1 }} {...tap(save)}>{editing === "new" ? "Créer" : "Enregistrer"}</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export function ConfirmModal({ title, msg, onConfirm, onClose }) {
   return (
     <Modal onClose={onClose} title="">
