@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.55.1";
+export const APP_VERSION = "1.57.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -16,6 +16,25 @@ export const PALETTE = [
   "#38bdf8","#c084fc","#4ade80","#fbbf24","#f472b6","#22d3ee","#a3e635",
 ];
 export const LS_KEY = "budget_ultimate_2026_v10";
+
+// ─── Types de cagnotte (v1.56.0 : personnalisables dans Options) ──
+// Purement visuels (icône, couleur de bordure, filtre) : n'entrent dans aucun calcul.
+export const DEFAULT_CAG_TYPES = [
+  { id: "projet",         icon: "🎯", label: "Projet",         color: "#70b8e0" },
+  { id: "urgence",        icon: "🛡️", label: "Urgence",        color: "#c87070" },
+  { id: "plaisir",        icon: "✈️", label: "Plaisir",        color: "#b090e0" },
+  { id: "investissement", icon: "📈", label: "Investissement", color: "#68d498" },
+];
+export const CAG_TYPE_COLORS = ["#70b8e0","#68d498","#b090e0","#c87070","#c8b860","#88c880","#e08870","#5cc8c0","#e8944a","#a8b4c2"];
+/** Type d'une cagnotte (ou null si aucun / type supprimé) */
+export function cagTypeOf(cagTypes, id) {
+  if (!id) return null;
+  return (cagTypes || DEFAULT_CAG_TYPES).find(t => t.id === id) || null;
+}
+/** Icône d'une cagnotte selon son type (🐷 si sans type) */
+export function cagIconOf(cagTypes, c) {
+  return cagTypeOf(cagTypes, c?.cagType)?.icon || "🐷";
+}
 
 // ─── Formatting ──────────────────────────────────────────────────
 /** @param {number} n */
