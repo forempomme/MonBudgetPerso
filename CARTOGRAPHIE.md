@@ -1,6 +1,6 @@
 # Cartographie — Gestion du Budget
 
-Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.57.0**.
+Document de référence technique pour reprendre le développement de l'app sans avoir à tout redécouvrir. Version couverte : **1.59.0**.
 
 ---
 
@@ -191,6 +191,9 @@ C'est le point le plus important de ce document. Une bonne partie des bugs renco
 - **Tags** : filtre Historique + entrée Options — v1.39.34 (la base du système de tags existait déjà avant)
 - **Découpage de `views.jsx`**, notifications réparées (plugin manquant), `normalizeData` — v1.40.0
 - **Formulaires unifiés + détail du solde estimé** — v1.45.0
+- **v1.59.0** : `AccueilView` — calcul écart/sparkline sorti dans `evo = useMemo(...)` (logique inchangée, recopiée de l'ancienne IIFE ; le dernier point reste = `balance`). Fenêtre `evoOpen` (Modal en portail). Carrousel : `heroCardRefs`, `goHero(i)`, `heroSwitch(cur)` ; hauteur du carrousel = hauteur de la carte active (`heroH`, ResizeObserver) avec `align-items: flex-start`. Points du carrousel retirés (CSS `.hero-dot` conservé, non utilisé). Ordre sous la carte : surplus → chèques → À venir → Cagnottes/Fixes → alerte budgets par tag → Bilan. La colonne verticale des arrondis devient 1–2 pastilles (« à virer » garde l'action `onMarkRoundingTransferred`).
+- **v1.58.0** : action `SET_FIXED_DAY { kind: "expense"|"income", id, day }` (ne touche que `day`, borné 1–31) ; prop `onSetFixedDay` de `FixesView`. `insights = useMemo(() => detectInsights(data), [data])` dans App.jsx, placé AVANT le `if (locked) return` (règle des hooks).
+- **v1.57.1** : `cagnottes[].adjustments` `[{ id, date, amount, before, after }]` — ajouté par `SAVE_CAGNOTTE` (édition) quand `current` change. **Jamais une transaction** : n'entre dans aucun solde, rapprochement ni versé/retiré ; affiché seulement dans `CagHistModal`. Supprimés : `PALETTE`, `polar` (utils.js), `useYearTotals` (hooks.js).
 - **v1.57.0** : `computeCagnottesSummary(data, ym)` (hooks.js) — **seule source** du récap Cagnottes : `total`, `byType` (ordre de `cagTypes`, « Sans type » en dernier, y compris type supprimé), `month`/`prev`/`yearFlows` via `computeMonthTotals`/`computePeriodTotals` (versé = `epargne`, retiré = `decagnottage` + `dissolution_cagnotte`, virements ignorés), `goalPct` = versé de l'année / `savingsGoals[année]` (identique au Rapport), objectifs plafonnés à la cible de chaque cagnotte, versements auto actifs vers une cagnotte existante, arrondis du mois (`isRounding`). Ouverture du détail mémorisée en `localStorage` (`cag_recap_open_v1`). Anciennes pastilles du mois supprimées.
 - **v1.56.0** : `data.cagTypes` `[{ id, icon, label, color }]` (défaut `DEFAULT_CAG_TYPES` dans utils.js, couleurs en hex ; `normalizeData` ne remet les défauts que si le champ est absent — une liste vide est respectée). Actions `SAVE_CAG_TYPE` (id `ct…` à la création) et `DELETE_CAG_TYPE` (cagnottes concernées → `cagType: null`). Helpers utils `cagTypeOf(cagTypes, id)` / `cagIconOf(cagTypes, c)` — **seule source** pour l'icône/couleur d'une cagnotte (les anciennes constantes `CAG_TYPES`, `CAG_TYPES_MAP`, `CAG_ICONS` sont supprimées). `CagTypesModal` (modals.jsx, rendu par App, état `cagTypesOpen`), ouvert depuis Options (`onOpenCagTypes`) ou la fiche (`CagModal.onManageTypes`). `TypeButtons` passe à la ligne au-delà de 4 options. Le type n'entre dans aucun calcul.
 - **v1.55.1** : `components/charts.jsx` supprimé (plus aucun import ; bundle identique au octet près).
