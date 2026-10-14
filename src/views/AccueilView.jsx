@@ -334,6 +334,124 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
     return `dans ${Math.round(diff/30)} mois`;
   }
 
+  // ── v1.59.0 : écart vs même jour du mois dernier + solde au même jour sur 6 mois ──
+  // (calcul inchangé, sorti de la carte pour alimenter la pastille et la fenêtre « Évolution du solde »)
+  const evo = useMemo(() => {
+            const now      = new Date();
+    const todayDay = now.getDate();
+    const curYM    = currentYM();
+    const prevYM   = getPrevMonth(curYM);
+
+    // Solde cumulé au jour J du mois précédent
+    // = somme de toutes les transactions jusqu'au prevYM-todayDay inclus
+    const prevDayStr = `${prevYM}-${String(todayDay).padStart(2, "0")}`;
+    let balPrev = 0;
+    transactions.forEach(t => {
+      if (t.date > prevDayStr) return;
+      const a = parseFloat(t.amount) || 0;
+      if (isIncome(t.type))          balPrev += a;
+      else if (t.type === "expense") balPrev -= a;
+      else if (t.type === "epargne") balPrev -= a;
+      // v1.46.2 : opération d'équilibre (+/−) comptée comme dans le solde actuel
+      else if (t.type === "balance_adjustment") balPrev += isIncomeDirection(t) ? a : -a;
+    });
+    // Soustraire les fixes et ajouter les revenus fixes pour chaque mois
+    // jusqu'au mois précédent inclus (même logique que useBalance, via
+    // les helpers partagés — respecte le startYM propre à chaque fixe)
+    if (transactions.length > 0) {
+      const earliest = transactions.reduce((m, t) => t.date < m ? t.date : m, transactions[0].date);
+      const startYM  = earliest.slice(0, 7);
+      let [y, m] = startYM.split("-").map(Number);
+      const [ey, em] = prevYM.split("-").map(Number);
+      while (y < ey || (y === ey && m <= em)) {
+        const ym = `${y}-${String(m).padStart(2, "0")}`;
+        balPrev -= effectiveFixesForMonth(fixedExpenses, ym);
+        balPrev += effectiveIncomesForMonth(data.fixedIncomes || [], ym);
+        if (++m > 12) { m = 1; y++; }
+      }
+    }
+
+    const deltaAbs = balance - balPrev;
+    const deltaPct = balPrev !== 0 ? Math.round((deltaAbs / Math.abs(balPrev)) * 100) : null;
+    const isPos    = deltaAbs >= 0;
+    const dColor   = isPos ? "var(--success)" : "var(--danger)";
+
+    // Sparkline : solde au même jour sur les 6 derniers mois
+    const sparkData = Array.from({ length: 6 }, (_, i) => {
+      const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const mLabel = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][d.getMonth()];
+
+      // Le dernier point (mois en cours) doit toujours correspondre
+      // EXACTEMENT au solde estimé affiché au-dessus — sinon les deux
+      // divergent dès que la définition du solde estimé évolue.
+      if (i === 5) {
+        return { val: balance, mois: mLabel, isLast: true };
+      }
+
+      // Mois passés : solde "brut" à cette date-là — pas de notion de
+      // récurrente/programmée "en attente" pour un mois déjà terminé.
+      const dayStr = `${ym}-${String(todayDay).padStart(2, "0")}`;
+      let bal = 0;
+      transactions.forEach(t => {
+        if (t.date > dayStr) return;
+        const a = parseFloat(t.amount) || 0;
+        if (isIncome(t.type))          bal += a;
+        else if (t.type === "expense") bal -= a;
+        else if (t.type === "epargne") bal -= a;
+        else if (t.type === "balance_adjustment") bal += isIncomeDirection(t) ? a : -a;
+      });
+      if (transactions.length > 0) {
+        const earliest = transactions.reduce((mn, t) => t.date < mn ? t.date : mn, transactions[0].date);
+        const startYM  = earliest.slice(0, 7);
+        let [y, m] = startYM.split("-").map(Number);
+        const [ey, em] = ym.split("-").map(Number);
+        while (y < ey || (y === ey && m <= em)) {
+          const loopYM = `${y}-${String(m).padStart(2, "0")}`;
+          bal -= effectiveFixesForMonth(fixedExpenses, loopYM);
+          bal += effectiveIncomesForMonth(data.fixedIncomes || [], loopYM);
+          if (++m > 12) { m = 1; y++; }
+        }
+      }
+      return { val: bal, mois: mLabel, isLast: false };
+    });
+
+    const monthsShort = ["jan","fév","mar","avr","mai","jun","jul","aoû","sep","oct","nov","déc"];
+    const prevShort = monthsShort[new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth()];
+    return { balPrev, deltaAbs, deltaPct, isPos, sparkData, todayDay, prevShort };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, fixedExpenses, data.fixedIncomes, balance]);
+  const [evoOpen, setEvoOpen] = useState(false);
+
+  // Bascule Solde / Projection (remplace les points du carrousel)
+  const heroCardRefs = [useRef(null), useRef(null)];
+  const goHero = i => { const el = heroCarouselRef.current, c = heroCardRefs[i].current; if (el && c) el.scrollTo({ left: c.offsetLeft - el.firstElementChild.offsetLeft, behavior: "smooth" }); setHeroIndex(i); };
+  const heroSwitch = cur => (
+    <div data-testid={`hero-switch-${cur}`} style={{ display: "flex", flexShrink: 0, background: "rgba(0,0,0,.25)", border: "1px solid rgba(255,255,255,.12)", borderRadius: 9, padding: 2, gap: 2 }}>
+      {[["Solde", 0], ["Projection", 1]].map(([l, k]) => (
+        <button key={k} onClick={() => goHero(k)} style={{ border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: ".6rem", fontWeight: 800, padding: "4px 9px", borderRadius: 7,
+          background: cur === k ? "var(--accent)" : "transparent", color: cur === k ? "#06121c" : "rgba(255,255,255,.6)" }}>{l}</button>
+      ))}
+    </div>
+  );
+  // Hauteur du carrousel = hauteur de la carte affichée (sinon la carte du solde, plus basse,
+  // serait étirée à la hauteur de la carte Projection)
+  const [heroH, setHeroH] = useState(null);
+  useEffect(() => {
+    const c = heroCardRefs[heroIndex].current;
+    if (!c) return;
+    const upd = () => setHeroH(c.offsetHeight);
+    upd();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(upd) : null;
+    ro?.observe(c);
+    return () => ro?.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heroIndex]);
+  const heroPill = (col, bg) => ({ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".62rem", fontWeight: 700, cursor: "pointer", padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap", flexShrink: 0,
+    color: col, background: bg, border: `1px solid color-mix(in srgb, ${col} 35%, transparent)`, fontVariantNumeric: "tabular-nums" });
+  const heroRowTitle = { fontSize: ".5rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", margin: "9px 0 4px" };
+  const heroRow = { display: "flex", gap: 5, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 1 };
+
   // ── Couleur dynamique du solde ────────────────────────────────
   // Blanc par défaut, jaune sous 100 €, rouge en négatif
   const balanceColor = balance < 0 ? "#ef4444" : balance < 100 ? "#fbbf24" : "#ffffff";
@@ -350,16 +468,19 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       )}
 
       {/* ── Carrousel : solde ↔ projection ── */}
-      <div className="hero-carousel" ref={heroCarouselRef} onScroll={onHeroScroll}>
+      <div className="hero-carousel" ref={heroCarouselRef} onScroll={onHeroScroll}
+        style={{ alignItems: "flex-start", height: heroH ? heroH + 2 : undefined, transition: "height .25s ease" }}>
       {/* ── Carte solde animée ── */}
       <div
         className="hero-card"
+        ref={heroCardRefs[0]}
+        data-testid="hero-card"
         style={{
           background: "linear-gradient(135deg, #0c1830 0%, #182a48 45%, #101e38 100%)",
           border: "none",
           boxShadow: "0 4px 24px rgba(112,184,224,.2)",
           overflow: "hidden",
-          paddingBottom: 18,
+          padding: "14px 14px 13px",
         }}
       >
         {/* Shimmer */}
@@ -394,331 +515,106 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           alertThreshold={alertThreshold}
         />
 
-        <div style={{ position: "relative", display: "flex", gap: 8 }}>
-          {/* ── Gauche : solde + rapprochement ── */}
-          <div style={{ flex: 1, minWidth: 0 }}>
-          <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700 }}>
-            Solde Bancaire Estimé
+        {/* v1.59.0 — carte du solde ramassée (variante B validée) : solde + écart vs mois dernier
+            (touche → fenêtre « Évolution du solde » avec le graphe des 6 mois), pastilles
+            « Ce mois-ci » et « Rapprochement », bascule Solde / Projection. */}
+        <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, paddingRight: 18 }}>
+            <div className="hero-label" role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+              style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, flex: 1, minWidth: 0, cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              Solde bancaire estimé <span style={{ color: "var(--accent)" }}>ⓘ</span>
+            </div>
+            {heroSwitch(0)}
           </div>
 
-          {/* ── Solde + badge delta vs même jour mois précédent ── */}
-          {(() => {
-            const now      = new Date();
-            const todayDay = now.getDate();
-            const curYM    = currentYM();
-            const prevYM   = getPrevMonth(curYM);
-
-            // Solde cumulé au jour J du mois précédent
-            // = somme de toutes les transactions jusqu'au prevYM-todayDay inclus
-            const prevDayStr = `${prevYM}-${String(todayDay).padStart(2, "0")}`;
-            let balPrev = 0;
-            transactions.forEach(t => {
-              if (t.date > prevDayStr) return;
-              const a = parseFloat(t.amount) || 0;
-              if (isIncome(t.type))          balPrev += a;
-              else if (t.type === "expense") balPrev -= a;
-              else if (t.type === "epargne") balPrev -= a;
-              // v1.46.2 : opération d'équilibre (+/−) comptée comme dans le solde actuel
-              else if (t.type === "balance_adjustment") balPrev += isIncomeDirection(t) ? a : -a;
-            });
-            // Soustraire les fixes et ajouter les revenus fixes pour chaque mois
-            // jusqu'au mois précédent inclus (même logique que useBalance, via
-            // les helpers partagés — respecte le startYM propre à chaque fixe)
-            if (transactions.length > 0) {
-              const earliest = transactions.reduce((m, t) => t.date < m ? t.date : m, transactions[0].date);
-              const startYM  = earliest.slice(0, 7);
-              let [y, m] = startYM.split("-").map(Number);
-              const [ey, em] = prevYM.split("-").map(Number);
-              while (y < ey || (y === ey && m <= em)) {
-                const ym = `${y}-${String(m).padStart(2, "0")}`;
-                balPrev -= effectiveFixesForMonth(fixedExpenses, ym);
-                balPrev += effectiveIncomesForMonth(data.fixedIncomes || [], ym);
-                if (++m > 12) { m = 1; y++; }
-              }
-            }
-
-            const deltaAbs = balance - balPrev;
-            const deltaPct = balPrev !== 0 ? Math.round((deltaAbs / Math.abs(balPrev)) * 100) : null;
-            const isPos    = deltaAbs >= 0;
-            const dColor   = isPos ? "var(--success)" : "var(--danger)";
-
-            // Sparkline : solde au même jour sur les 6 derniers mois
-            const sparkData = Array.from({ length: 6 }, (_, i) => {
-              const d   = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-              const ym  = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-              const mLabel = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][d.getMonth()];
-
-              // Le dernier point (mois en cours) doit toujours correspondre
-              // EXACTEMENT au solde estimé affiché au-dessus — sinon les deux
-              // divergent dès que la définition du solde estimé évolue.
-              if (i === 5) {
-                return { val: balance, mois: mLabel, isLast: true };
-              }
-
-              // Mois passés : solde "brut" à cette date-là — pas de notion de
-              // récurrente/programmée "en attente" pour un mois déjà terminé.
-              const dayStr = `${ym}-${String(todayDay).padStart(2, "0")}`;
-              let bal = 0;
-              transactions.forEach(t => {
-                if (t.date > dayStr) return;
-                const a = parseFloat(t.amount) || 0;
-                if (isIncome(t.type))          bal += a;
-                else if (t.type === "expense") bal -= a;
-                else if (t.type === "epargne") bal -= a;
-                else if (t.type === "balance_adjustment") bal += isIncomeDirection(t) ? a : -a;
-              });
-              if (transactions.length > 0) {
-                const earliest = transactions.reduce((mn, t) => t.date < mn ? t.date : mn, transactions[0].date);
-                const startYM  = earliest.slice(0, 7);
-                let [y, m] = startYM.split("-").map(Number);
-                const [ey, em] = ym.split("-").map(Number);
-                while (y < ey || (y === ey && m <= em)) {
-                  const loopYM = `${y}-${String(m).padStart(2, "0")}`;
-                  bal -= effectiveFixesForMonth(fixedExpenses, loopYM);
-                  bal += effectiveIncomesForMonth(data.fixedIncomes || [], loopYM);
-                  if (++m > 12) { m = 1; y++; }
-                }
-              }
-              return { val: bal, mois: mLabel, isLast: false };
-            });
-
-            const sparkMax = Math.max(...sparkData.map(b => Math.abs(b.val)), 1);
-
-            return (
-              <>
-                {/* Solde + badge delta inline */}
-                <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", marginBottom:10 }}>
-                  <div className="hero-value" role="button"
-                    onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
-                    style={{ color: balanceColor, marginBottom: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-                    <CountUp target={balance} color={balanceColor} duration={1000} />
-                    <span style={{ fontSize: ".58rem", fontWeight: 700, color: "var(--accent)", border: "1px solid rgba(112,184,224,.45)",
-                      borderRadius: 10, padding: "2px 7px", background: "rgba(112,184,224,.1)", whiteSpace: "nowrap", letterSpacing: 0 }}>ⓘ calcul</span>
-                  </div>
-                  {/* v1.48.0 : pastilles (2 lignes max) — courses, reste à vivre, à recevoir */}
-                  {(grocery || rest || reimbs.length > 0) && (
-                    <div style={{ order: 3, flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 5 }}>
-                      {grocery && (
-                        <span role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }} style={{
-                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
-                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
-                          color: grocery.over > 0 ? "var(--danger)" : "var(--coral)",
-                          background: grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)",
-                          border: `1px solid ${grocery.over > 0 ? "rgba(200,112,112,.35)" : "rgba(224,136,112,.3)"}`,
-                        }}>
-                          🛒 {grocery.over > 0
-                            ? `Budget courses dépassé de ${fmt(grocery.over)}`
-                            : grocery.remaining > 0 ? `${fmt(grocery.remaining)} de courses à prévoir` : "Budget courses du mois atteint"}
-                        </span>
-                      )}
-                      {rest && (
-                        <span role="button" onClick={() => { if (touchMoved()) return; setRestOpen(true); }} style={{
-                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
-                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
-                          color: rest.perDay >= 0 ? "#5cc8c0" : "var(--danger)",
-                          background: rest.perDay >= 0 ? "rgba(92,200,192,.12)" : "rgba(200,112,112,.1)",
-                          border: `1px solid ${rest.perDay >= 0 ? "rgba(92,200,192,.35)" : "rgba(200,112,112,.35)"}`,
-                        }}>
-                          💶 {fmt(rest.perDay)}/jour {rest.payday ? "jusqu'à la paie" : "jusqu'à fin du mois"}
-                        </span>
-                      )}
-                      {reimbs.length > 0 && (
-                        <span role="button" onClick={() => { if (touchMoved()) return; setReimbOpen(true); }} style={{
-                          display: "inline-flex", alignItems: "center", gap: 5, fontSize: ".62rem", fontWeight: 600, cursor: "pointer",
-                          padding: "3px 9px", borderRadius: 10, whiteSpace: "nowrap",
-                          color: "#a6e3a1", background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.35)",
-                        }}>
-                          ↩️ {fmt(reimbs.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0))} à recevoir{reimbs.some(r => r.late > 15) ? " ⚠️" : ""}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {deltaPct !== null && (
-                    <div style={{
-                      display:"flex", flexDirection:"column", gap:1,
-                      padding:"4px 9px", borderRadius:8,
-                      background:`${isPos ? "rgba(104,212,152" : "rgba(200,112,112"},.12)`,
-                      border:`1px solid ${isPos ? "rgba(104,212,152" : "rgba(200,112,112"},.3)`,
-                    }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:4 }}>
-                        <span style={{ fontSize:".72rem" }}>{isPos ? "🔼" : "🔽"}</span>
-                        <span style={{ fontSize:".72rem", fontWeight:800, color:dColor, fontFamily:"var(--mono)" }}>
-                          {Math.abs(deltaPct)}%
-                        </span>
-                      </div>
-                      <div style={{ fontSize:".48rem", color:"rgba(255,255,255,.35)", lineHeight:1.2 }}>
-                        {fmt(balPrev)} le {todayDay} {["jan","fév","mar","avr","mai","jun","jul","aoû","sep","oct","nov","déc"][new Date(now.getFullYear(), now.getMonth() - 1, 1).getMonth()]}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Sparkline variante B — barres + labels rotatés */}
-                {sparkData.some(b => b.val !== 0) && (
-                  <div style={{ marginBottom:12 }}>
-                    <div style={{ fontSize:".5rem", color:"rgba(255,255,255,.28)", marginBottom:4, letterSpacing:".06em" }}>
-                      Solde au {todayDay} de chaque mois
-                    </div>
-                    {/* Barres */}
-                    <div style={{ display:"flex", alignItems:"flex-end", gap:4, height:38, marginBottom:5 }}>
-                      {sparkData.map((b, i) => {
-                        const h = Math.max(3, Math.abs(b.val) / sparkMax * 34);
-                        return (
-                          <div key={i} style={{ flex:1, display:"flex", alignItems:"flex-end", height:38 }}>
-                            <div style={{
-                              width:"100%", height:h, borderRadius:3,
-                              background: b.isLast ? "var(--accent)"
-                                        : b.val >= 0 ? "rgba(104,212,152,.5)"
-                                        : "rgba(200,112,112,.4)",
-                              boxShadow: b.isLast ? "0 0 8px rgba(90,184,224,.5)" : "none",
-                            }}/>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {/* Labels mois */}
-                    <div style={{ display:"flex", gap:4, marginBottom:3 }}>
-                      {sparkData.map((b, i) => (
-                        <div key={i} style={{ flex:1, textAlign:"center", fontSize:".48rem", color: b.isLast ? "var(--accent)" : "rgba(255,255,255,.22)", fontWeight: b.isLast ? 700 : 400 }}>
-                          {b.mois}
-                        </div>
-                      ))}
-                    </div>
-                    {/* Montants rotatés */}
-                    <div style={{ display:"flex", gap:4 }}>
-                      {sparkData.map((b, i) => {
-                        const isPrev = i === sparkData.length - 2;
-                        const color  = b.isLast ? "rgba(90,184,224,.9)" : isPrev ? "rgba(255,255,255,.45)" : "rgba(255,255,255,.18)";
-                        return (
-                          <div key={i} style={{ flex:1, textAlign:"center", overflow:"hidden" }}>
-                            <div style={{
-                              fontSize:".42rem", color, fontFamily:"var(--mono)",
-                              fontWeight: b.isLast || isPrev ? 700 : 400,
-                              transform:"rotate(-35deg)", transformOrigin:"center top",
-                              marginTop:2, whiteSpace:"nowrap",
-                              display:"inline-block",
-                            }}>
-                              {b.val < 0 ? "−" : ""}{new Intl.NumberFormat("fr-FR",{minimumFractionDigits:0,maximumFractionDigits:0}).format(Math.abs(b.val))}€
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-
-          {provTotal > 0 && (
-            <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
-              <div style={{ fontSize: ".62rem", color: "rgba(255,255,255,.55)", textTransform: "uppercase", letterSpacing: ".1em", fontWeight: 600 }}>
-                Après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
-              </div>
-              <div style={{ fontFamily: "var(--mono)", fontSize: "1.1rem", fontWeight: 700, color: afterProvColor, fontVariantNumeric: "tabular-nums" }}>
-                <CountUp target={balanceAfterProv} color={afterProvColor} duration={1100} />
-              </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+            <div className="hero-value" role="button" data-testid="hero-balance"
+              onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+              style={{ color: balanceColor, margin: 0, cursor: "pointer", fontSize: "1.95rem" }}>
+              <CountUp target={balance} color={balanceColor} duration={1000} />
             </div>
-          )}
-
-          {/* ── Séparateur ── */}
-          <div style={{ height: 1, background: "rgba(255,255,255,.1)", margin: "12px 0" }} />
-
-          {/* ── Rapprochement bancaire (+ porte-monnaie TR en 3ᵉ mini-carte, v1.42.0) ── */}
-          {(() => { const w = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM)[0]; return (
-          <div style={{ display: "grid", gridTemplateColumns: w ? "1fr 1fr 1fr" : "1fr 1fr", gap: w ? 6 : 8, marginBottom: 10 }}>
-            {[
-              { label: "✓ Solde pointé",  value: soldePointe,  color: "var(--success)", bg: "rgba(104,212,152,.12)", bord: "rgba(104,212,152,.25)", filter: "pointed",   sub: `${nbPointed} op. confirmées` },
-              { label: "⏳ En attente",   value: soldeAttente, color: "var(--warning)",  bg: "rgba(200,184,96,.08)",  bord: "rgba(200,184,96,.25)",  filter: "unpointed", sub: `${totalPointable - nbPointed} op. restantes` },
-            ].map(s => (
-              <div key={s.label}
-                onClick={() => onGoToHistorique?.(s.filter)}
-                style={{
-                  background: s.bg, borderRadius: 9, padding: "8px 10px",
-                  border: `1px solid ${s.bord}`, cursor: "pointer",
-                  transition: "opacity .15s",
-                }}>
-                <div style={{ fontSize: ".55rem", color: s.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 3 }}>
-                  {s.label} ›
-                </div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: s.color, fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>
-                  {s.value >= 0 ? "+" : ""}{fmt(s.value)}
-                </div>
-                <div style={{ fontSize: ".52rem", color: "rgba(255,255,255,.35)", marginTop: 2 }}>{s.sub}</div>
-              </div>
-            ))}
-            {w && (
-              <div onClick={() => setWalletOpen(true)} className="tr-metal-box"
-                style={{ borderRadius: 9, padding: "8px 8px", cursor: "pointer", "--tr-fill": "rgba(30,40,58,.9)" }}>
-                <div style={{ fontSize: ".55rem", color: "var(--tr)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {w.st.icon} {w.st.label.length > 8 ? (w.st.id === "tr" ? "TR" : w.st.label.slice(0, 8)) : w.st.label} ›
-                </div>
-                <div className="tr-metal-text" style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".85rem", fontVariantNumeric: "tabular-nums" }}>
-                  {fmt(w.balance)}
-                </div>
-                <div style={{ fontSize: ".52rem", color: "rgba(255,255,255,.35)", marginTop: 2 }}>restant</div>
-              </div>
+            {evo.deltaPct !== null && (
+              <span role="button" data-testid="hero-delta" onClick={() => { if (touchMoved()) return; setEvoOpen(true); }} style={heroPill(evo.isPos ? "var(--success)" : "var(--danger)", evo.isPos ? "rgba(104,212,152,.12)" : "rgba(200,112,112,.12)")}>
+                {evo.isPos ? "▲" : "▼"} {Math.abs(evo.deltaPct)} % vs {evo.todayDay} {evo.prevShort} ›
+              </span>
             )}
           </div>
-          ); })()}
 
-          {/* ── Barre de progression rapprochement ── */}
-          {totalPointable > 0 && (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "rgba(255,255,255,.4)", marginBottom: 4 }}>
-                <span>Rapprochement</span>
-                <span style={{ color: nbPointed === totalPointable ? "var(--success)" : "rgba(255,255,255,.5)", fontWeight: 700 }}>
-                  {nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}
+          {/* ── Ce mois-ci : courses, reste à vivre, à recevoir, prévisions, arrondis ── */}
+          {(grocery || rest || reimbs.length > 0 || provTotal > 0 || roundStats) && (
+            <>
+              <div style={heroRowTitle}>Ce mois-ci</div>
+              <div data-testid="hero-row-month" style={heroRow}>
+                {grocery && (
+                  <span role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+                    style={heroPill(grocery.over > 0 ? "var(--danger)" : "var(--coral)", grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)")}>
+                    🛒 {grocery.over > 0
+                      ? `Budget courses dépassé de ${fmt(grocery.over)}`
+                      : grocery.remaining > 0 ? `${fmt(grocery.remaining)} de courses à prévoir` : "Budget courses du mois atteint"}
+                  </span>
+                )}
+                {rest && (
+                  <span role="button" onClick={() => { if (touchMoved()) return; setRestOpen(true); }}
+                    style={heroPill(rest.perDay >= 0 ? "#5cc8c0" : "var(--danger)", rest.perDay >= 0 ? "rgba(92,200,192,.12)" : "rgba(200,112,112,.1)")}>
+                    💶 {fmt(rest.perDay)}/jour {rest.payday ? "jusqu'à la paie" : "jusqu'à fin du mois"}
+                  </span>
+                )}
+                {reimbs.length > 0 && (
+                  <span role="button" onClick={() => { if (touchMoved()) return; setReimbOpen(true); }} style={heroPill("#a6e3a1", "rgba(104,212,152,.1)")}>
+                    ↩️ {fmt(reimbs.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0))} à recevoir{reimbs.some(r => r.late > 15) ? " ⚠️" : ""}
+                  </span>
+                )}
+                {provTotal > 0 && (
+                  <span style={heroPill(afterProvColor === "rgba(255,255,255,.75)" ? "var(--warning)" : afterProvColor, "rgba(200,184,96,.08)")}>
+                    🔮 {fmt(balanceAfterProv)} après {provisionalExpenses.length} prévision{provisionalExpenses.length > 1 ? "s" : ""}
+                  </span>
+                )}
+                {roundStats && (
+                  <span style={heroPill("var(--success)", "rgba(104,212,152,.08)")}>
+                    🪙 {fmt(roundStats.month)} d'arrondis · {curY} : {fmt(roundStats.year)}
+                  </span>
+                )}
+                {roundStats && roundStats.pending > 0.005 && (
+                  <span role="button" onClick={() => { if (touchMoved()) return; onMarkRoundingTransferred?.(); }} style={heroPill("var(--warning)", "rgba(200,184,96,.12)")}>
+                    🪙 {fmt(roundStats.pending)} à virer · marquer viré ›
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Rapprochement : pointé, en attente, porte-monnaie (TR…) ── */}
+          {(() => { const w = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM)[0]; return (
+            <>
+              <div style={{ ...heroRowTitle, display: "flex" }}>
+                <span style={{ flex: 1 }}>Rapprochement</span>
+                {totalPointable > 0 && <span style={{ letterSpacing: 0, color: nbPointed === totalPointable ? "var(--success)" : "rgba(255,255,255,.55)" }}>{nbPointed === totalPointable ? "✓ Complet" : `${nbPointed}/${totalPointable}`}</span>}
+              </div>
+              <div data-testid="hero-row-rec" style={heroRow}>
+                <span role="button" onClick={() => onGoToHistorique?.("pointed")} title={`${nbPointed} op. confirmées`} style={heroPill("var(--success)", "rgba(104,212,152,.1)")}>
+                  ✓ {soldePointe >= 0 ? "+" : ""}{fmt(soldePointe)} pointé ›
                 </span>
+                <span role="button" onClick={() => onGoToHistorique?.("unpointed")} title={`${totalPointable - nbPointed} op. restantes`} style={heroPill("var(--warning)", "rgba(200,184,96,.1)")}>
+                  ⏳ {soldeAttente >= 0 ? "+" : ""}{fmt(soldeAttente)} en attente ›
+                </span>
+                {w && (
+                  <span role="button" onClick={() => setWalletOpen(true)} style={heroPill("var(--tr, var(--warning))", "rgba(200,184,96,.06)")}>
+                    {w.st.icon} {fmt(w.balance)} {w.st.id === "tr" ? "TR" : w.st.label} ›
+                  </span>
+                )}
               </div>
-              <div style={{ height: 5, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden" }}>
-                <div style={{
-                  width: `${(nbPointed / totalPointable) * 100}%`, height: "100%",
-                  background: "linear-gradient(90deg, var(--success), var(--accent))",
-                  borderRadius: 99, transition: "width .4s ease",
-                }} />
-              </div>
-            </div>
-          )}
-          </div>{/* fin gauche */}
-
-          {/* ── Droite : arrondis vertical (si activé) ── */}
-          {roundStats && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 3, flexShrink: 0, width: 58 }}>
-              <div style={{ fontSize: ".4rem", color: "rgba(255,255,255,.3)", textAlign: "center", marginBottom: 1 }}>🐷</div>
-              {/* Ce mois */}
-              <div style={{ background: "rgba(104,212,152,.1)", border: "1px solid rgba(104,212,152,.2)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
-                <div style={{ fontSize: ".38rem", color: "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Mois</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.month)}</div>
-              </div>
-              {/* Cette année */}
-              <div style={{ background: "rgba(112,184,224,.08)", border: "1px solid rgba(112,184,224,.15)", borderRadius: 5, padding: "3px 5px", textAlign: "center" }}>
-                <div style={{ fontSize: ".38rem", color: "rgba(112,184,224,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>Année</div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: "var(--accent)", fontSize: ".58rem", lineHeight: 1.2 }}>{fmt(roundStats.year)}</div>
-              </div>
-              {/* À virer */}
-              <div
-                onClick={() => roundStats.pending > 0.005 && onMarkRoundingTransferred?.()}
-                style={{
-                  background: roundStats.pending > 0.005 ? "rgba(200,184,96,.12)" : "rgba(104,212,152,.08)",
-                  border: `1px solid ${roundStats.pending > 0.005 ? "rgba(200,184,96,.3)" : "rgba(104,212,152,.2)"}`,
-                  borderRadius: 5, padding: "3px 5px", textAlign: "center",
-                  cursor: roundStats.pending > 0.005 ? "pointer" : "default",
-                }}>
-                <div style={{ fontSize: ".38rem", color: roundStats.pending > 0.005 ? "rgba(200,184,96,.8)" : "rgba(104,212,152,.7)", fontWeight: 700, textTransform: "uppercase", marginBottom: 1 }}>
-                  {roundStats.pending > 0.005 ? "À virer" : "Viré ✓"}
+              {totalPointable > 0 && (
+                <div style={{ height: 4, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden", marginTop: 8 }}>
+                  <div style={{ width: `${(nbPointed / totalPointable) * 100}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .4s ease" }} />
                 </div>
-                <div style={{ fontFamily: "var(--mono)", fontWeight: 800, color: roundStats.pending > 0.005 ? "var(--warning)" : "var(--success)", fontSize: ".58rem", lineHeight: 1.2 }}>
-                  {roundStats.pending > 0.005 ? fmt(roundStats.pending) : "—"}
-                </div>
-              </div>
-            </div>
-          )}
+              )}
+            </>
+          ); })()}
         </div>
       </div>
 
       {/* ── Carte Projection (médiane des dépenses courantes) ── */}
-      <div className="hero-card" style={{
+      <div className="hero-card" ref={heroCardRefs[1]} style={{
         background: "linear-gradient(135deg, #101f18 0%, #16321f 45%, #0e1e18 100%)",
         border: "none", boxShadow: "0 4px 24px rgba(104,212,152,.15)",
         overflow: "hidden", paddingBottom: 18,
@@ -731,6 +627,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         <div className="hero-label" style={{ color: "rgba(255,255,255,.72)", fontWeight: 700, position: "relative", display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ flex: 1 }}>{simOn ? "Projection à 6 mois" : "Projection à 3 mois"}</span>
           {simOn && <span style={{ fontSize: ".56rem", fontWeight: 800, color: "var(--purple)", border: "1px solid rgba(176,144,224,.5)", background: "rgba(176,144,224,.12)", borderRadius: 10, padding: "2px 8px", letterSpacing: 0, textTransform: "none" }}>🧪 simulation</span>}
+          <span style={{ letterSpacing: 0, textTransform: "none" }}>{heroSwitch(1)}</span>
         </div>
 
         {simOn && (
@@ -810,11 +707,58 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           onClose={() => { setSimSheet(false); if (!simScenarios.length) setSimOn(false); }} />
       )}
 
-      {/* Dots du carrousel solde ↔ projection */}
-      <div className="hero-dots">
-        <div className={`hero-dot ${heroIndex === 0 ? "active" : ""}`} />
-        <div className={`hero-dot ${heroIndex === 1 ? "active" : ""}`} />
-      </div>
+      <div style={{ height: 4 }} />
+
+      {/* v1.59.0 : fenêtre « Évolution du solde » (le graphe des 6 mois quitte la carte) */}
+      {evoOpen && (
+        <Modal onClose={() => setEvoOpen(false)} title="">
+          <div data-testid="evo-modal">
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+              <div className="modal-title" style={{ marginBottom: 0, flex: 1 }}>📈 Évolution du solde</div>
+              <button onClick={() => setEvoOpen(false)} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "6px 10px", color: "var(--text2)", cursor: "pointer", fontSize: ".75rem" }}>✕</button>
+            </div>
+            <div style={{ fontSize: ".72rem", color: "var(--text2)", lineHeight: 1.6 }}>
+              Aujourd'hui <b style={{ color: "var(--text)" }}>{fmt(balance)}</b> · le {evo.todayDay} {evo.prevShort} <b style={{ color: "var(--text)" }}>{fmt(evo.balPrev)}</b><br />
+              <b style={{ color: evo.isPos ? "var(--success)" : "var(--danger)" }}>{evo.deltaAbs >= 0 ? "+" : "−"}{fmt(Math.abs(evo.deltaAbs))}{evo.deltaPct !== null ? ` (${evo.deltaAbs >= 0 ? "+" : "−"}${Math.abs(evo.deltaPct)} %)` : ""}</b> en un mois
+            </div>
+            {(() => {
+              const sd = evo.sparkData, mx = Math.max(...sd.map(b => Math.abs(b.val)), 1);
+              const n0 = v => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v));
+              return (
+                <>
+                  <div style={{ fontSize: ".58rem", color: "var(--text3)", margin: "12px 0 6px" }}>Solde au {evo.todayDay} de chaque mois</div>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
+                    {sd.map((b, i) => (
+                      <div key={i} style={{ flex: 1, display: "flex", alignItems: "flex-end", height: 120 }}>
+                        <div style={{ width: "100%", height: Math.max(3, Math.abs(b.val) / mx * 116), borderRadius: 4,
+                          background: b.isLast ? "var(--accent)" : b.val >= 0 ? "rgba(104,212,152,.55)" : "rgba(200,112,112,.5)" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                    {sd.map((b, i) => (
+                      <div key={i} style={{ flex: 1, textAlign: "center", fontSize: ".56rem", lineHeight: 1.35, color: b.isLast ? "var(--accent)" : "var(--text3)", fontWeight: b.isLast ? 800 : 500 }}>
+                        {b.mois}<br /><span style={{ fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums" }}>{b.val < 0 ? "−" : ""}{n0(b.val)} €</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 5, marginTop: 12, flexWrap: "wrap" }}>
+                    {sd.slice(1).map((b, i) => {
+                      const d = b.val - sd[i].val;
+                      return (
+                        <span key={i} style={{ flex: "1 1 0", minWidth: 0, textAlign: "center", fontSize: ".56rem", padding: "4px 2px", borderRadius: 7, background: "var(--surface2)", color: d >= 0 ? "var(--success)" : "var(--danger)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+                          {b.mois} {d >= 0 ? "+" : "−"}{n0(d)} €
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 8 }}>Variation d'un mois sur l'autre, au même jour du mois.</div>
+                </>
+              );
+            })()}
+          </div>
+        </Modal>
+      )}
 
       {/* ── 💡 Surplus de fin de cycle → cagnotte (v1.50.0) ── */}
       {surplus?.show && (
@@ -926,110 +870,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         );
       })()}
 
-      {/* ── 🐷 Cagnottes + 📌 Fixes ── v1.49.0 : cartes sur une ligne ;
-           le taux d'épargne du mois est affiché dans le détail (tap). */}
-      <Sec id="cagnottes_fixes">
-      <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="stat-mini dash-cagnotte2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5 }}
-          onClick={() => {
-            const rate     = curMonth.inc > 0 ? Math.round((savMonth / curMonth.inc) * 100) : null;
-            const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
-            onShowDetail("cagnottes", "all", { rate, prevRate });
-          }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>🐷 Cagnottes</div>
-          <div className="stat-val" style={{ margin: 0, color: "var(--purple)", whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
-        </div>
-        <div className="stat-mini dash-fixe2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "default" }}>
-          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>📌 Fixes/mois</div>
-          <div className="stat-val" style={{ margin: 0, color: "#e8944a", whiteSpace: "nowrap" }}>{fmt(tf)}</div>
-        </div>
-      </div>
-      </Sec>
-
-      {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
-      {restOpen && rest && <RestToLiveSheet rest={rest} onClose={() => setRestOpen(false)} />}
-      {reimbOpen && (
-        <ReimbursementsSheet items={reimbs} onClose={() => setReimbOpen(false)}
-          onOpen={r => { setReimbOpen(false); onOpenReimbursement?.(r); }}
-          onAdd={() => { setReimbOpen(false); onOpenReimbursement?.(null); }} />
-      )}
-      {breakdownOpen && (
-        <BalanceBreakdownSheet breakdown={breakdown} grocery={grocery} categories={data.categories || []} cagnottes={cagnottes}
-          onClose={() => setBreakdownOpen(false)} />
-      )}
-
-      {/* Panneau porte-monnaie (v1.42.0) — ouvert depuis la 3ᵉ mini-carte */}
-      {walletOpen && (() => {
-        const wallets = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM);
-        const cats = data.categories || [];
-        return (
-          <Modal onClose={() => setWalletOpen(false)} title="">
-            {wallets.map((w, wi) => (
-              <div key={w.st.id} style={{ marginBottom: wi < wallets.length - 1 ? 18 : 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontWeight: 800, fontSize: ".8rem" }}>{w.st.icon} {w.st.label}</div>
-                  {wi === 0 && <button onClick={() => setWalletOpen(false)} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", cursor: "pointer" }}>✕</button>}
-                </div>
-                <div className="tr-metal-text" style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--mono)", marginTop: 4 }}>{fmt(w.balance)}</div>
-                <div style={{ fontSize: ".6rem", color: "var(--text2)" }}>restant sur la carte</div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
-                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Rechargé ce mois</div>
-                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--success)", marginTop: 3 }}>+{fmt(w.rechargedMonth)}</div>
-                  </div>
-                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
-                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Dépensé ce mois</div>
-                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--tr)", marginTop: 3 }}>−{fmt(w.spentMonth)}</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: 10, maxHeight: "34vh", overflowY: "auto" }}>
-                  {w.moves.length === 0 && <div style={{ fontSize: ".64rem", color: "var(--text3)", textAlign: "center", padding: 10 }}>Aucun mouvement — commence par un rechargement.</div>}
-                  {w.moves.slice(0, 30).map(m => {
-                    const cat = cats.find(c => c.id === m.categoryId);
-                    const label = m.kind === "recharge" ? (m.note || (m.amount < 0 ? "Correction" : "Rechargement"))
-                      : `${m.note || cat?.name || "Dépense"}${m.kind === "complement" ? " (complément)" : ""}`;
-                    const icon = m.kind === "recharge" ? "💳" : (cat?.icon || w.st.icon);
-                    const editable = m.kind !== "complement";
-                    return (
-                      <div key={m.id} onClick={() => editable && onOpenOffAccount?.(m.kind, w.st.id, m.entry)}
-                        style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".66rem", padding: "8px 0", borderBottom: "1px solid var(--border-soft)", cursor: editable ? "pointer" : "default" }}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{icon} {label} · {m.date.slice(8)}/{m.date.slice(5, 7)}</span>
-                        <span style={{ fontFamily: "var(--mono)", fontWeight: 800, flexShrink: 0, color: m.amount >= 0 ? "var(--success)" : "var(--tr)" }}>{m.amount >= 0 ? "+" : "−"}{fmt(Math.abs(m.amount))}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("recharge", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--success)", color: "var(--success)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>＋ Rechargement</button>
-                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("expense", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--tr)", color: "var(--tr)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>− Dépense</button>
-                </div>
-              </div>
-            ))}
-            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>Informatif : n'impacte ni ton solde bancaire ni le rapprochement. Tape une ligne pour la modifier.</div>
-          </Modal>
-        );
-      })()}
-
-      {/* Alerte budgets par tag (v1.41.0) — dès 80 % consommés ; tap → Rapport */}
-      {(() => {
-        const alerts = computeTagBudgets(data.tags, transactions, curM).filter(b => b.level !== "ok");
-        if (alerts.length === 0) return null;
-        return (
-          <div onClick={() => onSwitchTab?.("rapport")} style={{
-            marginBottom: 12, padding: "10px 14px", borderRadius: 14, cursor: "pointer",
-            background: "rgba(200,184,96,.07)", border: "1px solid rgba(200,184,96,.28)",
-          }}>
-            {alerts.map(({ tag, spent, budget, pct, level }) => (
-              <div key={tag.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".68rem", padding: "2px 0" }}>
-                <span>{level === "over" ? "🔴" : "⚠️"}</span>
-                <span style={{ flex: 1 }}>Budget <b>{tag.icon} {tag.name}</b> {level === "over" ? "dépassé" : `à ${Math.round(pct)} %`}</span>
-                <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: level === "over" ? "var(--danger)" : "var(--warning)" }}>{fmt(spent)} / {fmt(budget)}</span>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
+      {/* v1.59.0 : « À venir » juste sous la carte chèque */}
       {(unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0) && (() => {
         const C = "#e8f2ff", Cbord = "rgba(210,225,245,.22)";
         const fixItems   = unpointedFixes.map(f  => ({ ...f, _type:"fix"       }));
@@ -1205,6 +1046,112 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           </>
         );
       })()}
+
+      {/* ── 🐷 Cagnottes + 📌 Fixes ── v1.49.0 : cartes sur une ligne ;
+           le taux d'épargne du mois est affiché dans le détail (tap). */}
+      <Sec id="cagnottes_fixes">
+      <div className="grid-2" style={{ marginBottom: 10 }}>
+        <div className="stat-mini dash-cagnotte2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5 }}
+          onClick={() => {
+            const rate     = curMonth.inc > 0 ? Math.round((savMonth / curMonth.inc) * 100) : null;
+            const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
+            onShowDetail("cagnottes", "all", { rate, prevRate });
+          }}>
+          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>🐷 Cagnottes</div>
+          <div className="stat-val" style={{ margin: 0, color: "var(--purple)", whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
+        </div>
+        <div className="stat-mini dash-fixe2" style={{ padding: "10px 10px", display: "flex", alignItems: "center", gap: 5, cursor: "default" }}>
+          <div className="stat-label" style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em" }}>📌 Fixes/mois</div>
+          <div className="stat-val" style={{ margin: 0, color: "#e8944a", whiteSpace: "nowrap" }}>{fmt(tf)}</div>
+        </div>
+      </div>
+      </Sec>
+
+
+      {/* ── À venir ── v1.39.8 : ouvre un modal au lieu d'un dépliant inline */}
+      {restOpen && rest && <RestToLiveSheet rest={rest} onClose={() => setRestOpen(false)} />}
+      {reimbOpen && (
+        <ReimbursementsSheet items={reimbs} onClose={() => setReimbOpen(false)}
+          onOpen={r => { setReimbOpen(false); onOpenReimbursement?.(r); }}
+          onAdd={() => { setReimbOpen(false); onOpenReimbursement?.(null); }} />
+      )}
+      {breakdownOpen && (
+        <BalanceBreakdownSheet breakdown={breakdown} grocery={grocery} categories={data.categories || []} cagnottes={cagnottes}
+          onClose={() => setBreakdownOpen(false)} />
+      )}
+
+      {/* Panneau porte-monnaie (v1.42.0) — ouvert depuis la 3ᵉ mini-carte */}
+      {walletOpen && (() => {
+        const wallets = computeWallets(data.sideAmountTypes, data.offAccountEntries, transactions, curM);
+        const cats = data.categories || [];
+        return (
+          <Modal onClose={() => setWalletOpen(false)} title="">
+            {wallets.map((w, wi) => (
+              <div key={w.st.id} style={{ marginBottom: wi < wallets.length - 1 ? 18 : 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 800, fontSize: ".8rem" }}>{w.st.icon} {w.st.label}</div>
+                  {wi === 0 && <button onClick={() => setWalletOpen(false)} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--text2)", cursor: "pointer" }}>✕</button>}
+                </div>
+                <div className="tr-metal-text" style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--mono)", marginTop: 4 }}>{fmt(w.balance)}</div>
+                <div style={{ fontSize: ".6rem", color: "var(--text2)" }}>restant sur la carte</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
+                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Rechargé ce mois</div>
+                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--success)", marginTop: 3 }}>+{fmt(w.rechargedMonth)}</div>
+                  </div>
+                  <div style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border-soft)" }}>
+                    <div style={{ fontSize: ".52rem", color: "var(--text2)", fontWeight: 700, textTransform: "uppercase" }}>Dépensé ce mois</div>
+                    <div style={{ fontSize: ".78rem", fontWeight: 800, color: "var(--tr)", marginTop: 3 }}>−{fmt(w.spentMonth)}</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, maxHeight: "34vh", overflowY: "auto" }}>
+                  {w.moves.length === 0 && <div style={{ fontSize: ".64rem", color: "var(--text3)", textAlign: "center", padding: 10 }}>Aucun mouvement — commence par un rechargement.</div>}
+                  {w.moves.slice(0, 30).map(m => {
+                    const cat = cats.find(c => c.id === m.categoryId);
+                    const label = m.kind === "recharge" ? (m.note || (m.amount < 0 ? "Correction" : "Rechargement"))
+                      : `${m.note || cat?.name || "Dépense"}${m.kind === "complement" ? " (complément)" : ""}`;
+                    const icon = m.kind === "recharge" ? "💳" : (cat?.icon || w.st.icon);
+                    const editable = m.kind !== "complement";
+                    return (
+                      <div key={m.id} onClick={() => editable && onOpenOffAccount?.(m.kind, w.st.id, m.entry)}
+                        style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: ".66rem", padding: "8px 0", borderBottom: "1px solid var(--border-soft)", cursor: editable ? "pointer" : "default" }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{icon} {label} · {m.date.slice(8)}/{m.date.slice(5, 7)}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontWeight: 800, flexShrink: 0, color: m.amount >= 0 ? "var(--success)" : "var(--tr)" }}>{m.amount >= 0 ? "+" : "−"}{fmt(Math.abs(m.amount))}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("recharge", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--success)", color: "var(--success)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>＋ Rechargement</button>
+                  <button onClick={() => { setWalletOpen(false); onOpenOffAccount?.("expense", w.st.id); }} style={{ flex: 1, padding: 9, borderRadius: 18, background: "transparent", border: "1px solid var(--tr)", color: "var(--tr)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>− Dépense</button>
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.5 }}>Informatif : n'impacte ni ton solde bancaire ni le rapprochement. Tape une ligne pour la modifier.</div>
+          </Modal>
+        );
+      })()}
+
+      {/* Alerte budgets par tag (v1.41.0) — dès 80 % consommés ; tap → Rapport */}
+      {(() => {
+        const alerts = computeTagBudgets(data.tags, transactions, curM).filter(b => b.level !== "ok");
+        if (alerts.length === 0) return null;
+        return (
+          <div onClick={() => onSwitchTab?.("rapport")} style={{
+            marginBottom: 12, padding: "10px 14px", borderRadius: 14, cursor: "pointer",
+            background: "rgba(200,184,96,.07)", border: "1px solid rgba(200,184,96,.28)",
+          }}>
+            {alerts.map(({ tag, spent, budget, pct, level }) => (
+              <div key={tag.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".68rem", padding: "2px 0" }}>
+                <span>{level === "over" ? "🔴" : "⚠️"}</span>
+                <span style={{ flex: 1 }}>Budget <b>{tag.icon} {tag.name}</b> {level === "over" ? "dépassé" : `à ${Math.round(pct)} %`}</span>
+                <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: level === "over" ? "var(--danger)" : "var(--warning)" }}>{fmt(spent)} / {fmt(budget)}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
 
       {/* ── 📊 Bilan ── v1.49.0 : « Mois en cours » + « Année en cours » fusionnés,
            sélecteur Mois | Année (revient toujours sur le mois à l'ouverture). */}
