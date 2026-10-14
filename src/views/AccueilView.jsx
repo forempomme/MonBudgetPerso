@@ -818,7 +818,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
       {/* ── 💡 Surplus de fin de cycle → cagnotte (v1.50.0) ── */}
       {surplus?.show && (
-        <SurplusCard key={surplus.cycleEnd + surplus.amount} surplus={surplus} cagnottes={cagnottes}
+        <SurplusCard key={surplus.cycleEnd + surplus.amount} surplus={surplus} cagnottes={cagnottes} cagTypes={data.cagTypes}
           onDetail={() => setSurplusSheet(true)}
           onDismiss={() => onDismissInsight?.("surplus", surplus.cycleEnd)}
           onSave={(cagId, amount) => onSaveSurplus?.(cagId, amount, surplus.cycleEnd)} />
