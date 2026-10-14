@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.57.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.59.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -193,7 +193,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.57.0
+└── package.json         — version: 1.59.0
 ```
 
 ---
@@ -342,6 +342,9 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.59.0** | minor | **Accueil : carte du solde ramassée** (~200 px au lieu de ~400) : solde + pastille « ▲ x % vs même jour du mois dernier » (touche → fenêtre **Évolution du solde** avec le graphe des 6 mois, les soldes et la variation de chaque mois) ; pastilles rangées en 2 lignes titrées — **Ce mois-ci** (courses, reste à vivre, à recevoir, après prévisions, arrondis du mois/de l'année, arrondis à virer) et **Rapprochement x/y** (pointé, en attente, porte-monnaie TR) ; bascule **Solde / Projection** à la place des points du carrousel, la hauteur suit la carte affichée. **« À venir » remonté juste sous la carte chèque** ; le reste de l'écran est inchangé. Calculs identiques (même solde, même écart, mêmes montants) |
+| **1.58.0** | minor | **Jour d'un frais/revenu fixe choisi depuis sa tuile** (écran Fixes) : bouton « 📅 Jour ? » (en jaune s'il manque) ou « 📅 Le 12 » dans la barre d'actions → grille 1–31 ; la tuile se range aussitôt dans le bon groupe. Les tuiles sans jour affichent « jour ? » en jaune. Bouton pause réduit à ⏸️ / ▶️. **Saisie plus fluide** : « Repéré pour toi » n'est plus recalculé à chaque chiffre tapé, seulement quand les données changent |
+| **1.57.1** | patch | **Ajustements manuels de cagnotte tracés** : modifier « Déjà épargné » dans la fiche ajoute une ligne « ✏️ Ajustement manuel » (date, avant → après, écart) dans l'historique de la cagnotte. Sans effet sur le solde bancaire ni sur le versé/retiré (ce n'est pas une transaction). **Ménage** : `PALETTE` et `polar` (utils.js), `useYearTotals` (hooks.js), plus utilisés nulle part |
 | **1.57.0** | minor | **Récap de l'écran Cagnottes plus détaillé, aussi compact** : net du mois à côté du total, barre de répartition par type, ligne résumé (mois · objectif annuel ou net de l'année · versements auto). « Détail ▾ » ouvre (et mémorise) un panneau qui défile avec la page : répartition chiffrée par type, mouvements du mois / du mois précédent / de l'année, objectif annuel (même calcul que le Rapport), avancement des objectifs des cagnottes, versements auto, arrondis du mois. Les retraits incluent désormais les dissolutions de cagnotte, comme dans le Rapport |
 | **1.56.0** | minor | **Types de cagnotte personnalisables** (Options › 🐷 Épargne automatique › Types de cagnotte, ou « ⚙️ Gérer les types » depuis la fiche d'une cagnotte) : créer, renommer, changer l'emoji et la couleur, supprimer. Les 4 types d'origine (Projet, Urgence, Plaisir, Investissement) deviennent les types de départ. Supprimer un type utilisé fait passer ses cagnottes « sans type » (🐷) après confirmation — argent et objectifs inchangés. Purement visuel : aucun calcul ne dépend du type. Fenêtres de gestion et fiche cagnotte centrées à l'écran |
 | **1.55.1** | patch | **Ménage** : suppression de `components/charts.jsx` (ChartSVG, PatrimoineSVG), plus utilisé nulle part depuis la refonte du Rapport (v1.52.0/1.53.1). Aucun changement visible |
