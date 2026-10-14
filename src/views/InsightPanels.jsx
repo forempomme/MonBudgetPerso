@@ -8,12 +8,11 @@
 //    (computeSurplus).
 // ─────────────────────────────────────────────────────────────────
 import { useState } from "react";
-import { fmt, MONTHS_SHORT } from "../utils.js";
+import { fmt, MONTHS_SHORT, cagIconOf } from "../utils.js";
 import { simulateProjection } from "../hooks.js";
 import { Sheet } from "./ForecastPanels.jsx";
 
 const MONTHS_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
-const CAG_ICONS = { projet: "🎯", urgence: "🛡️", plaisir: "✈️", investissement: "📈" };
 const ymLabel = ym => MONTHS_SHORT[parseInt(ym.slice(5, 7), 10) - 1];
 const ymLong  = ym => MONTHS_LC[parseInt(ym.slice(5, 7), 10) - 1];
 const parseAmt = s => { const v = parseFloat(String(s || "").replace(/\s/g, "").replace(",", ".")); return isNaN(v) ? 0 : Math.round(Math.abs(v) * 100) / 100; };
@@ -201,7 +200,7 @@ export function InsightsList({ items, categories = [], onDismiss, onUpdateRecurr
 }
 
 // ═════════════════ Surplus ═════════════════
-export function SurplusCard({ surplus: s, cagnottes = [], onDetail, onDismiss, onSave }) {
+export function SurplusCard({ surplus: s, cagnottes = [], cagTypes, onDetail, onDismiss, onSave }) {
   const [cagId, setCagId] = useState(cagnottes[0]?.id || "");
   const [amt, setAmt] = useState(String(s.amount).replace(".", ","));
   const v = parseAmt(amt);
@@ -217,7 +216,7 @@ export function SurplusCard({ surplus: s, cagnottes = [], onDetail, onDismiss, o
         <button onClick={onDismiss} style={{ background: "none", border: "none", color: "var(--text3)", fontSize: ".9rem", cursor: "pointer" }}>✕</button>
       </div>
       <div style={{ margin: "9px 0 6px" }}>
-        {cagnottes.map(c => <span key={c.id} style={chip(cagId === c.id)} onClick={() => setCagId(c.id)}>{CAG_ICONS[c.cagType] || "🐷"} {c.name}</span>)}
+        {cagnottes.map(c => <span key={c.id} style={chip(cagId === c.id)} onClick={() => setCagId(c.id)}>{cagIconOf(cagTypes, c)} {c.name}</span>)}
       </div>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <label style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)" }}>
