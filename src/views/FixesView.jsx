@@ -37,13 +37,14 @@ const GROUPS = [
   { g: "later", title: "🗓️ Commencent plus tard",       color: "var(--text3)", noTotal: true },
 ];
 
-export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onTogglePointFix, onTogglePointIncome, onSaveProvisional, onDeleteProvisional, insights = [], onDismissInsight, onUpdateRecurringInsight, onCreateFixedInsight }) {
+export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuickPauseFixed, onNewFixedIncome, onEditFixedIncome, onDeleteFixedIncome, onQuickPauseIncome, onTogglePointFix, onTogglePointIncome, onSetFixedDay, onSaveProvisional, onDeleteProvisional, insights = [], onDismissInsight, onUpdateRecurringInsight, onCreateFixedInsight }) {
   const { fixedExpenses, categories } = data;
   const fixedIncomes        = data.fixedIncomes || [];
   const provisionalExpenses = data.provisionalExpenses || [];
   const [selected,      setSelected]      = useState(null);
   const [activeSection, setActiveSection] = useState("depenses");
   const [showInsights,  setShowInsights]  = useState(false);
+  const [dayPick,       setDayPick]       = useState(false);   // v1.58.0 : grille 1–31 ouverte sous la tuile
   const [showProvForm,  setShowProvForm]  = useState(false);
   const [provName,      setProvName]      = useState("");
   const [provAmt,       setProvAmt]       = useState("");
@@ -112,7 +113,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const actBtn = col => ({ fontSize: ".66rem", fontWeight: 800, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: col || "var(--text2)", whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 });
 
   const tile = ({ key, icon, name, amount, dayLabel, dot, top, late, dim, extra }) => (
-    <div key={key} data-tile={key} onClick={() => setSelected(selected === key ? null : key)}
+    <div key={key} data-tile={key} onClick={() => { setSelected(selected === key ? null : key); setDayPick(false); }}
       style={{
         position: "relative", minWidth: 0, cursor: "pointer", textAlign: "center",
         background: late ? "rgba(200,184,96,.07)" : "var(--surface)", border: "1px solid var(--border)", borderTop: `3px solid ${top}`,
@@ -149,10 +150,30 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
               {g === "ok" ? "↩ Dépointer" : "✓ Pointer"}
             </button>
           )}
-          {g !== "later" && <button style={actBtn()} onClick={() => onPause?.(idx)}>{f.paused ? "▶️ Reprendre" : "⏸️ Pause"}</button>}
+          {onSetFixedDay && f.id && (
+            <button data-testid="fix-day-btn" style={{ ...actBtn(f.day ? undefined : "var(--warning)"), ...(f.day ? {} : { borderColor: "var(--warning)" }) }}
+              onClick={() => setDayPick(v => !v)}>📅 {f.day ? `Le ${f.day}` : "Jour ?"}</button>
+          )}
+          {g !== "later" && <button style={actBtn()} title={f.paused ? "Reprendre" : "Mettre en pause"} onClick={() => onPause?.(idx)}>{f.paused ? "▶️" : "⏸️"}</button>}
           <button style={actBtn()} onClick={() => onEdit(idx)}>✏️</button>
           <button style={actBtn("var(--danger)")} onClick={() => { onDelete(idx); setSelected(null); }}>🗑</button>
         </div>
+        {dayPick && onSetFixedDay && f.id && (
+          <div data-testid="fix-day-grid" style={{ marginTop: 7 }}>
+            <div style={{ fontSize: ".6rem", color: "var(--text2)", marginBottom: 5 }}>Jour de {isExp ? "prélèvement" : "versement"} :</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
+              {Array.from({ length: 31 }, (_, i) => i + 1).map(n => {
+                const on = parseInt(f.day, 10) === n;
+                return (
+                  <button key={n} onClick={() => { onSetFixedDay(isExp ? "expense" : "income", f.id, n); setDayPick(false); }}
+                    style={{ fontSize: ".7rem", fontWeight: 700, padding: "6px 0", borderRadius: 7, cursor: "pointer", fontFamily: "inherit",
+                      border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(112,184,224,.2)" : "var(--surface)", color: on ? "var(--accent)" : "var(--text)" }}>{n}</button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 5 }}>Le 29, 30 ou 31 tombe le dernier jour des mois plus courts.</div>
+          </div>
+        )}
         {(g === "pause" || g === "later" || x.amt !== (parseFloat(f.amount) || 0)) && (
           <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 5, lineHeight: 1.45 }}>
             {g === "pause" && <>⏸️ En pause depuis {ymShort(f.pausedFrom) || "?"} · {f.pausedUntil ? `reprend automatiquement après ${ymShort(f.pausedUntil)}` : "aucune reprise programmée"}</>}
@@ -176,7 +197,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
         key, x,
         el: tile({
           key, icon: x.icon, name: x.f.name, amount: fmt(x.amt), top: mainColor,
-          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.f.day ? `le ${x.f.day}` : "jour ?"),
+          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.f.day ? `le ${x.f.day}` : <span style={{ color: "var(--warning)" }}>jour ?</span>),
           dot: g === "ok" ? "var(--success)" : (g === "pause" || g === "later") ? "var(--text3)" : "var(--warning)",
           late: g === "late", dim: g === "pause" || g === "later",
           extra: rise ? <span style={{ marginLeft: 3, fontSize: ".53rem", color: x.f.amount > x.f.prevAmount ? "var(--danger)" : "var(--success)" }}>{x.f.amount > x.f.prevAmount ? "▲" : "▼"}</span> : null,
