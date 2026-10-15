@@ -1,7 +1,7 @@
 {
   "name": "gestion-du-budget",
   "private": true,
-  "version": "1.62.1",
+  "version": "1.63.0",
   "description": "Gestionnaire de budget personnel",
   "type": "module",
   "scripts": {
@@ -29,7 +29,8 @@
     "@capacitor/status-bar": "^6.0.0",
     "@capacitor/keyboard": "^6.0.0",
     "@aparajita/capacitor-biometric-auth": "^8.0.0",
-    "@capacitor/local-notifications": "^6.0.0"
+    "@capacitor/local-notifications": "^6.0.0",
+    "pdfjs-dist": "6.2.108"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
