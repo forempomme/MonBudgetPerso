@@ -6,6 +6,7 @@ import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsigh
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
+import { ReleveCompare } from "./views/ReleveCompare.jsx";
 import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
@@ -453,6 +454,7 @@ export default function App() {
     // Priorité 1 : fermer le modal le plus récent (niveau app)
     if (confirmModal)  { setConfirmModal(null);   return; }
     if (cagTypesOpen)  { setCagTypesOpen(false);  return; }
+    if (releveOpen)    { setReleveOpen(false);    return; }
     if (cagHistModal)  { setCagHistModal(null);   return; }
     if (detailModal)   { setDetailModal(null);    return; }
     if (deleteCatId)   { setDeleteCatId(null);    return; }
@@ -508,6 +510,7 @@ export default function App() {
   // Dépenses hors compte / rechargements (v1.42.0) : null | { mode, entry?, satId? }
   const [offModal,       setOffModal]       = useState(null);
   const [quickEditTpl,   setQuickEditTpl]   = useState(null);    // template en cours de saisie (sheet montant/date)
+  const [releveOpen, setReleveOpen] = useState(false);   // v1.63.0 : comparaison avec un relevé (lecture seule)
   const [cagTypesOpen, setCagTypesOpen] = useState(false); // v1.56.0 : gestion des types de cagnotte
   const [quickManagerOpen, setQuickManagerOpen] = useState(false); // gestion des templates (⚙️ dans l'éventail)
   const [fixedModal,       setFixedModal]       = useState(null);
@@ -804,6 +807,7 @@ export default function App() {
   );
   case "historique": return (
       <HistoriqueView data={{...data, autoSavings: data.autoSavings||[]}}
+        onOpenReleve={() => setReleveOpen(true)}
         onEditOffAccount={entry => setOffModal({ mode: entry.kind, entry })}
         onEditTrans={id => setTransModal({ editingId: id })}
         onDeleteTrans={deleteTransaction}
@@ -895,6 +899,7 @@ export default function App() {
         onDeleteRecurring={deleteRecurring}
         onOpenQuickTemplates={() => setQuickManagerOpen(true)}
         onOpenCagTypes={() => setCagTypesOpen(true)}
+        onOpenReleve={() => setReleveOpen(true)}
         onSaveSideAmountType={saveSideAmountType}
         onDeleteSideAmountType={deleteSideAmountType}
         onSaveTag={saveTag}
@@ -1336,6 +1341,7 @@ export default function App() {
           onClose={() => setDeleteCatId(null)}
         />
       )}
+      {releveOpen && <ReleveCompare data={data} onClose={() => setReleveOpen(false)} />}
       {cagTypesOpen && (
         <CagTypesModal
           cagTypes={data.cagTypes}
