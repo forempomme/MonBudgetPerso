@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.59.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.63.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -183,7 +183,8 @@ gestion-du-budget/
 │   ├── main.jsx
 │   ├── App.jsx          — state, FAB (+ éventail templates rapides), modals, callbacks
 │   ├── store.js         — reducer, actions A.*, DEFAULT_DATA
-│   ├── hooks.js         — useBalance, useReconciliation, useBalanceWithRecurring, useBalanceProjection…
+│   ├── releve.js        — lecture du relevé PDF + comparaison (lecture seule)
+│   ├── hooks.js         — useBalance, useReconciliation, useBalanceWithRecurring, computeProjection…
 │   ├── utils.js         — fmt, isIncome, txLabel, txTypeClass, txSign, APP_VERSION
 │   ├── views.jsx        — toutes les vues + LockScreen + SwipeRow
 │   ├── styles.css       — variables thème, animations, classes type-*
@@ -193,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.59.0
+└── package.json         — version: 1.63.0
 ```
 
 ---
@@ -258,9 +259,9 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 - **Rapprochement** (`useReconciliation`) — calcule `soldePointe` et `soldeAttente` à partir de toutes les transactions pointables (hors `decagnottage`/`transfer`) et de tous les frais fixes, pointés ou non, depuis le premier mois d'utilisation. **Les revenus fixes n'y entrent pas** : il n'existe pas de mécanisme de pointage pour eux (pas de case à cocher), donc les compter automatiquement dans "pointé" fausserait ce chiffre, qui doit refléter uniquement ce que l'utilisateur a réellement vérifié face à son relevé bancaire.
 - **Solde estimé** (`useBalanceWithRecurring`) = `soldePointe + soldeAttente`, moins les récurrentes et programmées **pas encore confirmées** (pas encore de transaction réelle, donc absentes du rapprochement par définition). Les frais fixes non pointés ne sont **jamais** soustraits une seconde fois ici : ils sont déjà comptés une fois dans `soldeAttente`. Une récurrente peut être un revenu (ex: bonus mensuel) ou une dépense — son type est respecté, pas une hypothèse "toujours dépense". Une récurrente à occurrences limitées arrête bien de peser une fois son nombre de fois atteint (pas de décalage d'un mois).
 - **Revenus fixes** — comptés uniquement dans le solde estimé (`effectiveIncomesForMonth`, tous les mois écoulés), jamais dans le rapprochement.
-- **Projection** (`useBalanceProjection`) — anticipe le solde sur N mois (3 par défaut) à partir des fixes, des récurrentes mensuelles (en respectant leur type revenu/dépense et leur nombre d'occurrences restantes), des programmées déjà datées, et d'une estimation du flux courant net. Part du solde estimé actuel (donc de `soldePointe + soldeAttente`).
-- **Flux courant net** (`useVariableCashflowMedian`) — médiane, sur 6 mois, du solde net (revenus moins dépenses) des transactions qui ne sont ni fixes, ni récurrentes, ni un arrondi automatique ; la médiane (plutôt qu'une moyenne) évite qu'un imprévu ponctuel (grosse réparation, gros cadeau) ne fausse l'estimation des mois suivants
-- **Fiabilité de la projection** (`useProjectionAccuracy`) — compare, pour chaque mois désormais passé, la toute première projection figée (`projectionSnapshots`) au solde réellement atteint à la fin de ce mois
+- **Projection** (`computeProjection(data, breakdown, { monthsAhead, alertThreshold })`, v1.62.0) — simule le solde **jour par jour** à partir du solde estimé : reste des dépenses courantes du mois en cours (habituel − déjà dépensé, jamais un ajout), puis chaque mois les revenus et frais fixes à leur jour (jour 1 s'il n'est pas renseigné), les récurrentes mensuelles (type et occurrences restantes respectés) et **annuelles** (au mois de leur dernière occurrence), les programmées, et le courant habituel réparti sur le mois. Donne le **point bas** (date, « juste avant la paie »), les fins de mois avec leur détail ligne par ligne et une **fourchette** (quartiles du courant, à partir de 3 mois d'historique).
+- **Flux courant net** (`variableNetForMonth` + médiane dans `computeProjection`) — médiane, sur les 6 derniers mois **complets et réellement vécus** (aucun mois avant la 1ʳᵉ opération), du net des transactions qui ne sont ni fixes, ni récurrentes, ni un arrondi automatique ; la médiane évite qu'un imprévu ponctuel ne fausse l'estimation
+- **Fiabilité de la projection** (`computeProjectionAccuracy` / `useProjectionAccuracy`) — compare la fin de mois annoncée **le mois d'avant** (`projectionSnapshots[ym]`, `horizon: 1`) au solde réellement atteint, calculé avec la même définition que le solde estimé (opérations d'équilibre comprises). Retourne `{ items, avgAbs, avgSigned, n }`
 - **Sparkline (hero card)** — le point du mois en cours affiche directement la valeur du solde estimé (même source) ; les points des mois passés gardent un calcul historique indépendant (pas de notion "en attente" pertinente pour un mois déjà terminé)
 - **Historique** — affiche son propre rapprochement, mais **scopé au mois affiché** (pas cumulé depuis le début comme celui de l'accueil) : deux métriques légitimement différentes, pas un doublon
 - **Dates** — toujours en heure locale (pas `toISOString()` UTC — corrigé sur tous les raccourcis de date, les valeurs par défaut de formulaire, et les vérifications "mois en cours")
@@ -293,9 +294,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 | `isPointable(type)` | `true` sauf pour `decagnottage`/`transfer` (mouvements internes, absents d'un relevé bancaire) |
 | `useReconciliation(txs, fixes, incomes)` | `{ soldePointe, soldeAttente, nbPointed, totalPointable }` — source unique pour pointé/en attente |
 | `useBalanceWithRecurring(txs, fixes, incomes, recurring, scheduled)` | Solde estimé = `soldePointe + soldeAttente` moins récurrentes/programmées non confirmées |
-| `useVariableCashflowMedian(txs, monthsWindow)` | Médiane du flux courant net sur N mois |
-| `useBalanceProjection(balance, txs, fixes, incomes, recurring, scheduled, monthsAhead, alertThreshold)` | `{ months, variableNetMedian, thresholdBreachMonth, biggestSchedMonth, biggestSchedItem }` |
-| `useProjectionAccuracy(txs, fixes, incomes, projectionSnapshots)` | Liste `{ ym, predicted, actual, delta }` pour les mois passés |
+| `computeProjection(data, breakdown, opts)` | `{ start, current, months[{ ym, label, value, start, delta, range, lines, variable }], days, low, variableNetMedian, historyMonths, thresholdBreachMonth, biggestSchedMonth, biggestSchedItem }` |
+| `useProjectionAccuracy(txs, fixes, incomes, projectionSnapshots)` | `{ items[{ ym, predicted, actual, delta }], avgAbs, avgSigned, n }` (horizon 1 uniquement) |
 | `useMonthStats(txs, fixes, ym, incomes)` | `{ inc, exp, expVar, decag, net }` |
 | `useYearMonths` / `useYearTotals` | Stats annuelles — les frais fixes sont comptés pour **tous** les mois déjà écoulés de l'année (pas seulement le mois en cours) |
 | `useTotalFixes(fixes, ym?)` | Total frais fixes, respecte `startYM` et les `monthlyOverrides` du mois donné |
@@ -342,6 +342,12 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.63.0** | minor | **Comparer avec un relevé (lecture seule)** — bouton 🏦 dans la barre de l'Historique et Options › Mes données. Choisis le relevé PDF de ta banque (format Crédit Mutuel de Bretagne / Arkéa) : il est lu **sur le téléphone** avec pdf.js, sans réseau, puis oublié. Lecture vérifiée contre les sous-totaux, les totaux et « ancien solde + mouvements = nouveau solde ». Rapprochement par **montant au centime + date** (carte : date d'achat du libellé ±2 j ; virements/prélèvements ±4 j ; chèques jusqu'à 90 j), une ligne bancaire = une opération ; frais/revenus fixes et versements/retraits de cagnotte (livret) compris. Résultat : retrouvées, **oubliées** (à la banque, pas dans l'appli), **en trop** (doublon possible signalé), **presque pareilles** (chiffres inversés…), mis de côté (chèques non encaissés, après la fin du relevé), écart expliqué, solde du livret vs total des cagnottes. **Rien n'est créé, pointé, enregistré ni partagé** ; nom, adresse, IBAN et numéros de compte ne sont jamais lus. Nouvelle dépendance : `pdfjs-dist` 6.2.108 (chargée seulement à l'ouverture de cet écran) |
+| **1.62.1** | patch | **Historique filtré (Pointées / Attente) lisible** : les boutons Modifier / Supprimer restaient affichés sous chaque ligne pointée et se voyaient à travers son fond semi-transparent, masquant les montants. Ils n'apparaissent plus qu'en glissant la ligne vers la gauche, et le fond des lignes pointées est opaque |
+| **1.62.0** | minor | **Projection fiable** — corrections : le reste des dépenses courantes du mois en cours est enfin déduit (avant : projection trop optimiste d'environ un demi-mois) ; les mois sans aucune donnée ne comptent plus pour 0 dans la médiane ; la fiabilité compte les opérations d'équilibre et ne compare plus que les projections faites le mois d'avant (les anciennes, faites jusqu'à 3 mois avant, sont remplacées). Ajouts : récurrentes annuelles projetées au mois de leur dernière occurrence ; calcul **jour par jour** → point bas réel (« juste avant la paie ») au lieu de la fin de mois ; **fourchette** selon tes derniers mois ; courbe quotidienne avec les fins de mois — touche un point pour le **détail ligne par ligne** (départ, revenus, fixes, récurrentes, programmées, courant estimé, fin de mois) ; fiabilité résumée (« erreur moyenne ±x €, plutôt optimiste / prudente »). La simulation « Et si… ? » part des mêmes chiffres corrigés |
+| **1.61.0** | minor | **Accueil : carte Projection refaite** — point le plus bas des 3 prochains mois en grand (« au plus bas, en déc. »), courbe aujourd'hui → 3 mois avec la ligne pointillée du seuil d'alerte (points jaunes sous le seuil, rouges en négatif), pastilles **Points d'attention** (découvert / sous le seuil, plus grosse programmée) et **Hypothèses** (flux courant, fiabilité ±x € → détail mois par mois, 🧪 Et si… ?). L'explication du calcul passe derrière le ⓘ du titre. Mode simulation inchangé. **Ménage CSS** : `.hero-dot(s)`, `.dash-cagnotte(2)`, `.dash-fixe(2)`, `.dash-revenu`, `.dash-depense`, `.dash-dep-var` (16 lignes, plus utilisées) |
+| **1.60.0** | minor | **Accueil : cartes différenciées** — chaque carte a sa couleur (🧾 chèques bleu, ⏳ À venir argent, 🐷 Cagnottes violet, 📌 Fixes orange, 📊 Bilan bleu ciel) : fond légèrement teinté, icône dans une pastille carrée colorée, titre en couleur. Petits titres de section : « À traiter » (surplus, chèques, À venir — seulement s'il y a quelque chose), « Patrimoine » (Cagnottes, Fixes), « Résultats » (Bilan). Purement visuel |
+| **1.59.1** | patch | **Accueil : carte du solde plus aérée** (marges, solde un peu plus grand, pastilles plus grandes et espacées) et **pastilles qui passent à la ligne** au lieu de défiler horizontalement |
 | **1.59.0** | minor | **Accueil : carte du solde ramassée** (~200 px au lieu de ~400) : solde + pastille « ▲ x % vs même jour du mois dernier » (touche → fenêtre **Évolution du solde** avec le graphe des 6 mois, les soldes et la variation de chaque mois) ; pastilles rangées en 2 lignes titrées — **Ce mois-ci** (courses, reste à vivre, à recevoir, après prévisions, arrondis du mois/de l'année, arrondis à virer) et **Rapprochement x/y** (pointé, en attente, porte-monnaie TR) ; bascule **Solde / Projection** à la place des points du carrousel, la hauteur suit la carte affichée. **« À venir » remonté juste sous la carte chèque** ; le reste de l'écran est inchangé. Calculs identiques (même solde, même écart, mêmes montants) |
 | **1.58.0** | minor | **Jour d'un frais/revenu fixe choisi depuis sa tuile** (écran Fixes) : bouton « 📅 Jour ? » (en jaune s'il manque) ou « 📅 Le 12 » dans la barre d'actions → grille 1–31 ; la tuile se range aussitôt dans le bon groupe. Les tuiles sans jour affichent « jour ? » en jaune. Bouton pause réduit à ⏸️ / ▶️. **Saisie plus fluide** : « Repéré pour toi » n'est plus recalculé à chaque chiffre tapé, seulement quand les données changent |
 | **1.57.1** | patch | **Ajustements manuels de cagnotte tracés** : modifier « Déjà épargné » dans la fiche ajoute une ligne « ✏️ Ajustement manuel » (date, avant → après, écart) dans l'historique de la cagnotte. Sans effet sur le solde bancaire ni sur le versé/retiré (ce n'est pas une transaction). **Ménage** : `PALETTE` et `polar` (utils.js), `useYearTotals` (hooks.js), plus utilisés nulle part |
