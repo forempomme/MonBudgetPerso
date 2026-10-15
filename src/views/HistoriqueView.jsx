@@ -203,7 +203,7 @@ export function txSubLabel(note, cat, categories, iso) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onOverrideIncomeMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
+export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onOverrideIncomeMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
   const now = new Date();
   const [year,     setYear]     = useState(now.getFullYear());
   const [monthIdx, setMonthIdx] = useState(now.getMonth());
@@ -583,6 +583,7 @@ export function HistoriqueView({ data, onEditOffAccount, onEditTrans, onDeleteTr
             {MONTHS_FR[monthIdx]} <span style={{ fontFamily: "var(--ui)", fontSize: ".62rem", color: "var(--text3)", fontWeight: 700 }}>{year}</span>
           </div>
           <button onClick={nextMonth} style={{ ...barBtn(false), opacity: isCurrentMonth ? .35 : 1, cursor: isCurrentMonth ? "default" : "pointer" }}>▶</button>
+          {onOpenReleve && <button onClick={onOpenReleve} title="Comparer avec un relevé" data-testid="open-releve" style={barBtn(false)}>🏦</button>}
           <button onClick={() => setSearchOpen(o => !o)} style={barBtn(searchOpen || !!search.trim())}>🔍</button>
           <button onClick={() => setShowFilterPanel(p => !p)} style={{ ...barBtn(activeCount > 0 || showFilterPanel), position: "relative" }}>⚙️
             {activeCount > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: "var(--accent)", color: "var(--bg)", borderRadius: "50%", width: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".52rem", fontWeight: 800 }}>{activeCount}</span>}
