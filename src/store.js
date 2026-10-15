@@ -1065,15 +1065,17 @@ export function reducer(state, action) {
 
     case A.SAVE_PROJECTION_SNAPSHOT: {
       const { ym, predictedValue } = action;
-      // Déjà figé pour ce mois : on ne réécrit jamais (on garde la toute
-      // première anticipation) — et on renvoie le MÊME state (pas de copie)
-      // pour ne pas déclencher de re-render/effet en boucle pour rien.
-      if (state.projectionSnapshots?.[ym]) return state;
+      // Déjà figé pour ce mois : on ne réécrit jamais — et on renvoie le MÊME
+      // state (pas de copie) pour ne pas déclencher de re-render en boucle.
+      // v1.62.0 : seule la projection faite le mois d'avant (horizon 1) est
+      // figée ; une ancienne valeur (faite jusqu'à 3 mois avant, sans horizon)
+      // est remplacée une fois, puis plus jamais.
+      if (state.projectionSnapshots?.[ym]?.horizon === 1) return state;
       return {
         ...state,
         projectionSnapshots: {
           ...state.projectionSnapshots,
-          [ym]: { predictedValue, predictedOn: todayISO() },
+          [ym]: { predictedValue, predictedOn: todayISO(), horizon: 1 },
         },
       };
     }

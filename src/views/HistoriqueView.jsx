@@ -62,7 +62,10 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
   return (
     <div style={{ position:"relative", overflow:"hidden" }}>
       {/* Boutons d'action révélés par swipe gauche */}
-      {REVEAL_W > 0 && (
+      {/* v1.62.1 : boutons rendus seulement pendant/après un glissement — avant, ils
+          restaient dessous en permanence et se voyaient à travers le fond
+          semi-transparent des lignes pointées (filtre « Pointées »). */}
+      {REVEAL_W > 0 && swipeOffset < 0 && (
         <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL_W, display:"flex" }}>
           {onEdit && (
             <button onClick={() => { closeSwipe(); onEdit(item.id); }} style={{
@@ -93,7 +96,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
       <div style={{
         display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
         borderBottom: editing ? "none" : "1px solid var(--border-soft)",
-        background: item.pointed ? "rgba(104,212,152,.04)" : "var(--surface)",
+        background: item.pointed ? "linear-gradient(rgba(104,212,152,.04), rgba(104,212,152,.04)), var(--surface)" : "var(--surface)",
         transition: "background .2s",
       }}>
         {/* Bouton pointage */}

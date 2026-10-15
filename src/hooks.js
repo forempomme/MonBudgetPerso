@@ -145,19 +145,6 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Year totals
-// ─────────────────────────────────────────────────────────────────
-export function useYearTotals(transactions, fixedExpenses, year, fixedIncomes = []) {
-  // v1.47.1 : somme des mêmes totaux mensuels que partout (revenus fixes
-  // inclus, rien avant la 1ʳᵉ opération ni dans le futur)
-  return useMemo(() => {
-    const t = computePeriodTotals(transactions, fixedExpenses, fixedIncomes, `${year}-01`, `${year}-12`);
-    return { inc: t.inc, exp: t.exp, sav: t.sav };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, fixedExpenses, fixedIncomes, year]);
-}
-
-// ─────────────────────────────────────────────────────────────────
 //  Prior year for delta comparison (same elapsed months)
 // ─────────────────────────────────────────────────────────────────
 export function usePriorYearStats(transactions, fixedExpenses, fixedIncomes = []) {
@@ -366,127 +353,9 @@ function median(nums) {
   return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-export function useVariableCashflowMedian(transactions, monthsWindow = 6) {
-  return useMemo(() => {
-    const now = new Date();
-    const monthlyNet = [];
-    for (let i = 1; i <= monthsWindow; i++) {
-      const d  = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      let net = 0;
-      transactions.forEach(t => {
-        if (t.templateId || t.isRounding || !t.date.startsWith(ym)) return;
-        const a = parseFloat(t.amount) || 0;
-        if      (t.type === "expense") net -= a;
-        else if (t.type === "income")  net += a;
-        // épargne / décagnottage / ajustement : exclus, déjà suivis via les cagnottes
-      });
-      monthlyNet.push(net);
-    }
-    return median(monthlyNet);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, monthsWindow]);
-}
-
-// ─────────────────────────────────────────────────────────────────
-//  Projection du solde sur les prochains mois (v1.39.11)
-//  Intègre les montants CONNUS (fixes, récurrentes mensuelles — revenu
-//  ou dépense selon leur type, programmées déjà datées) + une
-//  estimation du flux courant net (médiane ci-dessus). Les récurrentes
-//  annuelles ne sont pas anticipées ici : on ne sait pas de façon
-//  fiable à quel mois futur elles retomberont. C'est une estimation,
-//  pas une prévision exacte — elle ne peut pas deviner un imprévu
-//  ponctuel.
-// ─────────────────────────────────────────────────────────────────
-const PROJ_MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-
-export function useBalanceProjection(balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead = 3, alertThreshold = null) {
-  const variableNetMedian = useVariableCashflowMedian(transactions, 6);
-
-  return useMemo(() => {
-    const now = new Date();
-    const months = [];
-    let running = balance;
-    let deltaFromPrev = 0; // pour repérer le mois qui baisse le plus
-
-    for (let i = 1; i <= monthsAhead; i++) {
-      const d  = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-      // v1.46.2 : respecte début (startYM), pause en cours et pauses passées
-      // — comme partout ailleurs (avant : un frais en pause restait projeté)
-      const fixExp = (fixedExpenses || []).reduce((s, f) => {
-        if (!isActiveForMonth(f, ym)) return s;
-        const ov = f.monthlyOverrides?.[ym];
-        return s + ((ov?.amount ?? f.amount) || 0);
-      }, 0);
-      const fixInc = (fixedIncomes || []).reduce((s, f) => {
-        if (!isActiveForMonth(f, ym)) return s;
-        const ov = f.monthlyOverrides?.[ym];
-        return s + ((ov?.amount ?? f.amount) || 0);
-      }, 0);
-
-      // Une récurrente peut être un revenu (ex: bonus mensuel) ou une
-      // dépense (ex: abonnement) — on respecte son type, pas une
-      // hypothèse "toujours dépense". On tient aussi compte du fait
-      // qu'une récurrente à occurrences limitées peut se terminer
-      // AVANT la fin de la fenêtre de projection : une fois le nombre
-      // de fois atteint, elle arrête de peser sur les mois suivants.
-      const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      const recNet = (recurringTemplates || []).reduce((s, tpl) => {
-        if (tpl.frequency !== "monthly") return s;
-        const amount = parseFloat(tpl.amount) || 0;
-        if (amount <= 0) return s;
-        if (tpl.occurrences != null) {
-          const confirmed  = transactions.filter(t => t.templateId === tpl.id);
-          const doneSoFar  = confirmed.length;
-          // Si le mois en cours n'est pas encore confirmé, le solde de
-          // départ (balance) l'anticipe déjà comme "fait" — il compte
-          // donc pour 1 occurrence de plus que ce qui est dans les données.
-          const doneThisMonth  = confirmed.some(t => recurringRefDate(t).startsWith(curYM));
-          const effectiveDone  = doneThisMonth ? doneSoFar : doneSoFar + 1;
-          if (effectiveDone + i > tpl.occurrences) return s;
-        }
-        return s + (tpl.type === "income" ? amount : -amount);
-      }, 0);
-
-      // Les programmées sont toujours des dépenses (l'app ne propose que
-      // des catégories de dépense pour ce type de transaction). On garde
-      // le détail (pas juste le total) pour pouvoir expliquer le mois.
-      const schedItems = (scheduledTransactions || []).filter(sc => sc.date.slice(0, 7) === ym);
-      const schedDue   = schedItems.reduce((s, sc) => s + (parseFloat(sc.amount) || 0), 0);
-
-      const prevRunning = running;
-      running = running + fixInc - fixExp + recNet - schedDue + variableNetMedian;
-
-      months.push({
-        ym, label: PROJ_MONTHS_SHORT[d.getMonth()], value: running,
-        delta: running - prevRunning, schedItems,
-      });
-    }
-
-    // Repère le premier mois où la projection passe sous le seuil d'alerte
-    let thresholdBreachMonth = null;
-    if (alertThreshold != null && alertThreshold > 0) {
-      thresholdBreachMonth = months.find(m => m.value < alertThreshold) || null;
-    }
-
-    // Repère le mois qui explique le mieux une baisse (la plus grosse
-    // programmée parmi tous les mois projetés, s'il y en a une)
-    let biggestSchedMonth = null, biggestSchedItem = null;
-    months.forEach(m => {
-      m.schedItems.forEach(sc => {
-        const a = parseFloat(sc.amount) || 0;
-        if (!biggestSchedItem || a > (parseFloat(biggestSchedItem.amount) || 0)) {
-          biggestSchedItem = sc; biggestSchedMonth = m;
-        }
-      });
-    });
-
-    return { months, variableNetMedian, thresholdBreachMonth, biggestSchedMonth, biggestSchedItem };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [balance, transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, monthsAhead, variableNetMedian, alertThreshold]);
-}
+// v1.62.0 : useVariableCashflowMedian et useBalanceProjection remplacés par
+// computeProjection (plus bas), qui corrige la fin du mois en cours, les mois
+// sans données, les récurrentes annuelles et cherche le point bas jour par jour.
 
 // ─────────────────────────────────────────────────────────────────
 //  Fiabilité de la projection (v1.39.14)
@@ -495,19 +364,16 @@ export function useBalanceProjection(balance, transactions, fixedExpenses, fixed
 //  toutes) avec le solde réellement atteint à la fin de ce mois-là.
 // ─────────────────────────────────────────────────────────────────
 function balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, targetYM) {
+  // v1.62.0 : même définition que le solde estimé (rapprochement) — opérations
+  // d'équilibre comprises (avant : ignorées → faux écarts dans la fiabilité)
   let bal = 0;
   transactions.forEach(t => {
-    if (t.date.slice(0, 7) > targetYM) return;
+    if (t.date.slice(0, 7) > targetYM || !isPointable(t.type)) return;
     const a = parseFloat(t.amount) || 0;
-    if      (isIncome(t.type))      bal += a;
-    else if (t.type === "expense")  bal -= a;
-    else if (t.type === "epargne")  bal -= a;
+    bal += isIncomeDirection(t) ? a : -a;
   });
   if (transactions.length > 0) {
-    const earliest = transactions.reduce(
-      (min, t) => (t.date < min ? t.date : min), transactions[0].date
-    );
-    const startYM = earliest.slice(0, 7);
+    const startYM = firstDataYM(transactions);
     if (startYM <= targetYM) {
       monthRange(startYM, targetYM).forEach(ym => {
         bal -= effectiveFixesForMonth(fixedExpenses, ym);
@@ -518,19 +384,25 @@ function balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, target
   return bal;
 }
 
+/** v1.62.0 : seules les projections faites le mois d'avant (horizon 1) sont comparées */
+export function computeProjectionAccuracy(transactions, fixedExpenses, fixedIncomes, projectionSnapshots, curYM = currentYM()) {
+  const items = [];
+  Object.entries(projectionSnapshots || {}).forEach(([ym, snap]) => {
+    if (ym >= curYM || snap?.horizon !== 1) return;
+    const actual = balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, ym);
+    items.push({ ym, predicted: snap.predictedValue, actual, delta: actual - snap.predictedValue });
+  });
+  items.sort((a, b) => b.ym.localeCompare(a.ym));
+  const last = items.slice(0, 6);
+  const avgAbs = last.length ? last.reduce((s, a) => s + Math.abs(a.delta), 0) / last.length : null;
+  const avgSigned = last.length ? last.reduce((s, a) => s + a.delta, 0) / last.length : null;
+  return { items, avgAbs, avgSigned, n: last.length };
+}
+
 export function useProjectionAccuracy(transactions, fixedExpenses, fixedIncomes, projectionSnapshots) {
-  return useMemo(() => {
-    const curYM = currentYM();
-    const results = [];
-    Object.entries(projectionSnapshots || {}).forEach(([ym, snap]) => {
-      if (ym >= curYM) return; // le mois n'est pas encore passé
-      const actual = balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, ym);
-      results.push({ ym, predicted: snap.predictedValue, actual, delta: actual - snap.predictedValue });
-    });
-    results.sort((a, b) => b.ym.localeCompare(a.ym));
-    return results;
+  return useMemo(() => computeProjectionAccuracy(transactions, fixedExpenses, fixedIncomes, projectionSnapshots),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions, fixedExpenses, fixedIncomes, projectionSnapshots]);
+  [transactions, fixedExpenses, fixedIncomes, projectionSnapshots]);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -1008,16 +880,19 @@ export function nextPayday(data, today = todayISO()) {
  * puis ajoute les opérations du mois suivant qui tombent avant la paie.
  * Les courses restantes sont réparties uniformément sur les jours.
  */
-export function computeDailyForecast(data, breakdown, grocery, today = todayISO()) {
+/**
+ * v1.62.0 — Mois en cours : ce que le solde estimé a DÉJÀ compté (fixes et revenus
+ * fixes non pointés datés après aujourd'hui, récurrentes, programmées du mois),
+ * ré-étalé à sa date. Retourne le solde de départ « avant ces opérations » et la
+ * liste des opérations datées. Source unique pour le solde jour par jour
+ * (computeDailyForecast) et la projection (computeProjection).
+ */
+export function pendingEventsThisMonth(data, breakdown, today = todayISO()) {
   const curYM = today.slice(0, 7);
-  const pay = nextPayday(data, today);
-  const end = pay ? pay.date : `${curYM}-${pad2(lastDayOf(curYM))}`;
   const cats = data.categories || [];
   const events = [];
   let addBack = 0;
   const ev = (date, amount, label, kind, extra = {}) => events.push({ date, amount, label, kind, ...extra });
-
-  // 1) Mois en cours : ce que le solde estimé a déjà compté, ré-étalé à sa date
   (data.fixedExpenses || []).forEach(f => {
     if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
     const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
@@ -1028,7 +903,7 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
     if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
     const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
     const a = (f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0;
-    ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰" }); addBack -= a;
+    ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", id: f.id }); addBack -= a;
   });
   (breakdown?.recurring?.items || []).forEach(({ tpl, signed, day }) => {
     if (!day || tpl.frequency === "yearly") return;
@@ -1039,7 +914,19 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
     if (s.date <= today || !s.date.startsWith(curYM)) return;
     ev(s.date, signed, s.note || "Programmée", "sch", { icon: cats.find(c => c.id === s.categoryId)?.icon || "📅" }); addBack -= signed;
   });
-  const start = (breakdown?.total || 0) + addBack;
+  return { start: (breakdown?.total || 0) + addBack, events };
+}
+
+export function computeDailyForecast(data, breakdown, grocery, today = todayISO()) {
+  const curYM = today.slice(0, 7);
+  const pay = nextPayday(data, today);
+  const end = pay ? pay.date : `${curYM}-${pad2(lastDayOf(curYM))}`;
+  const cats = data.categories || [];
+  // 1) Mois en cours : ce que le solde estimé a déjà compté, ré-étalé à sa date
+  const cur = pendingEventsThisMonth(data, breakdown, today);
+  const events = cur.events;
+  const ev = (date, amount, label, kind, extra = {}) => events.push({ date, amount, label, kind, ...extra });
+  const start = cur.start;
 
   // 2) Mois suivants jusqu'à la paie (pas encore dans le solde estimé)
   if (end.slice(0, 7) > curYM) {
@@ -1338,5 +1225,168 @@ export function computeCagnottesSummary(data, ym = currentYM()) {
     objectives: { count: withTarget.length, saved: objSaved, target: objTarget, pct: objTarget > 0 ? objSaved / objTarget * 100 : null },
     auto: { count: plans.length, monthly: plans.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0) },
     rounding: { cag: roundCag || null, month: roundingMonth },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  computeProjection — v1.62.0 : projection du solde JOUR PAR JOUR
+//  (remplace useBalanceProjection / useVariableCashflowMedian).
+//  Corrections par rapport à l'ancienne projection :
+//   • le reste des dépenses courantes du mois en cours est déduit
+//     (avant : la projection partait du solde du jour et ajoutait des
+//     mois complets → trop optimiste de ~la moitié d'un mois) ;
+//   • le flux courant ne compte que les mois réellement vécus (avant :
+//     les mois sans aucune donnée comptaient pour 0 dans la médiane) ;
+//   • les récurrentes annuelles retombent au mois de leur dernière
+//     occurrence ;
+//   • le point bas est cherché jour par jour (souvent la veille de la paie),
+//     pas seulement en fin de mois ;
+//   • fourchette (quartiles du flux courant) et détail ligne par ligne.
+//  Part du solde estimé (breakdown.total) : même source que la carte.
+// ─────────────────────────────────────────────────────────────────
+const PROJ_MONTHS = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+function quantile(sorted, p) {
+  if (sorted.length < 3) return null;
+  const pos = (sorted.length - 1) * p, lo = Math.floor(pos), hi = Math.ceil(pos);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+/** Flux courant net d'un mois : dépenses et revenus ponctuels (hors récurrentes, arrondis, cagnottes) */
+export function variableNetForMonth(transactions, ym) {
+  return (transactions || []).reduce((s, t) => {
+    if (t.templateId || t.isRounding || !(t.date || "").startsWith(ym)) return s;
+    const a = parseFloat(t.amount) || 0;
+    return t.type === "expense" ? s - a : t.type === "income" ? s + a : s;
+  }, 0);
+}
+
+export function computeProjection(data, breakdown, { today = todayISO(), monthsAhead = 3, alertThreshold = null } = {}) {
+  const tx = data.transactions || [];
+  const cats = data.categories || [];
+  const icon = (id, def) => cats.find(c => c.id === id)?.icon || def;
+  const curYM = today.slice(0, 7);
+  const first = firstDataYM(tx);
+  const r2 = n => Math.round(n * 100) / 100;
+
+  // 1) Flux courant : mois COMPLETS réellement vécus (6 au plus)
+  const hist = [];
+  for (let i = 1; i <= 6; i++) { const ym = ymAdd(curYM, -i); if (ym < first) break; hist.push(variableNetForMonth(tx, ym)); }
+  const med = median(hist);
+  const sorted = [...hist].sort((a, b) => a - b);
+  const p25 = quantile(sorted, .25), p75 = quantile(sorted, .75);
+
+  // 2) Mois en cours : opérations déjà comptées dans le solde, ré-étalées à leur date,
+  //    + reste des dépenses courantes habituelles (jamais un ajout : on ne compte pas
+  //    sur un revenu ponctuel pas encore reçu)
+  const cur = pendingEventsThisMonth(data, breakdown, today);
+  const soFar = variableNetForMonth(tx, curYM);
+  const remCur = Math.min(0, med - soFar);
+  const daysLeftCur = lastDayOf(curYM) - parseInt(today.slice(8, 10), 10);
+
+  // 3) Mois suivants : opérations connues + flux courant habituel
+  const pay = nextPayday(data, today);
+  const payId = pay?.income?.id;
+  const months = [];
+  const evByDate = {};
+  const addEv = e => { (evByDate[e.date] = evByDate[e.date] || []).push(e); };
+  cur.events.forEach(e => addEv({ ...e, ym: curYM, isPay: e.kind === "inc" && !!payId && e.id === payId }));
+  const recConfirmed = tpl => tx.filter(t => t.templateId === tpl.id);
+  for (let i = 1; i <= monthsAhead; i++) {
+    const ym = ymAdd(curYM, i);
+    const lines = [];
+    const push = (date, amount, label, kind, ic, extra = {}) => {
+      if (!amount) return;
+      const e = { date, amount, label, kind, icon: ic, ym, ...extra };
+      lines.push(e); addEv(e);
+    };
+    (data.fixedIncomes || []).forEach(f => {
+      if (!isActiveForMonth(f, ym)) return;
+      const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+      push(dayInMonthISO(f.day || 1, ym), a, f.name, "inc", icon(f.categoryId, "💰"), { isPay: f.id === payId });
+    });
+    (data.fixedExpenses || []).forEach(f => {
+      if (!isActiveForMonth(f, ym)) return;
+      const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+      push(dayInMonthISO(f.day || 1, ym), -a, f.name, "fix", icon(f.categoryId, "📌"));
+    });
+    (data.recurringTemplates || []).forEach(tpl => {
+      const amount = parseFloat(tpl.amount) || 0;
+      if (amount <= 0) return;
+      const conf = recConfirmed(tpl);
+      const last = conf.map(recurringRefDate).sort().pop();
+      const signed = tpl.type === "income" ? amount : -amount;
+      const label = tpl.label || tpl.note || cats.find(c => c.id === tpl.categoryId)?.name || "Récurrente";
+      if (tpl.frequency === "yearly") {
+        // Retombe au mois de sa dernière occurrence, si pas déjà faite cette année-là
+        if (!last || last.slice(5, 7) !== ym.slice(5, 7)) return;
+        if (tpl.occurrences != null && conf.length >= tpl.occurrences) return;
+        if (conf.some(t => recurringRefDate(t).startsWith(ym.slice(0, 4)))) return;
+        push(dayInMonthISO(parseInt(last.slice(8, 10), 10), ym), signed, label, "rec", icon(tpl.categoryId, "🔄"), { yearly: true });
+        return;
+      }
+      if (tpl.frequency !== "monthly") return;
+      if (tpl.occurrences != null) {
+        // le mois en cours non confirmé est déjà anticipé dans le solde → compte pour une occurrence
+        const doneThisMonth = conf.some(t => recurringRefDate(t).startsWith(curYM));
+        if ((doneThisMonth ? conf.length : conf.length + 1) + i > tpl.occurrences) return;
+      }
+      push(dayInMonthISO(last ? parseInt(last.slice(8, 10), 10) : 1, ym), signed, label, "rec", icon(tpl.categoryId, "🔄"));
+    });
+    (data.scheduledTransactions || []).forEach(s => {
+      if (!(s.date || "").startsWith(ym)) return;
+      push(s.date, -(parseFloat(s.amount) || 0), s.note || "Programmée", "sch", icon(s.categoryId, "📅"), { s });
+    });
+    months.push({ ym, label: PROJ_MONTHS[parseInt(ym.slice(5, 7), 10) - 1], lines, variable: med });
+  }
+
+  // 4) Simulation jour par jour (dépenses du jour avant les rentrées : point bas = veille de paie)
+  const lastYM = ymAdd(curYM, monthsAhead);
+  const end = `${lastYM}-${pad2(lastDayOf(lastYM))}`;
+  let bal = cur.start;
+  let low = null, breach = null;
+  const days = [];
+  const monthEnd = {};
+  for (let d = today; d <= end; d = addDaysISO(d, 1)) {
+    const ym = d.slice(0, 7);
+    if (d > today) bal += ym === curYM ? (daysLeftCur > 0 ? remCur / daysLeftCur : 0) : med / lastDayOf(ym);
+    const evs = evByDate[d] || [];
+    bal += evs.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
+    if (low == null || bal < low.balance) low = { date: d, balance: r2(bal), beforePay: evs.some(e => e.isPay) };
+    if (breach == null && alertThreshold != null && alertThreshold > 0 && bal < alertThreshold) breach = { date: d, ym };
+    bal += evs.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0);
+    days.push({ date: d, balance: r2(bal) });
+    if (d === `${ym}-${pad2(lastDayOf(ym))}`) monthEnd[ym] = bal;
+  }
+  // Point bas la veille d'une paie : on le signale
+  if (low && !low.beforePay) {
+    const next = evByDate[addDaysISO(low.date, 1)] || [];
+    low.beforePay = next.some(e => e.isPay);
+  }
+
+  // 5) Résultat par mois (fin de mois) + fourchette (quartiles du flux courant)
+  const curEnd = monthEnd[curYM] ?? cur.start + remCur;
+  const outMonths = months.map((m, k) => {
+    const value = r2(monthEnd[m.ym]);
+    const prev = k === 0 ? curEnd : monthEnd[months[k - 1].ym];
+    const range = p25 != null ? { low: r2(value + (k + 1) * (p25 - med)), high: r2(value + (k + 1) * (p75 - med)) } : null;
+    const schedItems = m.lines.filter(l => l.kind === "sch").map(l => l.s);
+    return { ...m, value, start: r2(prev), delta: r2(value - prev), range, schedItems };
+  });
+  let biggestSchedMonth = null, biggestSchedItem = null;
+  outMonths.forEach(m => m.schedItems.forEach(sc => {
+    if (!biggestSchedItem || (parseFloat(sc.amount) || 0) > (parseFloat(biggestSchedItem.amount) || 0)) { biggestSchedItem = sc; biggestSchedMonth = m; }
+  }));
+  const lowYM = low?.date.slice(0, 7);
+  const lowK = outMonths.findIndex(m => m.ym === lowYM);
+  const lowRange = p25 != null && low ? { low: r2(low.balance + (lowK + 1) * (p25 - med)), high: r2(low.balance + (lowK + 1) * (p75 - med)) } : null;
+
+  return {
+    start: r2(breakdown?.total || 0),
+    current: { ym: curYM, label: PROJ_MONTHS[parseInt(curYM.slice(5, 7), 10) - 1], value: r2(curEnd), remainingVariable: r2(remCur), soFarVariable: r2(soFar), events: cur.events },
+    months: outMonths,
+    days,
+    low: low ? { ...low, ym: lowYM, label: PROJ_MONTHS[parseInt(lowYM.slice(5, 7), 10) - 1], range: lowRange } : null,
+    variableNetMedian: r2(med), historyMonths: hist.length,
+    thresholdBreachMonth: breach ? { ...breach, label: PROJ_MONTHS[parseInt(breach.ym.slice(5, 7), 10) - 1] } : null,
+    biggestSchedMonth, biggestSchedItem,
   };
 }

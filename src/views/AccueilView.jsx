@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
-import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, useBalanceProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 import { ForecastPanel, RestToLiveSheet, ReimbursementsSheet } from "./ForecastPanels.jsx";
@@ -151,16 +151,13 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
   // v1.39.10 : projection du solde sur les prochains mois (médiane des
   // dépenses courantes + fixes/récurrentes/programmées déjà connus)
-  const projection = useBalanceProjection(
-    balance, transactions, fixedExpenses, data.fixedIncomes || [],
-    data.recurringTemplates || [], data.scheduledTransactions || [], 3, alertThreshold
-  );
+  // v1.62.0 : computeProjection — jour par jour, reste du mois en cours déduit,
+  // récurrentes annuelles, point bas avant la paie, fourchette, détail par mois
+  const projection = useMemo(() => computeProjection(data, breakdown, { monthsAhead: 3, alertThreshold: alertEnabled ? alertThreshold : null }),
+    [data, breakdown, alertEnabled, alertThreshold]);
   // v1.50.0 : « Et si… ? » — projection sur 6 mois servant de base à la
   // simulation (jamais figée dans projectionSnapshots), scénarios en mémoire seulement
-  const projection6 = useBalanceProjection(
-    balance, transactions, fixedExpenses, data.fixedIncomes || [],
-    data.recurringTemplates || [], data.scheduledTransactions || [], 6, null
-  );
+  const projection6 = useMemo(() => computeProjection(data, breakdown, { monthsAhead: 6 }), [data, breakdown]);
   const [simScenarios, setSimScenarios] = useState([]);
   const [simOn,        setSimOn]        = useState(false);
   const [simSheet,     setSimSheet]     = useState(false);
@@ -175,15 +172,11 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
     setHeroIndex(Math.round(el.scrollLeft / el.clientWidth));
   };
 
-  // v1.39.14 : on fige la toute première projection vue pour chaque mois —
-  // le reducer ignore lui-même les mois déjà figés (no-op), donc pas de
-  // souci à rappeler ça à chaque render.
+  // v1.62.0 : on fige la projection du MOIS SUIVANT (horizon 1), une seule fois,
+  // pour mesurer la fiabilité à horizon constant (le reducer ignore les doublons).
   useEffect(() => {
-    projection.months.forEach(m => {
-      if (!data.projectionSnapshots?.[m.ym]) {
-        onSaveProjectionSnapshot?.(m.ym, m.value);
-      }
-    });
+    const m = projection.months[0];
+    if (m && data.projectionSnapshots?.[m.ym]?.horizon !== 1) onSaveProjectionSnapshot?.(m.ym, m.value);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projection.months]);
 
@@ -424,6 +417,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
   const [evoOpen, setEvoOpen] = useState(false);
   const [projInfo, setProjInfo] = useState(false);   // v1.61.0 : explication du calcul (ⓘ)
   const [accOpen,  setAccOpen]  = useState(false);   // v1.61.0 : détail de la fiabilité
+  const [projSel,  setProjSel]  = useState(null);    // v1.62.0 : fin de mois dont on montre le détail
 
   // Bascule Solde / Projection (remplace les points du carrousel)
   const heroCardRefs = [useRef(null), useRef(null)];
@@ -654,63 +648,116 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             onEdit={() => setSimSheet(true)} onQuit={() => { setSimOn(false); setSimScenarios([]); }} />
         )}
         {!simOn && (() => {
-          // v1.61.0 — variante C : point le plus bas en grand, courbe aujourd'hui → 3 mois
-          // avec la ligne du seuil d'alerte, pastilles « Points d'attention » / « Hypothèses ».
-          const months = projection.months || [];
-          if (!months.length) return null;
-          const low = months.reduce((m, x) => x.value < m.value ? x : m, months[0]);
+          // v1.62.0 — projection jour par jour (computeProjection) : point bas réel
+          // (souvent la veille de la paie) + fourchette, courbe quotidienne avec fins
+          // de mois (touche un point → détail ligne par ligne), fiabilité à 1 mois.
+          const P = projection;
+          if (!P.months.length || !P.low) return null;
           const th  = alertEnabled && alertThreshold > 0 ? alertThreshold : null;
           const lvl = v => v < 0 ? "#c87070" : th != null && v < th ? "#c8b860" : "#68d498";
-          const pts = [{ label: "Auj.", value: balance, today: true }, ...months];
-          const W = 340, H = 96, pad = 20;
-          const vals = pts.map(p => p.value).concat(th != null ? [th] : []);
-          // échelle serrée sur les valeurs (sinon une courbe autour de 3 400 € paraît plate)
-          const rawMx = Math.max(...vals), rawMn = Math.min(...vals), rng = Math.max(rawMx - rawMn, Math.abs(rawMx) * .05, 50);
-          const mx = rawMx + rng * .15, mn = rawMn - rng * .25, span = mx - mn;
-          const X = i => pad + i * (W - 2 * pad) / (pts.length - 1);
-          const Y = v => H - 16 - (v - mn) / span * (H - 34);
+          const MF = MONTHS_FR.map(m => m.toLowerCase());
+          const MA = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+          const dLabel = iso => `${parseInt(iso.slice(8, 10), 10)} ${MA[parseInt(iso.slice(5, 7), 10) - 1]}`;
           const n0 = v => `${v < 0 ? "−" : ""}${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v))} €`;
-          const line = pts.map((p, i) => `${X(i)},${Y(p.value)}`).join(" ");
-          const acc = projectionAccuracy.slice(0, 3);
-          const accAvg = acc.length ? acc.reduce((s, a) => s + Math.abs(a.delta), 0) / acc.length : null;
+          const days = P.days;
+          const ends = [{ ym: P.current.ym, label: P.current.label, value: P.current.value, isCur: true }, ...P.months];
+          const endIdx = e => days.findIndex(d => d.date.slice(0, 7) === e.ym && d.date === days.filter(x => x.date.slice(0, 7) === e.ym).pop()?.date);
+          const W = 340, H = 104, padL = 14, padR = 14;
+          const vals = days.map(d => d.balance).concat(th != null ? [th] : []).concat(P.months.flatMap(m => m.range ? [m.range.low, m.range.high] : []));
+          const rawMx = Math.max(...vals), rawMn = Math.min(...vals), rng = Math.max(rawMx - rawMn, Math.abs(rawMx) * .05, 50);
+          const mx = rawMx + rng * .18, mn = rawMn - rng * .12, span = mx - mn;
+          const X = k => padL + k * (W - padL - padR) / Math.max(1, days.length - 1);
+          const Y = v => H - 16 - (v - mn) / span * (H - 32);
+          const line = days.map((d, k) => `${X(k).toFixed(1)},${Y(d.balance).toFixed(1)}`).join(" ");
+          const ranged = P.months.filter(m => m.range);
+          const band = ranged.length ? (() => {
+            const pts = [{ k: 0, lo: days[0].balance, hi: days[0].balance }, { k: endIdx(ends[0]), lo: P.current.value, hi: P.current.value },
+              ...P.months.map(m => ({ k: endIdx(m), lo: m.range?.low ?? m.value, hi: m.range?.high ?? m.value }))];
+            return pts.map(p => `${X(p.k)},${Y(p.hi)}`).join(" ") + " " + [...pts].reverse().map(p => `${X(p.k)},${Y(p.lo)}`).join(" ");
+          })() : null;
+          const lowK = days.findIndex(d => d.date === P.low.date);
+          const acc = projectionAccuracy;
           const pill = (col, bg) => ({ ...heroPill(col, bg), marginRight: 0 });
+          const sel = ends.find(e => e.ym === projSel);
           return (
             <div style={{ position: "relative" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                <span data-testid="proj-low" style={{ fontFamily: "var(--mono)", fontSize: "1.75rem", fontWeight: 800, color: lvl(low.value), fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em" }}>{fmt(low.value)}</span>
-                <span style={{ fontSize: ".64rem", color: "rgba(255,255,255,.6)" }}>au plus bas, en {low.label}</span>
+                <span data-testid="proj-low" style={{ fontFamily: "var(--mono)", fontSize: "1.75rem", fontWeight: 800, color: lvl(P.low.balance), fontVariantNumeric: "tabular-nums", letterSpacing: "-.02em" }}>{fmt(P.low.balance)}</span>
+                <span style={{ fontSize: ".64rem", color: "rgba(255,255,255,.65)" }}>au plus bas, le {dLabel(P.low.date)}{P.low.beforePay ? " · juste avant la paie" : ""}</span>
+              </div>
+              <div data-testid="proj-range" style={{ fontSize: ".6rem", color: "rgba(255,255,255,.5)", marginTop: 2 }}>
+                {P.low.range
+                  ? <>Fourchette selon tes {P.historyMonths} derniers mois : <b style={{ color: "rgba(255,255,255,.8)" }}>{fmt(Math.min(P.low.range.low, P.low.range.high))} à {fmt(Math.max(P.low.range.low, P.low.range.high))}</b></>
+                  : <>Fourchette disponible après 3 mois complets d'historique</>}
               </div>
               {projInfo && (
                 <div style={{ fontSize: ".6rem", color: "rgba(255,255,255,.55)", lineHeight: 1.5, margin: "6px 0 2px" }}>
-                  Calcul : ton solde d'aujourd'hui, plus tes fixes, récurrentes et programmées connues, plus ton flux courant habituel (médiane des 6 derniers mois : courses, freelance, remboursements…). Ne peut pas deviner un imprévu ponctuel (réparation, cadeau…).
+                  Calcul jour par jour : ton solde estimé d'aujourd'hui, le reste de tes dépenses courantes de {MF[parseInt(P.current.ym.slice(5, 7), 10) - 1]}, puis chaque mois tes revenus et frais fixes à leur jour, tes récurrentes (annuelles comprises) et programmées, et tes dépenses courantes habituelles (médiane de tes {P.historyMonths || 0} derniers mois complets) réparties sur le mois. Touche un point de la courbe pour voir le détail. Ne peut pas deviner un imprévu.
                 </div>
               )}
-              <svg data-testid="proj-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block", marginTop: 6 }}>
+              <svg data-testid="proj-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block", marginTop: 6, overflow: "visible" }}>
+                {band && <polygon points={band} fill="rgba(104,212,152,.10)" />}
                 {th != null && <>
                   <line x1="0" x2={W} y1={Y(th)} y2={Y(th)} stroke="#c8b860" strokeDasharray="4 4" strokeWidth="1" opacity=".7" />
-                  <text x={(X(1) + X(2)) / 2} y={Y(th) + 12} fill="#c8b860" fontSize="9" textAnchor="middle">seuil {n0(th)}</text>
+                  <text x={2} y={Y(th) + 11} fill="#c8b860" fontSize="8.5" textAnchor="start" opacity=".9">seuil {n0(th)}</text>
                 </>}
-                <polygon points={`${X(0)},${H - 16} ${line} ${X(pts.length - 1)},${H - 16}`} fill="rgba(104,212,152,.12)" />
-                <polyline points={line} fill="none" stroke="#68d498" strokeWidth="2.5" strokeLinejoin="round" />
-                {pts.map((p, i) => (
-                  <g key={i}>
-                    <circle cx={X(i)} cy={Y(p.value)} r={p.today ? 3.5 : 4.5} fill={p.today ? "#70b8e0" : lvl(p.value)} stroke="#0e1e18" strokeWidth="2" />
-                    <text x={X(i)} y={Y(p.value) - 9} fill={p.today ? "#70b8e0" : lvl(p.value)} fontSize="10.5" fontWeight="800" textAnchor="middle">{n0(p.value)}</text>
-                    <text x={X(i)} y={H - 2} fill="rgba(255,255,255,.5)" fontSize="9" fontWeight="700" textAnchor="middle">{p.label}</text>
-                  </g>
-                ))}
+                <polyline points={line} fill="none" stroke="#68d498" strokeWidth="2" strokeLinejoin="round" />
+                {lowK >= 0 && <circle cx={X(lowK)} cy={Y(P.low.balance)} r="6" fill="none" stroke={lvl(P.low.balance)} strokeWidth="1.5" />}
+                <circle cx={X(0)} cy={Y(days[0].balance)} r="3.5" fill="#70b8e0" stroke="#0e1e18" strokeWidth="2" />
+                {ends.map(e => {
+                  const k = endIdx(e); if (k < 0) return null;
+                  const on = projSel === e.ym;
+                  return (
+                    <g key={e.ym} data-testid={`proj-pt-${e.ym}`} onClick={() => setProjSel(on ? null : e.ym)} style={{ cursor: "pointer" }}>
+                      <rect x={X(k) - 22} y="0" width="44" height={H} fill="transparent" />
+                      <circle cx={X(k)} cy={Y(e.value)} r={on ? 5.5 : 4.5} fill={lvl(e.value)} stroke={on ? "#fff" : "#0e1e18"} strokeWidth="2" />
+                      <text x={Math.min(W - 16, Math.max(16, X(k)))} y={Y(e.value) - 9} fill={lvl(e.value)} fontSize="10" fontWeight="800" textAnchor="middle">{n0(e.value)}</text>
+                      <text x={Math.min(W - 12, Math.max(12, X(k)))} y={H - 2} fill={on ? "#fff" : "rgba(255,255,255,.55)"} fontSize="9" fontWeight="700" textAnchor="middle">{e.isCur ? `fin ${e.label}` : e.label}</text>
+                    </g>
+                  );
+                })}
               </svg>
+              {!sel && <div style={{ fontSize: ".54rem", color: "rgba(255,255,255,.4)", textAlign: "center", marginTop: 2 }}>Touche une fin de mois pour voir son détail</div>}
 
-              {(projection.thresholdBreachMonth || projection.biggestSchedItem || low.value < 0) && (
+              {sel && (
+                <div data-testid="proj-detail" style={{ marginTop: 8, padding: "9px 11px", borderRadius: 11, background: "rgba(0,0,0,.22)", border: "1px solid rgba(255,255,255,.1)" }}>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 5 }}>
+                    <b style={{ flex: 1, fontSize: ".7rem" }}>{MONTHS_FR[parseInt(sel.ym.slice(5, 7), 10) - 1]} {sel.ym.slice(0, 4)}</b>
+                    <span onClick={() => setProjSel(null)} style={{ cursor: "pointer", color: "rgba(255,255,255,.5)", fontSize: ".7rem" }}>✕</span>
+                  </div>
+                  {(() => {
+                    const row = (k, l, v, sub, strong) => (
+                      <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6, padding: "3px 0", fontSize: ".62rem", borderTop: strong ? "1px solid rgba(255,255,255,.15)" : "none", marginTop: strong ? 3 : 0 }}>
+                        <span style={{ flex: 1, minWidth: 0, color: strong ? "#fff" : "rgba(255,255,255,.75)", fontWeight: strong ? 800 : 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l}{sub && <span style={{ color: "rgba(255,255,255,.4)" }}> · {sub}</span>}</span>
+                        <span style={{ fontFamily: "var(--mono)", fontWeight: 700, color: strong ? lvl(v) : v >= 0 ? "#68d498" : "#e08870", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{!strong && v >= 0 ? "+" : ""}{fmt(v)}</span>
+                      </div>
+                    );
+                    if (sel.isCur) return <>
+                      {row("s", "Solde estimé aujourd'hui", P.start, "fixes, récurrentes et programmées du mois déjà comptés", true)}
+                      {row("v", "🛒 Dépenses courantes restantes (estimation)", P.current.remainingVariable, P.current.remainingVariable === 0 ? "déjà au niveau habituel" : `habituel ${fmt(P.variableNetMedian)}, déjà ${fmt(P.current.soFarVariable)}`)}
+                      {row("e", `= Fin ${sel.label}`, sel.value, null, true)}
+                    </>;
+                    const lines = [...sel.lines].sort((a, b) => a.date.localeCompare(b.date) || b.amount - a.amount);
+                    return <>
+                      {row("s", "Solde de départ", sel.start, `fin du mois précédent`, true)}
+                      {lines.map((l, k) => row(k, `${l.icon} ${l.label}`, l.amount, `le ${parseInt(l.date.slice(8, 10), 10)}${l.yearly ? " · annuelle" : ""}`))}
+                      {row("v", "🛒 Dépenses courantes (estimation)", sel.variable, `médiane de ${P.historyMonths} mois`)}
+                      {row("e", "= Fin de mois", sel.value, sel.range ? `fourchette ${n0(Math.min(sel.range.low, sel.range.high))} à ${n0(Math.max(sel.range.low, sel.range.high))}` : null, true)}
+                    </>;
+                  })()}
+                </div>
+              )}
+
+              {(P.thresholdBreachMonth || P.biggestSchedItem || P.low.balance < 0) && (
                 <>
                   <div style={heroRowTitle}>Points d'attention</div>
                   <div data-testid="proj-row-alert" style={heroRow}>
-                    {low.value < 0 && <span style={pill("#c87070", "rgba(200,112,112,.12)")}>🚨 Découvert en {low.label}</span>}
-                    {projection.thresholdBreachMonth && low.value >= 0 && (
-                      <span style={pill("#c87070", "rgba(200,112,112,.12)")}>⚠️ Sous ton seuil ({fmt(alertThreshold)}) en {projection.thresholdBreachMonth.label}</span>
+                    {P.low.balance < 0 && <span style={pill("#c87070", "rgba(200,112,112,.12)")}>🚨 Découvert possible le {dLabel(P.low.date)}</span>}
+                    {P.thresholdBreachMonth && P.low.balance >= 0 && (
+                      <span style={pill("#c87070", "rgba(200,112,112,.12)")}>⚠️ Sous ton seuil ({fmt(alertThreshold)}) dès le {dLabel(P.thresholdBreachMonth.date)}</span>
                     )}
-                    {projection.biggestSchedItem && (
-                      <span style={pill("#c8b860", "rgba(200,184,96,.1)")}>📅 {projection.biggestSchedItem.note || "Programmée"} −{fmt(projection.biggestSchedItem.amount)} en {projection.biggestSchedMonth.label}</span>
+                    {P.biggestSchedItem && (
+                      <span style={pill("#c8b860", "rgba(200,184,96,.1)")}>📅 {P.biggestSchedItem.note || "Programmée"} −{fmt(P.biggestSchedItem.amount)} le {dLabel(P.biggestSchedItem.date)}</span>
                     )}
                   </div>
                 </>
@@ -718,29 +765,28 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
               <div style={heroRowTitle}>Hypothèses</div>
               <div data-testid="proj-row-hyp" style={heroRow}>
-                <span style={pill(projection.variableNetMedian >= 0 ? "#68d498" : "#c87070", "rgba(104,212,152,.08)")}>
-                  〰 Flux courant {projection.variableNetMedian >= 0 ? "+" : ""}{fmt(projection.variableNetMedian)}/mois
+                <span style={pill(P.variableNetMedian >= 0 ? "#68d498" : "#e08870", "rgba(104,212,152,.08)")}>
+                  〰 Courant hors fixes {P.variableNetMedian >= 0 ? "+" : ""}{fmt(P.variableNetMedian)}/mois{P.historyMonths ? ` (${P.historyMonths} mois)` : ""}
                 </span>
-                {accAvg != null && (
+                {acc.n > 0 ? (
                   <span role="button" data-testid="proj-acc" onClick={() => setAccOpen(o => !o)} style={pill("#70b8e0", "rgba(112,184,224,.1)")}>
-                    🎯 Fiabilité ±{fmt(accAvg)} {accOpen ? "▴" : "›"}
+                    🎯 Erreur moyenne ±{fmt(acc.avgAbs)}{Math.abs(acc.avgSigned) >= 10 ? (acc.avgSigned < 0 ? " · plutôt optimiste" : " · plutôt prudente") : ""} {accOpen ? "▴" : "›"}
                   </span>
+                ) : (
+                  <span data-testid="proj-acc" style={{ ...pill("rgba(255,255,255,.55)", "rgba(255,255,255,.04)"), cursor: "default" }}>🎯 Fiabilité mesurée dès fin {MF[parseInt(P.months[0].ym.slice(5, 7), 10) - 1]}</span>
                 )}
                 <span role="button" data-testid="proj-sim" onClick={() => setSimSheet(true)} style={pill("#b090e0", "rgba(176,144,224,.12)")}>🧪 Et si… ? ›</span>
               </div>
-              {accOpen && acc.length > 0 && (
+              {accOpen && acc.n > 0 && (
                 <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(0,0,0,.2)", border: "1px solid rgba(255,255,255,.08)" }}>
-                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", marginBottom: 4 }}>Ce qu'on avait annoncé, comparé à la réalité :</div>
-                  {acc.map(a => {
-                    const good = Math.abs(a.delta) <= 50;
-                    return (
-                      <div key={a.ym} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".6rem", padding: "3px 0", color: "rgba(255,255,255,.65)", fontVariantNumeric: "tabular-nums" }}>
-                        <span>{MONTHS_FR[parseInt(a.ym.slice(5, 7), 10) - 1]}</span>
-                        <span>Prévu {fmt(a.predicted)} → Réel {fmt(a.actual)}</span>
-                        <span style={{ fontWeight: 800, color: good ? "var(--success)" : Math.abs(a.delta) <= 150 ? "var(--warning)" : "var(--danger)" }}>{a.delta >= 0 ? "+" : ""}{fmt(a.delta)}</span>
-                      </div>
-                    );
-                  })}
+                  <div style={{ fontSize: ".56rem", color: "rgba(255,255,255,.5)", marginBottom: 4 }}>Fin de mois annoncée le mois d'avant, comparée à la réalité :</div>
+                  {acc.items.slice(0, 6).map(a => (
+                    <div key={a.ym} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".6rem", padding: "3px 0", color: "rgba(255,255,255,.65)", fontVariantNumeric: "tabular-nums" }}>
+                      <span>{MONTHS_FR[parseInt(a.ym.slice(5, 7), 10) - 1]}</span>
+                      <span>Prévu {fmt(a.predicted)} → Réel {fmt(a.actual)}</span>
+                      <span style={{ fontWeight: 800, color: Math.abs(a.delta) <= 50 ? "var(--success)" : Math.abs(a.delta) <= 150 ? "var(--warning)" : "var(--danger)" }}>{a.delta >= 0 ? "+" : ""}{fmt(a.delta)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
