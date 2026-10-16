@@ -17,7 +17,7 @@
 //  sous-total, lignes de détail sous l'opération, « CARTE jj/mm » = date d'achat.
 // ─────────────────────────────────────────────────────────────────
 
-import { resolveFixedDay, fixedOccurrenceYM } from "./utils.js";
+import { resolveFixedDay, fixedOccurrenceYM, isActiveForMonth } from "./utils.js";
 
 const NUM = /^-?\+?\d{1,3}(?:[  .]\d{3})*,\d{2}(?:\s*€)?$/;
 const toNum = s => parseFloat(String(s).replace(/[€\s  ]/g, "").replace(/\./g, "").replace(",", "."));
@@ -220,17 +220,11 @@ export function appMovements(data, start, end, margin = 5) {
   // Frais et revenus fixes : une occurrence par mois touché par la période
   const months = [];
   for (let ym = from.slice(0, 7); ym <= to.slice(0, 7); ) { months.push(ym); const [y, m] = ym.split("-").map(Number); const n = new Date(y, m, 1); ym = `${n.getFullYear()}-${pad2(n.getMonth() + 1)}`; }
-  const isActive = (f, ym) => {
-    if (f.startYM && ym < f.startYM) return false;
-    if (f.pauseHistory?.some(p => ym >= p.from && ym <= p.until)) return false;
-    if (f.paused && ym >= (f.pausedFrom || "0000-00") && ym <= (f.pausedUntil || "9999-99")) return false;
-    return true;
-  };
   // `ym` = mois du compte ; `oym` = occurrence versée ce mois-là (v1.64.0 : revenu
   // compté dans le budget du mois suivant, jours « dernier / avant-dernier ouvré »)
   [["fixedExpenses", -1, "📌"], ["fixedIncomes", 1, "💰"]].forEach(([key, sign, ic]) => (data[key] || []).forEach(f => months.forEach(ym => {
     const oym = fixedOccurrenceYM(f, ym);
-    if (!isActive(f, oym)) return;
+    if (!isActiveForMonth(f, oym)) return;
     const a = parseFloat(f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0;
     if (!a) return;
     const day = resolveFixedDay(f.day, ym);
