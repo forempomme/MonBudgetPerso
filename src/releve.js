@@ -17,6 +17,8 @@
 //  sous-total, lignes de détail sous l'opération, « CARTE jj/mm » = date d'achat.
 // ─────────────────────────────────────────────────────────────────
 
+import { resolveFixedDay, fixedOccurrenceYM } from "./utils.js";
+
 const NUM = /^-?\+?\d{1,3}(?:[  .]\d{3})*,\d{2}(?:\s*€)?$/;
 const toNum = s => parseFloat(String(s).replace(/[€\s  ]/g, "").replace(/\./g, "").replace(",", "."));
 const MONTHS = { JANVIER: 1, FEVRIER: 2, FÉVRIER: 2, MARS: 3, AVRIL: 4, MAI: 5, JUIN: 6, JUILLET: 7, AOUT: 8, AOÛT: 8, SEPTEMBRE: 9, OCTOBRE: 10, NOVEMBRE: 11, DECEMBRE: 12, DÉCEMBRE: 12 };
@@ -224,15 +226,18 @@ export function appMovements(data, start, end, margin = 5) {
     if (f.paused && ym >= (f.pausedFrom || "0000-00") && ym <= (f.pausedUntil || "9999-99")) return false;
     return true;
   };
+  // `ym` = mois du compte ; `oym` = occurrence versée ce mois-là (v1.64.0 : revenu
+  // compté dans le budget du mois suivant, jours « dernier / avant-dernier ouvré »)
   [["fixedExpenses", -1, "📌"], ["fixedIncomes", 1, "💰"]].forEach(([key, sign, ic]) => (data[key] || []).forEach(f => months.forEach(ym => {
-    if (!isActive(f, ym)) return;
-    const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+    const oym = fixedOccurrenceYM(f, ym);
+    if (!isActive(f, oym)) return;
+    const a = parseFloat(f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0;
     if (!a) return;
-    const day = parseInt(f.day, 10);
-    const date = day ? `${ym}-${pad2(Math.min(day, lastDayOf(ym)))}` : null;
+    const day = resolveFixedDay(f.day, ym);
+    const date = day ? `${ym}-${pad2(day)}` : null;
     if (date && (date < from || date > to)) return;
     if (!date && (`${ym}-${pad2(lastDayOf(ym))}` < start || `${ym}-01` > end)) return;
-    out.push({ id: `f_${f.id}_${ym}`, date: date || `${ym}-15`, noDay: !date, ym, amount: r2(sign * a), label: f.name, icon: cats.find(c => c.id === f.categoryId)?.icon || ic, kind: "fixed", category: "fixe" });
+    out.push({ id: `f_${f.id}_${oym}`, date: date || `${ym}-15`, noDay: !date, ym, amount: r2(sign * a), label: f.name, icon: cats.find(c => c.id === f.categoryId)?.icon || ic, kind: "fixed", category: "fixe" });
   })));
   return out;
 }
