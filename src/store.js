@@ -85,6 +85,7 @@ export const A = /** @type {const} */ ({
   TOGGLE_POINT_INCOME: "TOGGLE_POINT_INCOME",
   SET_FIXED_DAY:       "SET_FIXED_DAY",       // v1.58.0 : jour choisi depuis une tuile des Fixes
   POINT_INCOME_AMOUNT: "POINT_INCOME_AMOUNT", // v1.64.0 : pointer un revenu fixe avec son montant réel
+  SAVE_PAY_RECAP:      "SAVE_PAY_RECAP",      // v1.67.0 : photo du récap pris à la paie (bilan du 1er)
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   OVERRIDE_INCOME_MONTH: "OVERRIDE_INCOME_MONTH",   // v1.50.0
   SAVE_RECURRING:      "SAVE_RECURRING",
@@ -213,6 +214,7 @@ export const DEFAULT_DATA = {
   // réécrit ensuite, pour comparer "ce qu'on avait annoncé" vs la réalité
   // une fois le mois passé.
   projectionSnapshots:       {},
+  payRecaps:                 {},   // v1.67.0 : { [ym]: { rest, saved, date } } — récap pris à la paie
   // Templates de saisie rapide (v1.39.18) — [{ id, icon, name, categoryId, type }]
   // Déclenchés par un appui long sur le bouton +. Le montant et la date
   // restent à saisir à chaque fois (jamais mémorisés).
@@ -877,9 +879,15 @@ export function reducer(state, action) {
           if (amount <= 0) return f;
           const monthlyOverrides = { ...(f.monthlyOverrides || {}), [action.ym]: { ...(f.monthlyOverrides?.[action.ym] || {}), amount } };
           const pointedMonths = { ...(f.pointedMonths || {}), [action.ym]: true };
-          return withAutoAmount({ ...f, monthlyOverrides, pointedMonths }, state.transactions || []);
+          // v1.67.0 : mois exceptionnel (congé, prime…) → exclu de la moyenne du montant prévu
+          const avgExcluded = { ...(f.avgExcluded || {}) };
+          if (action.exclude) avgExcluded[action.ym] = true; else delete avgExcluded[action.ym];
+          return withAutoAmount({ ...f, monthlyOverrides, pointedMonths, avgExcluded }, state.transactions || []);
         }),
       };
+
+    case A.SAVE_PAY_RECAP:
+      return { ...state, payRecaps: { ...(state.payRecaps || {}), [action.ym]: { ...(state.payRecaps?.[action.ym] || {}), ...action.patch } } };
 
     // v1.50.0 : correction d'un revenu fixe pour un seul mois (même format que les frais fixes)
     case A.OVERRIDE_INCOME_MONTH:
