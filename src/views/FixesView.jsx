@@ -4,7 +4,7 @@
 // rangées par statut (passés non pointés / à venir / pointés / en pause /
 // commencent plus tard), groupes pliables, pointage direct depuis une tuile.
 import { useState, useEffect, Fragment } from "react";
-import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, DAY_LAST_BD, DAY_PREV_LAST_BD } from "../utils.js";
+import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, fixedCashDateISO, DAY_LAST_BD, DAY_PREV_LAST_BD } from "../utils.js";
 import { effectiveFixesForMonth, effectiveIncomesForMonth, isActiveForMonth } from "../hooks.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { InsightsList } from "./InsightPanels.jsx";
@@ -64,6 +64,14 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const totalFixes   = effectiveFixesForMonth(fixedExpenses, curYM);
   const totalIncomes = effectiveIncomesForMonth(fixedIncomes, curYM);
   const net          = totalIncomes - totalFixes;
+  // v1.67.0 : revenus comptés dans le budget du mois suivant mais versés CE mois-ci
+  const advanceItems = fixedIncomes.filter(f => f.advance).map(f => {
+    const occ = fixedOccurrenceYM(f, curYM);
+    if (!isActiveForMonth(f, occ)) return null;
+    return { f, occ, amt: parseFloat(f.monthlyOverrides?.[occ]?.amount ?? f.amount) || 0, received: !!f.pointedMonths?.[occ], date: fixedCashDateISO(f, occ) };
+  }).filter(Boolean);
+  const advanceTotal = advanceItems.reduce((s, x) => s + x.amt, 0);
+  const advanceAllReceived = advanceItems.length > 0 && advanceItems.every(x => x.received);
   const provTotal    = provisionalExpenses.reduce((s, p) => s + (p.amount || 0), 0);
   const isExp        = activeSection === "depenses";
   const list         = isExp ? fixedExpenses : fixedIncomes;
@@ -249,7 +257,9 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
       <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5, marginBottom: 7 }}>
           <div style={kp}><small style={kpL}>Charges</small><b style={kpV("var(--danger)")}>−{fmt(totalFixes)}</b></div>
-          <div style={kp}><small style={kpL}>Revenus</small><b style={kpV("var(--success)")}>+{fmt(totalIncomes)}</b></div>
+          <div style={kp} data-testid="fix-kpi-income"><small style={kpL}>Revenus{advanceItems.length ? ` ${MONTHS_SHORT_FR[parseInt(curYM.slice(5, 7), 10) - 1]}` : ""}</small><b style={kpV("var(--success)")}>+{fmt(totalIncomes)}</b>
+            {advanceItems.length > 0 && <i style={{ display: "block", fontStyle: "normal", fontSize: ".52rem", fontWeight: 700, color: "var(--sapin)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>+{fmt(Math.round(advanceTotal)).replace(",00", "")} {advanceAllReceived ? "reçus" : "attendus"} → {ymShort(advanceItems[0].occ)}</i>}
+          </div>
           <div style={kp}><small style={kpL}>Net / mois</small><b style={kpV(net >= 0 ? "var(--success)" : "var(--danger)")}>{net >= 0 ? "+" : "−"}{fmt(Math.abs(net))}</b></div>
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -278,6 +288,11 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
               <div style={{ height: 6, borderRadius: 4, background: "var(--surface3)", overflow: "hidden", marginTop: 6 }}>
                 <i style={{ display: "block", height: "100%", width: `${pct}%`, background: "linear-gradient(90deg,var(--success),var(--accent))" }} />
               </div>
+              {!isExp && advanceItems.map(x => (
+                <div key={x.f.id} data-testid="fix-advance-note" style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 6 }}>
+                  💼 {x.f.name} versé le {x.date ? `${parseInt(x.date.slice(8, 10), 10)} ${MONTHS_SHORT_FR[parseInt(x.date.slice(5, 7), 10) - 1]}` : "ce mois-ci"} : compté dans le budget de <b style={{ color: "var(--sapin)" }}>{MONTHS_LONG_FR[parseInt(x.occ.slice(5, 7), 10) - 1].toLowerCase()}</b>.
+                </div>
+              ))}
             </div>
           )}
         </>
