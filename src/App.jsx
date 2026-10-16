@@ -1221,6 +1221,8 @@ export default function App() {
           reimbursements={data.reimbursements || []}
           categoryThresholds={data.categoryThresholds || {}}
           fixedExpenses={data.fixedExpenses || []}
+          fixedIncomes={data.fixedIncomes || []}
+          onPointIncome={(id, ym) => { setTransModal(null); togglePointIncome(id, ym); }}
           onSave={(tx, extra) => { dispatch({ type: A.SAVE_TRANSACTION, tx, ...(extra || {}) }); setTransModal(null); }}
           onSaveRecurring={tpl => saveRecurring(tpl)}
           onClose={() => setTransModal(null)}
@@ -1283,9 +1285,9 @@ export default function App() {
       {pointIncome && (() => {
         const inc = (data.fixedIncomes || []).find(x => x.id === pointIncome.id);
         return inc ? (
-          <PointIncomeModal income={inc} ym={pointIncome.ym}
-            onConfirm={amount => {
-              dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount }); setPointIncome(null);
+          <PointIncomeModal income={inc} ym={pointIncome.ym} transactions={data.transactions}
+            onConfirm={(amount, exclude) => {
+              dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount, exclude }); setPointIncome(null);
               if (mainPayIncome(data)?.id === inc.id) setPayRecap({ id: inc.id, ym: pointIncome.ym, amount });
               else addToast(`✓ ${inc.name} pointé : ${fmt(amount)}`);
             }}
@@ -1300,8 +1302,10 @@ export default function App() {
           <PayRecapSheet recap={computePayRecap(data, recapYM)} income={inc} amount={payRecap.amount}
             paidDate={fixedCashDateISO(inc, payRecap.ym)} nextYM={payRecap.ym}
             cagnottes={data.cagnottes || []} cagTypes={data.cagTypes}
+            onSnapshot={rest => { if (data.payRecaps?.[recapYM]?.rest == null) dispatch({ type: A.SAVE_PAY_RECAP, ym: recapYM, patch: { rest, date: fixedCashDateISO(inc, payRecap.ym) || todayISO() } }); }}
             onSave={(cagId, amount) => {
               dispatch({ type: A.SAVE_TRANSACTION, tx: { type: "epargne", amount, date: todayISO(), targetCagId: cagId, note: `Reste de ${MONTHS_SHORT[parseInt(recapYM.slice(5, 7), 10) - 1].toLowerCase()}.` } });
+              dispatch({ type: A.SAVE_PAY_RECAP, ym: recapYM, patch: { saved: Math.round(((data.payRecaps?.[recapYM]?.saved || 0) + amount) * 100) / 100 } });
               const cag = data.cagnottes.find(c => c.id === cagId);
               addToast(`🐷 ${fmt(amount)} versés dans « ${cag?.name || "cagnotte"} »`);
               setPayRecap(null);
