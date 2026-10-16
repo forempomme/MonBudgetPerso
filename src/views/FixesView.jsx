@@ -4,7 +4,7 @@
 // rangées par statut (passés non pointés / à venir / pointés / en pause /
 // commencent plus tard), groupes pliables, pointage direct depuis une tuile.
 import { useState, useEffect, Fragment } from "react";
-import { fmt, currentYM, todayISO } from "../utils.js";
+import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, DAY_LAST_BD, DAY_PREV_LAST_BD } from "../utils.js";
 import { effectiveFixesForMonth, effectiveIncomesForMonth, isActiveForMonth } from "../hooks.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { InsightsList } from "./InsightPanels.jsx";
@@ -13,7 +13,6 @@ const FOLD_KEY = "fixes_fold_v1";
 const MONTHS_SHORT_FR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 const MONTHS_LONG_FR  = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 const ymShort = ym => { if (!ym) return ""; const [y, m] = ym.split("-").map(Number); return `${MONTHS_SHORT_FR[m - 1]}${y !== new Date().getFullYear() ? " " + String(y).slice(2) : ""}`; };
-const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 
 // Classe un frais/revenu fixe pour le mois courant (source : isActiveForMonth + pointedMonths)
 //   late  : jour passé (ou aujourd'hui), pas encore pointé
@@ -21,12 +20,15 @@ const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new D
 //   ok    : pointé ce mois
 //   pause : en pause ce mois
 //   later : commence un mois futur (startYM)
+// v1.64.0 : `ym` = mois du compte ; un revenu compté dans le budget du mois suivant
+// présente ici l'occurrence de M+1 (versée en M). Jours « ouvrés » résolus.
 export function fixedStatusForMonth(f, ym, todayDay) {
-  if (!isActiveForMonth(f, ym)) return (f.startYM && ym < f.startYM) ? "later" : "pause";
-  if (f.pointedMonths?.[ym]) return "ok";
-  const d = parseInt(f.day, 10);
+  const occ = fixedOccurrenceYM(f, ym);
+  if (!isActiveForMonth(f, occ)) return (f.startYM && occ < f.startYM) ? "later" : "pause";
+  if (f.pointedMonths?.[occ]) return "ok";
+  const d = resolveFixedDay(f.day, ym);
   if (!d) return "next";
-  return Math.min(d, lastDayOf(ym)) <= todayDay ? "late" : "next";
+  return d <= todayDay ? "late" : "next";
 }
 
 const GROUPS = [
@@ -81,12 +83,13 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
 
   // Éléments enrichis + rangés par groupe
   const items = list.map((f, idx) => {
-    const ov  = f.monthlyOverrides?.[curYM];
+    const occ = fixedOccurrenceYM(f, curYM);   // occurrence versée ce mois-ci
+    const ov  = f.monthlyOverrides?.[occ];
     const amt = parseFloat(ov?.amount ?? f.amount) || 0;
-    return { f, idx, amt, st: fixedStatusForMonth(f, curYM, todayDay), icon: categories.find(c => c.id === f.categoryId)?.icon ?? (isExp ? "📌" : "💰") };
+    return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM), st: fixedStatusForMonth(f, curYM, todayDay), icon: categories.find(c => c.id === f.categoryId)?.icon ?? (isExp ? "📌" : "💰") };
   });
   const byGroup = {};
-  GROUPS.forEach(({ g }) => { byGroup[g] = items.filter(x => x.st === g).sort((a, b) => (parseInt(a.f.day, 10) || 99) - (parseInt(b.f.day, 10) || 99)); });
+  GROUPS.forEach(({ g }) => { byGroup[g] = items.filter(x => x.st === g).sort((a, b) => (a.dayNum || 99) - (b.dayNum || 99)); });
   const active    = items.filter(x => x.st === "late" || x.st === "next" || x.st === "ok");
   const doneCount = byGroup.ok.length;
   const remaining = [...byGroup.late, ...byGroup.next].reduce((s, x) => s + x.amt, 0);
@@ -146,18 +149,24 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
           <span style={{ flex: 1, minWidth: 0, fontSize: ".69rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.icon} {f.name}</span>
           {canPoint && f.id && (
             <button style={actBtn(g === "ok" ? "var(--text2)" : "var(--success)")}
-              onClick={() => { onPoint?.(f.id, curYM); setSelected(null); }}>
+              onClick={() => { onPoint?.(f.id, x.occ); setSelected(null); }}>
               {g === "ok" ? "↩ Dépointer" : "✓ Pointer"}
             </button>
           )}
           {onSetFixedDay && f.id && (
             <button data-testid="fix-day-btn" style={{ ...actBtn(f.day ? undefined : "var(--warning)"), ...(f.day ? {} : { borderColor: "var(--warning)" }) }}
-              onClick={() => setDayPick(v => !v)}>📅 {f.day ? `Le ${f.day}` : "Jour ?"}</button>
+              onClick={() => setDayPick(v => !v)}>📅 {f.day ? (parseInt(f.day, 10) > 0 ? `Le ${f.day}` : fixedDayLabel(f.day, { long: true }).replace("Avant-dernier jour", "Av.-dern. j.").replace("Dernier jour", "Dern. j.")) : "Jour ?"}</button>
           )}
           {g !== "later" && <button style={actBtn()} title={f.paused ? "Reprendre" : "Mettre en pause"} onClick={() => onPause?.(idx)}>{f.paused ? "▶️" : "⏸️"}</button>}
           <button style={actBtn()} onClick={() => onEdit(idx)}>✏️</button>
           <button style={actBtn("var(--danger)")} onClick={() => { onDelete(idx); setSelected(null); }}>🗑</button>
         </div>
+        {f.advance && (
+          <div data-testid="fix-advance-badge" style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 6 }}>
+            <span style={{ fontWeight: 800, padding: "2px 7px", borderRadius: 8, background: "rgba(88,192,144,.15)", color: "var(--sapin)" }}>→ budget {ymShort(x.occ)}</span>{" "}
+            versé ce mois-ci, compté dans le budget du mois suivant
+          </div>
+        )}
         {dayPick && onSetFixedDay && f.id && (
           <div data-testid="fix-day-grid" style={{ marginTop: 7 }}>
             <div style={{ fontSize: ".6rem", color: "var(--text2)", marginBottom: 5 }}>Jour de {isExp ? "prélèvement" : "versement"} :</div>
@@ -171,7 +180,20 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
                 );
               })}
             </div>
-            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 5 }}>Le 29, 30 ou 31 tombe le dernier jour des mois plus courts.</div>
+            {/* v1.64.0 : règles « jour ouvré » (week-ends et jours fériés sautés) */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5, marginTop: 5 }}>
+              {[[DAY_LAST_BD, "Dernier jour ouvré"], [DAY_PREV_LAST_BD, "Avant-dernier jour ouvré"]].map(([v, l]) => {
+                const on = parseInt(f.day, 10) === v;
+                return (
+                  <button key={v} data-testid={`fix-day-rule-${-v}`} onClick={() => { onSetFixedDay(isExp ? "expense" : "income", f.id, v); setDayPick(false); }}
+                    style={{ fontSize: ".64rem", fontWeight: 700, padding: "7px 2px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                      border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(112,184,224,.2)" : "var(--surface)", color: on ? "var(--accent)" : "var(--text)" }}>{l}</button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 5 }}>
+              {parseInt(f.day, 10) < 0 && <>Ce mois-ci : le {resolveFixedDay(f.day, curYM)} · </>}Le 29, 30 ou 31 tombe le dernier jour des mois plus courts.
+            </div>
           </div>
         )}
         {(g === "pause" || g === "later" || x.amt !== (parseFloat(f.amount) || 0)) && (
@@ -197,7 +219,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
         key, x,
         el: tile({
           key, icon: x.icon, name: x.f.name, amount: fmt(x.amt), top: mainColor,
-          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.f.day ? `le ${x.f.day}` : <span style={{ color: "var(--warning)" }}>jour ?</span>),
+          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.dayNum ? `le ${x.dayNum}` : <span style={{ color: "var(--warning)" }}>jour ?</span>),
           dot: g === "ok" ? "var(--success)" : (g === "pause" || g === "later") ? "var(--text3)" : "var(--warning)",
           late: g === "late", dim: g === "pause" || g === "later",
           extra: rise ? <span style={{ marginLeft: 3, fontSize: ".53rem", color: x.f.amount > x.f.prevAmount ? "var(--danger)" : "var(--success)" }}>{x.f.amount > x.f.prevAmount ? "▲" : "▼"}</span> : null,
