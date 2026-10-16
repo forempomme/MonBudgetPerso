@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, isActiveForMonth } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
 const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -488,7 +488,7 @@ export function TransModal({
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
   editingId, defaultType = "expense",
   reimbursements = [],
-  categoryThresholds = {}, fixedExpenses = [],
+  categoryThresholds = {}, fixedExpenses = [], fixedIncomes = [], onPointIncome,
   onSave, onSaveRecurring, onClose,
 }) {
   const toast = useToast();
@@ -500,6 +500,13 @@ export function TransModal({
   const [amount,      setAmount]      = useState(tx?.amount != null ? String(tx.amount) : "");
   const [date,        setDate]        = useState(tx?.date         || todayISO());
   const [catId,       setCatId]       = useState(tx?.categoryId   || "");
+  // v1.67.0 : un revenu saisi dans la catégorie d'un revenu fixe (salaire…) → avertissement
+  const fixedDup = (() => {
+    if (editingId || type !== "income" || !catId) return null;
+    const ym = currentYM();
+    const f = (fixedIncomes || []).find(x => x.categoryId === catId && isActiveForMonth(x, fixedOccurrenceYM(x, ym)));
+    return f ? { f, occ: fixedOccurrenceYM(f, ym) } : null;
+  })();
   const [cagId,       setCagId]       = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
   const [note,        setNote]        = useState(tx?.note         || (defaultType === "balance_adjustment" ? "Ajustement de solde" : ""));
   const [isRecurring, setIsRecurring] = useState(false);
@@ -724,6 +731,21 @@ export function TransModal({
 
       {/* ── Catégorie : menu déroulant partagé (v1.44.3, aussi utilisé hors compte) ── */}
       {!isCag && !isAdj && <CategoryField cats={cats} catId={catId} onChange={setCatId} accentColor={accentColor} />}
+
+      {/* ── v1.67.0 : revenu déjà prévu en revenu fixe (risque de double comptage) — n'empêche rien ── */}
+      {fixedDup && (() => {
+        const { f, occ } = fixedDup, d = fixedCashDateISO(f, occ);
+        return (
+          <div data-testid="fixed-income-dup" style={{ marginBottom: 10, borderRadius: 12, padding: "10px 12px", background: "rgba(200,184,96,.08)", border: "1px solid rgba(200,184,96,.45)", fontSize: ".66rem", lineHeight: 1.5 }}>
+            ⚠️ <b style={{ color: "var(--warning)" }}>Déjà prévu en revenu fixe</b> : « {f.name} »{d ? `, versé le ${shortDateFR(d)}` : ""}{d && shortDateFR(d).endsWith(".") ? "" : "."}<br />
+            Le saisir ici le compterait <b style={{ color: "var(--warning)" }}>deux fois</b> (solde, budget{f.amountMode === "auto" ? ", moyenne" : ""}). Pointe-le plutôt dans Fixes.
+            {onPointIncome && !f.pointedMonths?.[occ] && (
+              <div><button type="button" {...tap(() => onPointIncome(f.id, occ))}
+                style={{ marginTop: 7, padding: "5px 10px", borderRadius: 9, border: "1px solid var(--warning)", background: "transparent", color: "var(--warning)", fontWeight: 800, fontSize: ".64rem", cursor: "pointer" }}>💼 Pointer « {f.name} »</button></div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── 🎯 Budget de la catégorie (v1.50.0) — informatif, ne bloque rien ── */}
       {type === "expense" && catId && (() => {
@@ -1037,7 +1059,7 @@ export function TransModal({
           <button className="btn btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
             onClick={() => handleSave()}>
             <span>{saveEmoji}</span>
-            <span>{saveLabel}</span>
+            <span>{fixedDup ? "Enregistrer quand même" : saveLabel}</span>
           </button>
         </div>
       )}
@@ -1542,7 +1564,7 @@ export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, tran
 //  Pointage d'un revenu fixe avec le montant réellement reçu — v1.64.0
 //  (revenus en montant prévu « automatique » : salaire variable…)
 // ─────────────────────────────────────────────────────────────────
-export function PointIncomeModal({ income, ym, onConfirm, onClose }) {
+export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onClose }) {
   const predicted = parseFloat(income.monthlyOverrides?.[ym]?.amount ?? income.amount) || 0;
   const [amt, setAmt] = useState(toPadStr(predicted));
   const fresh = useRef(true);
@@ -1550,6 +1572,16 @@ export function PointIncomeModal({ income, ym, onConfirm, onClose }) {
   const ok = !isNaN(a) && a > 0;
   const diff = ok ? Math.round((a - predicted) * 100) / 100 : 0;
   const paid = fixedCashDateISO(income, ym);
+  // v1.67.0 : mois exceptionnel → compté au budget, exclu de la moyenne du montant prévu
+  const [excl, setExcl] = useState(!!income.avgExcluded?.[ym]);
+  const isAuto = income.amountMode === "auto";
+  const simulate = ex => ok ? autoIncomeAmount({
+    ...income,
+    pointedMonths: { ...(income.pointedMonths || {}), [ym]: true },
+    monthlyOverrides: { ...(income.monthlyOverrides || {}), [ym]: { amount: a } },
+    avgExcluded: { ...(income.avgExcluded || {}), [ym]: ex },
+  }, transactions) : null;
+  const nextIn = isAuto ? simulate(true) : null, nextOut = isAuto ? simulate(false) : null;
   return (
     <Modal onClose={onClose} title={`💼 ${income.name} reçu`}>
       <div style={{ fontSize: ".66rem", color: "var(--text2)", marginBottom: 8 }}>
@@ -1570,7 +1602,23 @@ export function PointIncomeModal({ income, ym, onConfirm, onClose }) {
         Prévu : {fmt(predicted)}
         {ok && diff !== 0 && <> · <span style={{ color: diff > 0 ? "var(--success)" : "var(--warning)" }}>{diff > 0 ? "+" : "−"}{fmt(Math.abs(diff))}</span></>}
       </div>
-      <FormActions onCancel={onClose} onSave={() => { if (ok) onConfirm(a); }} emoji="✓" label="Pointer" color="var(--success)" />
+      {isAuto && (
+        <div data-testid="point-income-excl" {...tap(() => setExcl(v => !v))}
+          style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, marginBottom: 12, cursor: "pointer",
+            background: excl ? "rgba(200,184,96,.07)" : "var(--surface2)", border: `1px solid ${excl ? "rgba(200,184,96,.4)" : "var(--border)"}` }}>
+          <span style={{ flexShrink: 0, width: 34, height: 20, borderRadius: 10, position: "relative", marginTop: 2, background: excl ? "var(--warning)" : "var(--surface3)", transition: "background .15s" }}>
+            <span style={{ position: "absolute", top: 2, left: excl ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+          </span>
+          <span style={{ flex: 1 }}>
+            <b style={{ fontSize: ".74rem" }}>Mois exceptionnel</b>
+            <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)", lineHeight: 1.45, marginTop: 3 }}>
+              Congé, arrêt, prime, 13ᵉ mois… Compté normalement dans le budget, mais <b style={{ color: "var(--text)" }}>pas dans la moyenne</b> du montant prévu.
+              {nextIn != null && nextOut != null && Math.abs(nextIn - nextOut) >= 0.01 && <> Prévu des mois suivants : <b style={{ color: "var(--text)" }}>{fmt(excl ? nextIn : nextOut)}</b> (au lieu de {fmt(excl ? nextOut : nextIn)}).</>}
+            </span>
+          </span>
+        </div>
+      )}
+      <FormActions onCancel={onClose} onSave={() => { if (ok) onConfirm(a, isAuto && excl); }} emoji="✓" label="Pointer" color="var(--success)" />
     </Modal>
   );
 }
