@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved } from "../utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM } from "../utils.js";
 import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
@@ -316,7 +316,10 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
   // Revenus fixes non pointés ce mois — même logique, désormais pointables
   const unpointedIncomes = useMemo(() => {
     const fixedIncomes = data.fixedIncomes || [];
-    return fixedIncomes.filter(f => isActiveForMonth(f, curM) && !f.pointedMonths?.[curM]);
+    // v1.64.0 : occurrence versée ce mois-ci (revenu compté dans le budget du mois suivant → M+1)
+    return fixedIncomes.map(f => ({ f, ym: fixedOccurrenceYM(f, curM) }))
+      .filter(({ f, ym }) => isActiveForMonth(f, ym) && !f.pointedMonths?.[ym])
+      .map(({ f, ym }) => ({ ...f, _ym: ym, amount: f.monthlyOverrides?.[ym]?.amount ?? f.amount }));
   }, [data.fixedIncomes, curM]);
 
   function daysUntil(dateStr) {
@@ -1063,7 +1066,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                 {unpointedVisibleFixes.length > 0 && (
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, padding:"9px 12px", borderRadius:10, background:"rgba(104,212,152,.05)", border:"1px solid rgba(104,212,152,.2)", marginBottom:10 }}>
                     <span style={{ fontSize:".65rem", color:"var(--text2)" }}>{unpointedVisibleFixes.length} élément{unpointedVisibleFixes.length>1?"s":""} non pointé{unpointedVisibleFixes.length>1?"s":""}</span>
-                    <button onClick={()=>unpointedVisibleFixes.forEach(f=>(f._type==="fixIncome" ? onTogglePointIncome : onTogglePointFix)?.(f.id, curM))} style={{ padding:"6px 12px", borderRadius:20, background:"rgba(104,212,152,.15)", border:"1px solid rgba(104,212,152,.4)", color:"var(--success)", fontSize:".64rem", fontWeight:800, cursor:"pointer" }}>✓ Tout pointer</button>
+                    <button onClick={()=>unpointedVisibleFixes.forEach(f=>(f._type==="fixIncome" ? onTogglePointIncome : onTogglePointFix)?.(f.id, f._ym || curM))} style={{ padding:"6px 12px", borderRadius:20, background:"rgba(104,212,152,.15)", border:"1px solid rgba(104,212,152,.4)", color:"var(--success)", fontSize:".64rem", fontWeight:800, cursor:"pointer" }}>✓ Tout pointer</button>
                   </div>
                 )}
 
@@ -1077,7 +1080,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                     const label=(isFix||isInc)?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
                     // v1.48.0 : date de prélèvement quand elle est connue
                     const recDay = isRec ? (breakdown.recurring.items.find(x => x.tpl.id === item.id)?.day || null) : null;
-                    const dayLbl = (isFix||isInc) && item.day ? `le ${item.day}` : recDay ? `le ${recDay}` : null;
+                    const dayLbl = (isFix||isInc) && item.day ? `le ${resolveFixedDay(item.day, curM)}` : recDay ? `le ${recDay}` : null;
                     const sub=(isFix||isInc)?`${dayLbl ? dayLbl + " · " : "Ce mois · "}non pointé`:isRec?`${dayLbl ? dayLbl + " · " : "Ce mois · "}${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
                     const badge=isSch?daysUntil(item.date):null;
                     const recurBadge = isRec && item.occurrences != null ? (() => {
@@ -1117,7 +1120,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                             <div style={{ display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
                               <span style={{ fontFamily:"var(--mono)", fontSize:".75rem", fontWeight:800, color:amtColor }}>{amtSign}{fmt(item.amount)}</span>
                               {isFix && <button onClick={()=>onTogglePointFix?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
-                              {isInc && <button onClick={()=>onTogglePointIncome?.(item.id, curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
+                              {isInc && <button onClick={()=>onTogglePointIncome?.(item.id, item._ym || curM)} title="Marquer comme pointé" style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"2px solid var(--border)", color:"var(--text3)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}></button>}
                               {isRec && <button onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onConfirmRecurring?.(item,curM);}} onClick={()=>onConfirmRecurring?.(item,curM)} style={{ width:22, height:22, borderRadius:"50%", background:"rgba(220,228,240,.12)", border:`1px solid ${Cbord}`, color:C, fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, fontWeight:900 }}>✓</button>}
                               {isSch && <button onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();setDeleteConfirm(item.id);}} onClick={()=>setDeleteConfirm(item.id)} style={{ width:22, height:22, borderRadius:"50%", background:"transparent", border:"1px solid rgba(255,255,255,.25)", color:"var(--text2)", fontSize:".6rem", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>}
                             </div>
