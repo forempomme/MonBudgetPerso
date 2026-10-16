@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.66.0";
+export const APP_VERSION = "1.67.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -190,6 +190,24 @@ if (typeof document !== "undefined") {
 /** true si le geste en cours est un glissement (défilement), pas un tap. */
 export function touchMoved() { return _tap.moved; }
 
+// ─── Frais / revenu fixe actif un mois donné ─────────────────────
+// Source UNIQUE (démarrage startYM + pauses en cours ou terminées), utilisée
+// par hooks.js et releve.js. v1.66.1 : déplacée ici depuis hooks.js.
+export function isActiveForMonth(f, ym) {
+  if (f.startYM && ym < f.startYM) return false;
+  // Pauses terminées (v1.45.1) : restent exclues après réactivation
+  if (f.pauseHistory?.some(p => ym >= p.from && ym <= p.until)) return false;
+  if (f.paused) {
+    // La pause ne s'applique qu'à partir du mois où elle a été activée
+    // (pausedFrom) — jamais rétroactivement sur les mois déjà passés,
+    // qui doivent rester tels qu'ils ont réellement eu lieu.
+    const from  = f.pausedFrom  || "0000-00";
+    const until = f.pausedUntil || "9999-99";
+    if (ym >= from && ym <= until) return false;
+  }
+  return true;
+}
+
 // ─── Jour des frais / revenus fixes (v1.64.0) ────────────────────
 // `day` vaut 1–31 (ramené au dernier jour d'un mois plus court) ou une règle :
 //   -1 = dernier jour ouvré du mois, -2 = avant-dernier jour ouvré.
@@ -276,7 +294,7 @@ export function fixedCashDateISO(f, ym) {
 export function autoIncomeHistory(f, transactions = []) {
   const items = [];
   Object.entries(f?.pointedMonths || {}).forEach(([ym, on]) => {
-    if (!on) return;
+    if (!on || f.avgExcluded?.[ym]) return;   // v1.67.0 : mois exceptionnel exclu de la moyenne
     const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
     if (a > 0) items.push({ key: fixedCashDateISO(f, ym) || `${fixedCashYM(f, ym)}-28`, ym, amount: a, src: "fixed" });
   });
