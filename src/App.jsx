@@ -1,8 +1,9 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO } from "./utils.js";
-import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights } from "./hooks.js";
+import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT } from "./utils.js";
+import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome } from "./hooks.js";
+import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
@@ -325,11 +326,15 @@ export default function App() {
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
   // v1.64.0 : un revenu au montant « automatique » se pointe avec son montant réel
   const [pointIncome, setPointIncome] = useState(null); // null | { id, ym }
+  // v1.66.0 : récap du mois affiché quand on pointe la paie (revenu fixe principal)
+  const [payRecap, setPayRecap] = useState(null);       // null | { id, ym, amount }
   const togglePointIncome = useCallback((id, ym) => {
     const f = (data.fixedIncomes || []).find(x => x.id === id);
     if (f?.amountMode === "auto" && !f.pointedMonths?.[ym]) { setPointIncome({ id, ym }); return; }
     dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym });
-  }, [data.fixedIncomes]);
+    if (f && !f.pointedMonths?.[ym] && mainPayIncome(data)?.id === id)
+      setPayRecap({ id, ym, amount: parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0 });
+  }, [data]);
   const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
   const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
 
@@ -474,6 +479,7 @@ export default function App() {
     if (fixedModal)    { setFixedModal(null);       return; }
     if (fixedIncomeModal) { setFixedIncomeModal(null); return; }
     if (pointIncome)   { setPointIncome(null);    return; }
+    if (payRecap)      { setPayRecap(null);       return; }
     if (transModal)    { setTransModal(null);     return; }
     // Priorité 2 : fermer la couche interne à la vue (sheet, panel…)
     if (backStackRef.current.length > 0) {
@@ -1278,9 +1284,30 @@ export default function App() {
         const inc = (data.fixedIncomes || []).find(x => x.id === pointIncome.id);
         return inc ? (
           <PointIncomeModal income={inc} ym={pointIncome.ym}
-            onConfirm={amount => { dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount }); setPointIncome(null); addToast(`✓ ${inc.name} pointé : ${fmt(amount)}`); }}
+            onConfirm={amount => {
+              dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount }); setPointIncome(null);
+              if (mainPayIncome(data)?.id === inc.id) setPayRecap({ id: inc.id, ym: pointIncome.ym, amount });
+              else addToast(`✓ ${inc.name} pointé : ${fmt(amount)}`);
+            }}
             onClose={() => setPointIncome(null)} />
         ) : null;
+      })()}
+      {payRecap && (() => {
+        const inc = (data.fixedIncomes || []).find(x => x.id === payRecap.id);
+        if (!inc) return null;
+        const recapYM = fixedCashYM(inc, payRecap.ym);   // mois qui se termine (versé fin octobre → bilan d'octobre)
+        return (
+          <PayRecapSheet recap={computePayRecap(data, recapYM)} income={inc} amount={payRecap.amount}
+            paidDate={fixedCashDateISO(inc, payRecap.ym)} nextYM={payRecap.ym}
+            cagnottes={data.cagnottes || []} cagTypes={data.cagTypes}
+            onSave={(cagId, amount) => {
+              dispatch({ type: A.SAVE_TRANSACTION, tx: { type: "epargne", amount, date: todayISO(), targetCagId: cagId, note: `Reste de ${MONTHS_SHORT[parseInt(recapYM.slice(5, 7), 10) - 1].toLowerCase()}.` } });
+              const cag = data.cagnottes.find(c => c.id === cagId);
+              addToast(`🐷 ${fmt(amount)} versés dans « ${cag?.name || "cagnotte"} »`);
+              setPayRecap(null);
+            }}
+            onClose={() => setPayRecap(null)} />
+        );
       })()}
       {cagModal && (
         <CagModal
