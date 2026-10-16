@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.66.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.67.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.66.0
+└── package.json         — version: 1.67.0
 ```
 
 ---
@@ -342,6 +342,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.67.0** | minor | **Salaire, suite** — Fixes : la case « Revenus oct. » indique aussi « +2 422 € attendus/reçus → nov. » et une phrase explique que le salaire du 29 compte pour novembre. Saisie d'un revenu dans la catégorie d'un revenu fixe : avertissement « déjà prévu en revenu fixe, compté deux fois » + bouton pour le pointer (« Enregistrer quand même » reste possible). Pointage : interrupteur **« Mois exceptionnel »** (congé, prime…) — compté au budget, exclu de la moyenne du montant prévu. Bilan du 1er : ligne **« À la paie : reste X, mis de côté Y · reste final Z »**, en orange si trop a été mis de côté. |
+| **1.66.1** | patch | Interne : la règle « frais/revenu fixe actif ce mois-ci » (démarrage, pauses) n'existe plus qu'à un seul endroit (`utils.js`), partagée par les calculs et la comparaison de relevé (avant : copiée dans `releve.js`). Aucun changement visible. |
 | **1.66.0** | minor | **Récap à la paie** — quand tu pointes ton salaire (revenu fixe daté le plus élevé), une feuille s'ouvre : bilan simple du mois qui se termine (revenus, frais fixes, dépenses courantes, déjà mis de côté, reste du mois — mêmes chiffres que le Rapport) et **somme à mettre de côté** = reste du mois arrondi à la dizaine inférieure, avec versement direct vers une cagnotte (opération 🐷 Épargne « Reste de … »). |
 | **1.65.0** | patch | **Solde estimé : un revenu fixe daté n'est compté qu'à sa date de versement** (ou dès qu'il est pointé s'il arrive en avance), plus dès le début du mois ; avant, il est listé « à venir » hors solde. Reste à vivre : ajoute les revenus attendus avant la paie. **Règles « dernier / avant-dernier jour ouvré »** : une date qui tombe un lundi est avancée au jour ouvré précédent (banques fermées le lundi). |
 | **1.64.0** | minor | **Salaire : vraie date, bon mois, montant réel** — nouveau jour de versement/prélèvement « Dernier jour ouvré » / « Avant-dernier jour ouvré » (week-ends et jours fériés français sautés, date recalculée chaque mois). Revenu fixe : option **« Compter dans le budget du mois suivant »** (versé fin octobre → budget et rapports de novembre ; solde, paie, reste à vivre, projection et comparaison de relevé à la vraie date) et **montant prévu automatique** (moyenne des 3 derniers montants réels, repris au début des opérations de la même catégorie). Pointer un tel revenu ouvre une fenêtre « montant réel » pré-remplie, figée pour ce mois. Correction : le reste à vivre ne compte plus une paie du mois en cours pas encore arrivée. |
