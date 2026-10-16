@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -41,6 +41,21 @@ export function effectiveIncomesForMonth(fixedIncomes, ym) {
   // v1.50.0 : respecte la correction ponctuelle d'un mois (monthlyOverrides),
   // comme effectiveFixesForMonth — déjà le cas dans le rapprochement et la projection.
   return (fixedIncomes || []).reduce((s, f) => {
+    if (!isActiveForMonth(f, ym)) return s;
+    return s + (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+  }, 0);
+}
+
+/**
+ * v1.64.0 — Revenus fixes ARRIVÉS SUR LE COMPTE pendant le mois `cashYM`.
+ * Identique à effectiveIncomesForMonth sauf pour un revenu « compté dans le
+ * budget du mois suivant » (advance) : l'occurrence de M+1 est versée en M.
+ * À utiliser pour tout calcul de SOLDE ; effectiveIncomesForMonth reste la
+ * source pour le BUDGET (rapports, bilans).
+ */
+export function cashIncomesForMonth(fixedIncomes, cashYM) {
+  return (fixedIncomes || []).reduce((s, f) => {
+    const ym = fixedOccurrenceYM(f, cashYM);
     if (!isActiveForMonth(f, ym)) return s;
     return s + (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
   }, 0);
@@ -133,11 +148,11 @@ export function useBalance(transactions, fixedExpenses, fixedIncomes) {
       const endYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       monthRange(startYM, endYM).forEach(ym => {
         bal -= effectiveFixesForMonth(fixedExpenses, ym);
-        bal += effectiveIncomesForMonth(fixedIncomes, ym);
+        bal += cashIncomesForMonth(fixedIncomes, ym);
       });
     } else {
       bal -= effectiveFixesForMonth(fixedExpenses, currentYM());
-      bal += effectiveIncomesForMonth(fixedIncomes, currentYM());
+      bal += cashIncomesForMonth(fixedIncomes, currentYM());
     }
 
     return bal;
@@ -196,9 +211,13 @@ export function isIncomeDirection(t) {
 //  de l'accueil (useReconciliation) et le panneau « Calcul du solde
 //  estimé ». Un seul calcul → les deux ne peuvent jamais diverger.
 // ─────────────────────────────────────────────────────────────────
-export function computeReconciliation(transactions, fixedExpenses, fixedIncomes, curYM = currentYM()) {
+export function computeReconciliation(transactions, fixedExpenses, fixedIncomes, curYM = currentYM(), today = null) {
+  // v1.65.0 : un revenu fixe DATÉ n'entre dans le solde qu'à sa date de versement
+  // (ou dès qu'il est pointé, s'il arrive en avance) — jamais « dès le 1er du mois ».
+  // Sans `today` : aujourd'hui pour le mois en cours, fin de mois pour un mois passé.
+  const asOf = today || (curYM === currentYM() ? todayISO() : `${curYM}-31`);
   let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
-  const pendingTx = [], pendingFixes = [], pendingIncomes = [];
+  const pendingTx = [], pendingFixes = [], pendingIncomes = [], futureIncomes = [];
 
   transactions.filter(t => isPointable(t.type)).forEach(t => {
     const a = parseFloat(t.amount) || 0;
@@ -216,8 +235,9 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
   const allMonths = monthRange(startYM, curYM);
 
   let nbPtFix = 0, totalFix = 0, nbPtInc = 0, totalInc = 0;
-  allMonths.forEach(ym => {
+  allMonths.forEach(cym => {
     (fixedExpenses || []).forEach(f => {
+      const ym = cym;
       if (!isActiveForMonth(f, ym)) return;
       totalFix++;
       const ov = f.monthlyOverrides?.[ym];
@@ -226,14 +246,19 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
       else { noPtExp += a; pendingFixes.push({ f, ym, signed: -a }); }
     });
     // Revenus fixes : pointables au même titre que les frais fixes, avec
-    // leur propre suivi mensuel (pointedMonths).
+    // leur propre suivi mensuel (pointedMonths). v1.64.0 : `allMonths` sont des
+    // mois de COMPTE → un revenu compté le mois suivant (advance) apporte ici
+    // l'occurrence de M+1, versée en M (pointage et montant de M+1).
     (fixedIncomes || []).forEach(f => {
+      const ym = fixedOccurrenceYM(f, cym);
       if (!isActiveForMonth(f, ym)) return;
       totalInc++;
       const ov = f.monthlyOverrides?.[ym];
       const a  = (ov?.amount ?? f.amount) || 0;
-      if (f.pointedMonths?.[ym]) { ptInc += a; nbPtInc++; }
-      else { noPtInc += a; pendingIncomes.push({ f, ym, signed: a }); }
+      if (f.pointedMonths?.[ym]) { ptInc += a; nbPtInc++; return; }
+      const date = fixedCashDateISO(f, ym);
+      if (date && date > asOf) { totalInc--; futureIncomes.push({ f, ym, date, signed: a }); return; }
+      noPtInc += a; pendingIncomes.push({ f, ym, signed: a });
     });
   });
 
@@ -245,7 +270,7 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
     soldeAttente:   noPtInc - noPtExp,
     nbPointed:      nbPtTx + nbPtFix + nbPtInc,
     totalPointable: pointableTxs.length + totalFix + totalInc,
-    pendingTx, pendingFixes, pendingIncomes,
+    pendingTx, pendingFixes, pendingIncomes, futureIncomes,
   };
 }
 
@@ -273,7 +298,8 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
 export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, now = new Date()) {
   const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const curY  = now.getFullYear().toString();
-  const rec = computeReconciliation(transactions, fixedExpenses, fixedIncomes, curYM);
+  const pad = n => String(n).padStart(2, "0");
+  const rec = computeReconciliation(transactions, fixedExpenses, fixedIncomes, curYM, `${curYM}-${pad(now.getDate())}`);
 
   const sum = list => Math.round(list.reduce((s, x) => s + x.signed, 0) * 100) / 100;
   const cheques = rec.pendingTx.filter(x => x.t.paymentMethod === "cheque");
@@ -313,6 +339,7 @@ export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncome
       fixes:   { total: sum(rec.pendingFixes),   items: rec.pendingFixes },
       incomes: { total: sum(rec.pendingIncomes), items: rec.pendingIncomes },
     },
+    futureIncomes: { total: sum(rec.futureIncomes), items: rec.futureIncomes },   // v1.65.0 : pas encore dans le solde
     recurring: { total: sum(recurring), items: recurring },
     scheduled: { total: sum(scheduled), items: scheduled },
     total,
@@ -377,7 +404,7 @@ function balanceAsOfEndOfMonth(transactions, fixedExpenses, fixedIncomes, target
     if (startYM <= targetYM) {
       monthRange(startYM, targetYM).forEach(ym => {
         bal -= effectiveFixesForMonth(fixedExpenses, ym);
-        bal += effectiveIncomesForMonth(fixedIncomes, ym);
+        bal += cashIncomesForMonth(fixedIncomes, ym);
       });
     }
   }
@@ -687,7 +714,7 @@ function endOfMonthBalance(data, ym) {
     const start = txs.reduce((m, t) => (t.date < m ? t.date : m), txs[0].date).slice(0, 7);
     monthRange(start, ym).forEach(m => {
       bal -= effectiveFixesForMonth(data.fixedExpenses || [], m);
-      bal += effectiveIncomesForMonth(data.fixedIncomes || [], m);
+      bal += cashIncomesForMonth(data.fixedIncomes || [], m);
     });
   }
   return bal;
@@ -853,7 +880,8 @@ const ymAdd = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d = n
 const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 /** Date (YYYY-MM-DD) d'un jour de prélèvement dans un mois donné */
 export function dayInMonthISO(day, ym) {
-  const d = Math.min(Math.max(1, parseInt(day, 10) || 1), lastDayOf(ym));
+  // v1.64.0 : accepte aussi les règles « dernier / avant-dernier jour ouvré » (-1 / -2)
+  const d = resolveFixedDay(day, ym) || 1;
   return `${ym}-${pad2(d)}`;
 }
 const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); const x = new Date(y, m - 1, d + n); return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`; };
@@ -861,14 +889,14 @@ const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); c
 /** Prochaine paie = prochaine date du revenu fixe daté le plus élevé */
 export function nextPayday(data, today = todayISO()) {
   const curYM = today.slice(0, 7);
-  const dated = (data.fixedIncomes || []).filter(f => f.day);
-  if (!dated.length) return null;
-  const main = [...dated].sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))[0];
-  for (let i = 0; i <= 2; i++) {
-    const ym = ymAdd(curYM, i);
-    if (!isActiveForMonth(main, ym)) continue;
-    const d = dayInMonthISO(main.day, ym);
-    if (d > today && !(i === 0 && main.pointedMonths?.[ym])) return { date: d, income: main };
+  const main = mainPayIncome(data);
+  if (!main) return null;
+  // v1.64.0 : occurrences par date réelle de versement (revenu compté le mois suivant compris)
+  for (let i = 0; i <= 3; i++) {
+    const ym = fixedOccurrenceYM(main, ymAdd(curYM, i));
+    if (!isActiveForMonth(main, ym) || main.pointedMonths?.[ym]) continue;
+    const d = fixedCashDateISO(main, ym);
+    if (d > today) return { date: d, income: main, ym };
   }
   return null;
 }
@@ -900,10 +928,12 @@ export function pendingEventsThisMonth(data, breakdown, today = todayISO()) {
     ev(d, -a, f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌" }); addBack += a;
   });
   (data.fixedIncomes || []).forEach(f => {
-    if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
-    const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
-    const a = (f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0;
-    ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", id: f.id }); addBack -= a;
+    const ym = fixedOccurrenceYM(f, curYM);   // v1.64.0 : occurrence versée ce mois-ci
+    if (!f.day || !isActiveForMonth(f, ym) || f.pointedMonths?.[ym]) return;
+    const d = fixedCashDateISO(f, ym); if (d <= today) return;
+    const a = (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+    // v1.65.0 : un revenu daté après aujourd'hui n'est PAS dans le solde estimé → rien à retirer
+    ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", id: f.id, occYM: ym });
   });
   (breakdown?.recurring?.items || []).forEach(({ tpl, signed, day }) => {
     if (!day || tpl.frequency === "yearly") return;
@@ -925,6 +955,8 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
   // 1) Mois en cours : ce que le solde estimé a déjà compté, ré-étalé à sa date
   const cur = pendingEventsThisMonth(data, breakdown, today);
   const events = cur.events;
+  // v1.64.0 : la paie peut tomber ce mois-ci (ex. avant-dernier jour ouvré)
+  events.forEach(e => { if (pay && e.kind === "inc" && e.id === pay.income.id && e.date === pay.date) e.isPay = true; });
   const ev = (date, amount, label, kind, extra = {}) => events.push({ date, amount, label, kind, ...extra });
   const start = cur.start;
 
@@ -937,9 +969,10 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
         ev(d, -((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌", next: true });
       });
       (data.fixedIncomes || []).forEach(f => {
-        if (!f.day || !isActiveForMonth(f, ym)) return;
-        const d = dayInMonthISO(f.day, ym); if (d > end) return;
-        ev(d, (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", next: true, isPay: pay && f.id === pay.income.id && d === pay.date });
+        const oym = fixedOccurrenceYM(f, ym);
+        if (!f.day || !isActiveForMonth(f, oym)) return;
+        const d = fixedCashDateISO(f, oym); if (d > end) return;
+        ev(d, (f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", next: true, isPay: pay && f.id === pay.income.id && d === pay.date });
       });
       (data.scheduledTransactions || []).forEach(s => {
         if (!s.date.startsWith(ym) || s.date > end) return;
@@ -985,8 +1018,11 @@ export function computeRestToLive(data, breakdown, grocery, forecast, today = to
   const nextGroc = payday && payday > endCur && grocery ? grocery.average / 30 * daysBetweenISO(endCur, payday) : 0;
   const margin = Math.max(0, parseFloat(st.margin) || 0);
   const groceries = grocery ? grocery.remaining + nextGroc : 0;
-  const available = breakdown.total - groceries - nextBeforePay - margin;
-  return { base: breakdown.total, groceries: Math.round(groceries * 100) / 100, nextBeforePay: Math.round(nextBeforePay * 100) / 100, margin,
+  // v1.65.0 : les revenus datés ne sont dans le solde qu'à leur date → ceux qui
+  // arrivent AVANT la paie (ex. une allocation le 20) s'ajoutent au disponible.
+  const incBeforePay = payday ? (forecast.events || []).filter(e => e.kind === "inc" && e.amount > 0 && e.date > today && e.date < payday).reduce((s, e) => s + e.amount, 0) : 0;
+  const available = breakdown.total + incBeforePay - groceries - nextBeforePay - margin;
+  return { base: breakdown.total, incBeforePay: Math.round(incBeforePay * 100) / 100, groceries: Math.round(groceries * 100) / 100, nextBeforePay: Math.round(nextBeforePay * 100) / 100, margin,
     available: Math.round(available * 100) / 100, days, payday, perDay: Math.round(available / days * 100) / 100 };
 }
 
@@ -1299,9 +1335,10 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
       lines.push(e); addEv(e);
     };
     (data.fixedIncomes || []).forEach(f => {
-      if (!isActiveForMonth(f, ym)) return;
-      const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
-      push(dayInMonthISO(f.day || 1, ym), a, f.name, "inc", icon(f.categoryId, "💰"), { isPay: f.id === payId });
+      const oym = fixedOccurrenceYM(f, ym);   // v1.64.0 : occurrence versée ce mois-là
+      if (!isActiveForMonth(f, oym)) return;
+      const a = parseFloat(f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0;
+      push(f.day ? fixedCashDateISO(f, oym) : `${ym}-01`, a, f.name, "inc", icon(f.categoryId, "💰"), { isPay: f.id === payId });
     });
     (data.fixedExpenses || []).forEach(f => {
       if (!isActiveForMonth(f, ym)) return;
@@ -1389,4 +1426,26 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
     thresholdBreachMonth: breach ? { ...breach, label: PROJ_MONTHS[parseInt(breach.ym.slice(5, 7), 10) - 1] } : null,
     biggestSchedMonth, biggestSchedItem,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.66.0 — Récap affiché au pointage du salaire : bilan simple du mois
+//  qui se termine (mois de BUDGET, mêmes chiffres que Rapport / Bilan via
+//  computeMonthTotals) et somme à mettre de côté = reste du mois (après
+//  l'épargne déjà versée), arrondi à la dizaine inférieure.
+// ─────────────────────────────────────────────────────────────────
+export function computePayRecap(data, ym) {
+  const tx = data.transactions || [];
+  const t = computeMonthTotals(tx, data.fixedExpenses || [], data.fixedIncomes || [], ym);
+  const r2 = n => Math.round(n * 100) / 100;
+  const saved = r2(t.sav - t.decag);
+  const rest = r2(t.inc - t.exp - saved);
+  return { ym, incomes: r2(t.inc), fixed: r2(t.fixExp), variable: r2(t.expVar), saved, rest,
+    toSave: rest > 0 ? Math.floor(rest / 10) * 10 : 0 };
+}
+
+/** Revenu fixe principal (la paie) : le revenu daté le plus élevé — même règle que nextPayday */
+export function mainPayIncome(data) {
+  const dated = (data.fixedIncomes || []).filter(f => f.day);
+  return dated.length ? [...dated].sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))[0] : null;
 }
