@@ -1,4 +1,11 @@
-import { uid, todayISO, getPrevMonth, currentYM, DEFAULT_CAG_TYPES } from "./utils.js";
+import { uid, todayISO, getPrevMonth, currentYM, DEFAULT_CAG_TYPES, autoIncomeAmount } from "./utils.js";
+
+// v1.64.0 : montant prévu « automatique » = moyenne des 3 derniers montants réels
+const withAutoAmount = (f, transactions) => {
+  if (f.amountMode !== "auto") return f;
+  const a = autoIncomeAmount(f, transactions);
+  return a != null ? { ...f, amount: a } : f;
+};
 
 // ─────────────────────────────────────────────────────────────────
 //  JSDoc Types
@@ -77,6 +84,7 @@ export const A = /** @type {const} */ ({
   TOGGLE_POINT_FIX:    "TOGGLE_POINT_FIX",
   TOGGLE_POINT_INCOME: "TOGGLE_POINT_INCOME",
   SET_FIXED_DAY:       "SET_FIXED_DAY",       // v1.58.0 : jour choisi depuis une tuile des Fixes
+  POINT_INCOME_AMOUNT: "POINT_INCOME_AMOUNT", // v1.64.0 : pointer un revenu fixe avec son montant réel
   OVERRIDE_FIX_MONTH:  "OVERRIDE_FIX_MONTH",
   OVERRIDE_INCOME_MONTH: "OVERRIDE_INCOME_MONTH",   // v1.50.0
   SAVE_RECURRING:      "SAVE_RECURRING",
@@ -603,15 +611,15 @@ export function reducer(state, action) {
       const newIncomes = [...(state.fixedIncomes || [])];
       if (idx != null) {
         const old = newIncomes[idx];
-        newIncomes[idx] = {
+        newIncomes[idx] = withAutoAmount({
           ...old,
           ...income,
           pauseHistory: withPauseHistory({ ...old, pauseHistory: income.pauseHistory !== undefined ? income.pauseHistory : old.pauseHistory }, { ...old, ...income }),
           startYM: income.startYM !== undefined ? income.startYM : old.startYM,
           monthlyOverrides: old.monthlyOverrides,   // v1.50.0 : corrections « ce mois uniquement » conservées
-        };
+        }, state.transactions || []);
       } else {
-        newIncomes.push({ ...income, id: uid("fi"), startYM: income.startYM || null });
+        newIncomes.push(withAutoAmount({ ...income, id: uid("fi"), startYM: income.startYM || null }, state.transactions || []));
       }
       return { ...state, fixedIncomes: newIncomes };
     }
@@ -826,7 +834,9 @@ export function reducer(state, action) {
     // v1.58.0 : change uniquement le jour de prélèvement/versement (aucun autre champ touché)
     case A.SET_FIXED_DAY: {
       const key = action.kind === "income" ? "fixedIncomes" : "fixedExpenses";
-      const day = Math.min(31, Math.max(1, parseInt(action.day, 10) || 1));
+      // v1.64.0 : -1 / -2 = dernier / avant-dernier jour ouvré
+      const n = parseInt(action.day, 10) || 1;
+      const day = n === -1 || n === -2 ? n : Math.min(31, Math.max(1, n));
       return { ...state, [key]: (state[key] || []).map(f => f.id === action.id ? { ...f, day } : f) };
     }
 
@@ -848,7 +858,26 @@ export function reducer(state, action) {
           if (f.id !== action.id) return f;
           const pointedMonths = { ...(f.pointedMonths || {}) };
           pointedMonths[action.ym] = !pointedMonths[action.ym];
-          return { ...f, pointedMonths };
+          // Mode automatique : le montant d'un mois pointé est figé (sinon il suivrait la moyenne)
+          const monthlyOverrides = f.amountMode === "auto" && pointedMonths[action.ym] && f.monthlyOverrides?.[action.ym]?.amount == null
+            ? { ...(f.monthlyOverrides || {}), [action.ym]: { ...(f.monthlyOverrides?.[action.ym] || {}), amount: f.amount } }
+            : f.monthlyOverrides;
+          return withAutoAmount({ ...f, pointedMonths, monthlyOverrides }, state.transactions || []);
+        }),
+      };
+
+    // v1.64.0 : pointé avec le montant réellement reçu (figé pour ce mois),
+    // puis montant prévu recalculé si le revenu est en mode automatique
+    case A.POINT_INCOME_AMOUNT:
+      return {
+        ...state,
+        fixedIncomes: (state.fixedIncomes || []).map(f => {
+          if (f.id !== action.id) return f;
+          const amount = Math.round((parseFloat(action.amount) || 0) * 100) / 100;
+          if (amount <= 0) return f;
+          const monthlyOverrides = { ...(f.monthlyOverrides || {}), [action.ym]: { ...(f.monthlyOverrides?.[action.ym] || {}), amount } };
+          const pointedMonths = { ...(f.pointedMonths || {}), [action.ym]: true };
+          return withAutoAmount({ ...f, monthlyOverrides, pointedMonths }, state.transactions || []);
         }),
       };
 
