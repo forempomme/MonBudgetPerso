@@ -11,7 +11,7 @@ import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
   ConfirmModal, DetailModal, CagHistModal,
-  QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal, CagTypesModal,
+  QuickTemplateSheet, QuickTemplateManagerModal, OffAccountModal, CagTypesModal, PointIncomeModal,
 } from "./components/modals.jsx";
 import {
   AccueilView, CagnottesView, HistoriqueView,
@@ -323,7 +323,13 @@ export default function App() {
 
   const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
-  const togglePointIncome = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym }), []);
+  // v1.64.0 : un revenu au montant « automatique » se pointe avec son montant réel
+  const [pointIncome, setPointIncome] = useState(null); // null | { id, ym }
+  const togglePointIncome = useCallback((id, ym) => {
+    const f = (data.fixedIncomes || []).find(x => x.id === id);
+    if (f?.amountMode === "auto" && !f.pointedMonths?.[ym]) { setPointIncome({ id, ym }); return; }
+    dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym });
+  }, [data.fixedIncomes]);
   const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
   const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
 
@@ -467,6 +473,7 @@ export default function App() {
     if (cagModal)      { setCagModal(null);       return; }
     if (fixedModal)    { setFixedModal(null);       return; }
     if (fixedIncomeModal) { setFixedIncomeModal(null); return; }
+    if (pointIncome)   { setPointIncome(null);    return; }
     if (transModal)    { setTransModal(null);     return; }
     // Priorité 2 : fermer la couche interne à la vue (sheet, panel…)
     if (backStackRef.current.length > 0) {
@@ -1218,6 +1225,7 @@ export default function App() {
           categories={data.categories}
           fixedExpenses={data.fixedExpenses}
           fixedIncomes={data.fixedIncomes || []}
+          transactions={data.transactions}
           editingIdx={fixedModal.editingIdx}
           onSave={payload => { saveFixed(payload); setFixedModal(null); }}
           onSaveIncome={payload => { saveFixedIncome(payload); setFixedModal(null); }}
@@ -1259,12 +1267,21 @@ export default function App() {
           categories={data.categories}
           fixedIncomes={data.fixedIncomes || []}
           fixedExpenses={data.fixedExpenses}
+          transactions={data.transactions}
           editingIdx={fixedIncomeModal.editingIdx}
           onSave={payload => { saveFixedIncome(payload); setFixedIncomeModal(null); }}
           onSaveExpense={payload => { saveFixed(payload); setFixedIncomeModal(null); }}
           onClose={() => setFixedIncomeModal(null)}
         />
       )}
+      {pointIncome && (() => {
+        const inc = (data.fixedIncomes || []).find(x => x.id === pointIncome.id);
+        return inc ? (
+          <PointIncomeModal income={inc} ym={pointIncome.ym}
+            onConfirm={amount => { dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount }); setPointIncome(null); addToast(`✓ ${inc.name} pointé : ${fmt(amount)}`); }}
+            onClose={() => setPointIncome(null)} />
+        ) : null;
+      })()}
       {cagModal && (
         <CagModal
           cagnottes={data.cagnottes}
