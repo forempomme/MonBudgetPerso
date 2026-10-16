@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO, isActiveForMonth } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -14,20 +14,8 @@ import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO,
 //  par mois, pour que "démarrage" et "pause" soient toujours respectés
 //  de façon cohérente (accueil, historique, rapport, popups…).
 // ─────────────────────────────────────────────────────────────────
-export function isActiveForMonth(f, ym) {
-  if (f.startYM && ym < f.startYM) return false;
-  // Pauses terminées (v1.45.1) : restent exclues après réactivation
-  if (f.pauseHistory?.some(p => ym >= p.from && ym <= p.until)) return false;
-  if (f.paused) {
-    // La pause ne s'applique qu'à partir du mois où elle a été activée
-    // (pausedFrom) — jamais rétroactivement sur les mois déjà passés,
-    // qui doivent rester tels qu'ils ont réellement eu lieu.
-    const from  = f.pausedFrom  || "0000-00";
-    const until = f.pausedUntil || "9999-99";
-    if (ym >= from && ym <= until) return false;
-  }
-  return true;
-}
+// v1.66.1 : déplacée dans utils.js (pure, partagée avec releve.js) — ré-exportée ici
+export { isActiveForMonth };
 
 export function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
@@ -763,7 +751,22 @@ export function computeMonthRecap(data, ym) {
     unpointed: unpointedTx + unpointedFix,
     cheques: cheques.length, oldestChequeDays: cheques[0]?.age ?? null,
     hasData: cur.txs.length > 0 || cur.exp > 0 || cur.inc > 0,
+    payCheck: payRecapCheck(data, ym),
   };
+}
+
+/**
+ * v1.67.0 — Bilan du 1er : reste du mois photographié à la paie vs reste final.
+ * Le reste final est compté AVANT la mise de côté faite à la paie (sinon on
+ * comparerait un montant déjà épargné), pour mesurer ce qui a été dépensé depuis.
+ */
+export function payRecapCheck(data, ym) {
+  const snap = data.payRecaps?.[ym];
+  if (!snap || snap.rest == null) return null;
+  const saved = snap.saved || 0;
+  const r2 = n => Math.round(n * 100) / 100;
+  const finalRest = r2(computePayRecap(data, ym).rest + saved);
+  return { date: snap.date, rest: snap.rest, saved, finalRest, diff: r2(finalRest - snap.rest), over: saved > 0 && saved > finalRest ? r2(saved - finalRest) : 0 };
 }
 
 // ─────────────────────────────────────────────────────────────────
