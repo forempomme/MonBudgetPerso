@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { fmt } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
 
+const MONTHS_ABBR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
 const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
 
 function Kpi({ label, value, color, sub, subColor }) {
@@ -89,6 +90,24 @@ export function MonthRecapSheet({ recap: r, categories = [], onClose, onOpenRapp
               sub={r.balanceDelta == null ? "" : `${r.balanceDelta >= 0 ? "▲" : "▼"} ${signed(r.balanceDelta)} sur le mois`}
               subColor={r.balanceDelta >= 0 ? "var(--success)" : "var(--danger)"} />
           </div>
+
+          {/* v1.67.0 : reste photographié à la paie vs reste final */}
+          {r.payCheck && (() => {
+            const c = r.payCheck, dd = c.date ? `${parseInt(c.date.slice(8, 10), 10)} ${MONTHS_ABBR[parseInt(c.date.slice(5, 7), 10) - 1]}` : "";
+            return (
+              <div data-testid="recap-paycheck" style={{ display: "flex", gap: 8, padding: "8px 10px", borderRadius: 10, marginTop: 6, fontSize: ".72rem",
+                background: "var(--surface2)", border: `1px solid ${c.over > 0 ? "rgba(200,184,96,.5)" : "var(--border)"}` }}>
+                <span>💼</span>
+                <span style={{ flex: 1, lineHeight: 1.5 }}>
+                  À la paie{dd ? ` du ${dd}` : ""} : reste <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(c.rest)}</b>
+                  {c.saved > 0 && <>, mis de côté <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(c.saved)}</b></>}
+                  <br /><span style={{ color: "var(--text2)" }}>Reste final : <b style={{ color: "var(--text)", fontVariantNumeric: "tabular-nums" }}>{fmt(c.finalRest)}</b>
+                  {Math.abs(c.diff) >= 0.01 && <> · <span style={{ color: c.diff < 0 ? "var(--warning)" : "var(--success)" }}>{signed(c.diff)}</span> {c.diff < 0 ? "dépensés" : "de mieux"} depuis</>}</span>
+                  {c.over > 0 && <><br /><span style={{ color: "var(--warning)", fontWeight: 700 }}>{fmt(c.over)} de trop mis de côté, à reprendre si besoin</span></>}
+                </span>
+              </div>
+            );
+          })()}
 
           {r.movers.length > 0 && <>
             <Label>Ce qui a le plus bougé</Label>
