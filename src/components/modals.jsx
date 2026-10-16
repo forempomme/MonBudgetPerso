@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
 const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -1245,10 +1245,30 @@ const toPadStr = n => (n === undefined || n === null || n === "") ? "" : String(
 // ─────────────────────────────────────────────────────────────────
 //  Jour de prélèvement (v1.48.0) : Aucun / 1 / 5 / 10 / Autre… → grille
 // ─────────────────────────────────────────────────────────────────
+/** Prochaines dates réelles d'une règle de jour (v1.64.0) */
+export function nextDayDates(day, n = 4, from = todayISO()) {
+  const out = [];
+  for (let i = 0; out.length < n && i < n + 2; i++) {
+    const ym = ymShift(from.slice(0, 7), i);
+    const d = resolveFixedDay(day, ym);
+    if (!d) break;
+    const iso = `${ym}-${String(d).padStart(2, "0")}`;
+    if (iso >= from) out.push(iso);
+  }
+  return out;
+}
+export const shortDateFR = iso => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); };
+
 function DayField({ value, onChange, label = "Jour de prélèvement" }) {
   const [grid, setGrid] = useState(false);
   const quick = [[null, "Aucun"], [1, "Le 1"], [5, "Le 5"], [10, "Le 10"]];
-  const isQuick = value == null || [1, 5, 10].includes(value);
+  const rules = [[DAY_LAST_BD, "Dernier jour ouvré"], [DAY_PREV_LAST_BD, "Avant-dernier jour ouvré"]];
+  const isRule = value === DAY_LAST_BD || value === DAY_PREV_LAST_BD;
+  const isQuick = value == null || [1, 5, 10].includes(value) || isRule;
+  const chip = sel => ({ padding: "6px 2px", borderRadius: 20, fontSize: ".62rem", whiteSpace: "nowrap",
+    border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`, background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
+    color: sel ? "var(--accent)" : "var(--text2)", fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation" });
+  const dates = isRule ? nextDayDates(value) : [];
   return (
     <div style={{ marginBottom: 10 }}>
       <SectionLabel color="var(--accent)">{label}</SectionLabel>
@@ -1258,12 +1278,23 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
           const sel = v === "__other" ? (!isQuick || grid) : (value === v && !grid);
           return (
             <button key={l} type="button" {...tap(() => { if (v === "__other") setGrid(g => !g); else { setGrid(false); onChange(v); } })}
-              style={{ padding: "6px 2px", borderRadius: 20, fontSize: ".62rem", whiteSpace: "nowrap",
-                border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`, background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
-                color: sel ? "var(--accent)" : "var(--text2)", fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation" }}>{l}</button>
+              style={chip(sel)}>{l}</button>
           );
         })}
+        {/* v1.64.0 : règles « jour ouvré » (salaire versé l'avant-dernier jour ouvré…) */}
+        <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {rules.map(([v, l]) => (
+            <button key={v} type="button" data-testid={`day-rule-${-v}`} {...tap(() => { setGrid(false); onChange(v); })}
+              style={{ ...chip(value === v && !grid), padding: "7px 4px", fontSize: ".64rem" }}>{l}</button>
+          ))}
+        </div>
       </div>
+      {isRule && dates.length > 0 && (
+        <div data-testid="day-rule-dates" style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 6, lineHeight: 1.5 }}>
+          Prochaines dates : {dates.map((d, i) => <span key={d}>{i > 0 && " · "}{i === 0 ? <b style={{ color: "var(--text)" }}>{shortDateFR(d)}</b> : shortDateFR(d)}</span>)}
+          <br /><span style={{ color: "var(--text3)" }}>Week-ends et jours fériés sautés ; un lundi est avancé au vendredi (banques fermées).</span>
+        </div>
+      )}
       {grid && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginTop: 6 }}>
           {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
@@ -1285,7 +1316,7 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
 //  l'autre ; en modification le type est verrouillé (un frais existant
 //  reste un frais).
 // ─────────────────────────────────────────────────────────────────
-function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedIncomes = [], editingIdx, onSaveExpense, onSaveIncome, onClose }) {
+function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedIncomes = [], transactions = [], editingIdx, onSaveExpense, onSaveIncome, onClose }) {
   const toast = useToast();
   const isEdit = editingIdx != null;
   const [kind, setKind] = useState(initialKind);
@@ -1299,6 +1330,9 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   const [catId,  setCatId]  = useState(f?.categoryId || cats[0]?.id || "");
   const [startYM, setStartYM] = useState(f?.startYM || "");
   const [day, setDay] = useState(f?.day || null);   // v1.48.0 : jour de prélèvement
+  // v1.64.0 : montant prévu fixe ou automatique (moyenne des 3 derniers réels) + budget du mois suivant
+  const [amountMode, setAmountMode] = useState(f?.amountMode || "fixed");
+  const [advance, setAdvance] = useState(!!f?.advance);
   const [paused,      setPaused]      = useState(f?.paused || false);
   const [pausedFrom,  setPausedFrom]  = useState(f?.pausedFrom || "");
   const [pausedUntil, setPausedUntil] = useState(f?.pausedUntil || "");
@@ -1313,11 +1347,15 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
     setCatId(categories.find(c => c.type === (k === "income" ? "income" : "expense"))?.id || "");
   }
 
+  const autoOn   = isInc && amountMode === "auto";
+  const autoHist = autoOn ? autoIncomeHistory({ ...(f || {}), categoryId: catId }, transactions) : [];
+  const autoAmt  = autoOn ? autoIncomeAmount({ ...(f || {}), categoryId: catId }, transactions) : null;
+
   function handleSave() {
     const e = {};
-    const a = amountOf(amt);
+    const a = autoOn && autoAmt != null ? autoAmt : amountOf(amt);
     if (!name.trim()) e.name = "Nom requis";
-    if (!amt || isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
+    if (isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
     setErrors(e);
     if (Object.keys(e).length) return;
     const payload = {
@@ -1330,6 +1368,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       pausedFrom:  paused ? (pausedFrom || curM) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
       pauseHistory: pastPauses.length ? pastPauses : undefined,
+      ...(isInc ? { amountMode, advance } : {}),
     };
     if (isInc) onSaveIncome({ idx: editingIdx, income: payload });
     else       onSaveExpense({ idx: editingIdx, fixed: payload });
@@ -1347,13 +1386,62 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       ]} />
       <TextField label="Nom" value={name} error={errors.name} placeholder={isInc ? "Ex : Salaire, CAF…" : "Ex : Loyer, Netflix…"}
         onChange={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
-      <div style={{ marginBottom: 10 }}>
-        {errors.amt && <FieldError msg={errors.amt} />}
-        <NumPad value={amt} type={isInc ? "income" : "expense"}
-          onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
-      </div>
+      {isInc && (
+        <div style={{ marginBottom: 8 }}>
+          <SectionLabel color="var(--accent)">Montant prévu</SectionLabel>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
+            background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+            {[["fixed", "Fixe"], ["auto", "Automatique"]].map(([k, l]) => {
+              const on = amountMode === k;
+              return <button key={k} type="button" data-testid={`amount-mode-${k}`} {...tap(() => setAmountMode(k))}
+                style={{ padding: "6px 2px", borderRadius: 20, fontSize: ".64rem", cursor: "pointer", touchAction: "manipulation",
+                  border: `1.5px solid ${on ? "var(--accent)" : "var(--border)"}`, background: on ? "rgba(112,184,224,.14)" : "var(--surface2)",
+                  color: on ? "var(--accent)" : "var(--text2)", fontWeight: on ? 700 : 400 }}>{l}</button>;
+            })}
+          </div>
+        </div>
+      )}
+      {autoOn && autoAmt != null ? (
+        <div data-testid="auto-amount" style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 12px", borderRadius: 11, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+            <span style={{ fontSize: ".74rem", color: "var(--text2)" }}>Prévu</span>
+            <b style={{ fontSize: "1.05rem", color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>{fmt(autoAmt)}</b>
+          </div>
+          <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 5, lineHeight: 1.5 }}>
+            {autoHist.length < 3 ? `Moyenne de tes ${autoHist.length} dernier${autoHist.length > 1 ? "s" : ""} montant${autoHist.length > 1 ? "s" : ""} réel${autoHist.length > 1 ? "s" : ""}` : "Moyenne de tes 3 derniers montants réels"} :{" "}
+            {autoHist.map((h, i) => <span key={h.key + i}>{i > 0 && " · "}{MONTHS_FULL_LC[parseInt(h.ym.slice(5, 7), 10) - 1]} {fmt(h.amount)}</span>)}
+            <br /><span style={{ color: "var(--text3)" }}>Au début, repris de tes opérations de la catégorie choisie. Se met à jour à chaque pointage.</span>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 10 }}>
+          {errors.amt && <FieldError msg={errors.amt} />}
+          {autoOn && <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 5, lineHeight: 1.5 }}>Aucun montant réel trouvé dans cette catégorie : indique un montant de départ, la moyenne prendra le relais à chaque pointage.</div>}
+          <NumPad value={amt} type={isInc ? "income" : "expense"}
+            onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
+        </div>
+      )}
       <CategoryField cats={cats} catId={catId} onChange={setCatId} />
       <DayField label={isInc ? "Jour de versement" : "Jour de prélèvement"} value={day} onChange={setDay} />
+      {isInc && (
+        <div data-testid="advance-toggle" {...tap(() => setAdvance(v => !v))}
+          style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, marginBottom: 10, cursor: "pointer",
+            background: advance ? "rgba(88,192,144,.07)" : "var(--surface2)", border: `1px solid ${advance ? "rgba(88,192,144,.35)" : "var(--border)"}` }}>
+          <span style={{ flexShrink: 0, width: 34, height: 20, borderRadius: 10, position: "relative", marginTop: 2, background: advance ? "var(--sapin)" : "var(--surface3)", transition: "background .15s" }}>
+            <span style={{ position: "absolute", top: 2, left: advance ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+          </span>
+          <span style={{ flex: 1 }}>
+            <b style={{ fontSize: ".74rem" }}>Compter dans le budget du mois suivant</b>
+            <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)", lineHeight: 1.45, marginTop: 3 }}>
+              {advance && day ? (() => {
+                const occ = ymShift(curM, 1), paid = fixedCashDateISO({ day, advance: true }, occ);
+                return <>Versé le <b style={{ color: "var(--text)" }}>{shortDateFR(paid)}</b> → budget de <b style={{ color: "var(--sapin)" }}>{MONTHS_FULL_LC[parseInt(occ.slice(5, 7), 10) - 1]}</b>. </>;
+              })() : null}
+              Le versement de fin de mois sert à vivre le mois suivant : il compte dans ce mois-là pour le budget et les rapports. Le solde, la paie et le reste à vivre utilisent la vraie date.
+            </span>
+          </span>
+        </div>
+      )}
       <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
         ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
       ]} />
@@ -1440,14 +1528,51 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   );
 }
 
-export function FixedModal({ categories, fixedExpenses, fixedIncomes, editingIdx, onSave, onSaveIncome, onClose }) {
-  return <FixedFormModal initialKind="expense" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes}
+export function FixedModal({ categories, fixedExpenses, fixedIncomes, transactions, editingIdx, onSave, onSaveIncome, onClose }) {
+  return <FixedFormModal initialKind="expense" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes} transactions={transactions}
     editingIdx={editingIdx} onSaveExpense={onSave} onSaveIncome={onSaveIncome || (() => {})} onClose={onClose} />;
 }
 
-export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, editingIdx, onSave, onSaveExpense, onClose }) {
-  return <FixedFormModal initialKind="income" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes}
+export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, transactions, editingIdx, onSave, onSaveExpense, onClose }) {
+  return <FixedFormModal initialKind="income" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes} transactions={transactions}
     editingIdx={editingIdx} onSaveExpense={onSaveExpense || (() => {})} onSaveIncome={onSave} onClose={onClose} />;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Pointage d'un revenu fixe avec le montant réellement reçu — v1.64.0
+//  (revenus en montant prévu « automatique » : salaire variable…)
+// ─────────────────────────────────────────────────────────────────
+export function PointIncomeModal({ income, ym, onConfirm, onClose }) {
+  const predicted = parseFloat(income.monthlyOverrides?.[ym]?.amount ?? income.amount) || 0;
+  const [amt, setAmt] = useState(toPadStr(predicted));
+  const fresh = useRef(true);
+  const a = amountOf(amt);
+  const ok = !isNaN(a) && a > 0;
+  const diff = ok ? Math.round((a - predicted) * 100) / 100 : 0;
+  const paid = fixedCashDateISO(income, ym);
+  return (
+    <Modal onClose={onClose} title={`💼 ${income.name} reçu`}>
+      <div style={{ fontSize: ".66rem", color: "var(--text2)", marginBottom: 8 }}>
+        {paid ? <>Versé le {shortDateFR(paid)}</> : "Ce mois-ci"}
+        {income.advance && <> · compté dans le budget de <b style={{ color: "var(--sapin)" }}>{MONTHS_FULL_LC[parseInt(ym.slice(5, 7), 10) - 1]}</b></>}
+      </div>
+      <SectionLabel color="var(--success)">Montant réel</SectionLabel>
+      <NumPad value={amt} type="income" onChange={v => {
+        // 1ʳᵉ touche chiffre : remplace le montant pré-rempli au lieu de s'y ajouter
+        const next = typeof v === "function" ? v(amt) : v;
+        if (fresh.current) {
+          fresh.current = false;
+          if (next.length === amt.length + 1 && next.startsWith(amt) && /[0-9]/.test(next.slice(-1))) { setAmt(next.slice(-1)); return; }
+        }
+        setAmt(next);
+      }} />
+      <div data-testid="point-income-diff" style={{ fontSize: ".64rem", color: "var(--text2)", margin: "6px 0 12px" }}>
+        Prévu : {fmt(predicted)}
+        {ok && diff !== 0 && <> · <span style={{ color: diff > 0 ? "var(--success)" : "var(--warning)" }}>{diff > 0 ? "+" : "−"}{fmt(Math.abs(diff))}</span></>}
+      </div>
+      <FormActions onCancel={onClose} onSave={() => { if (ok) onConfirm(a); }} emoji="✓" label="Pointer" color="var(--success)" />
+    </Modal>
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -2258,6 +2383,12 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
     .filter(t => (t.type === "epargne" || t.type === "decagnottage") && t.targetCagId === cagId)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  const adjs = c.adjustments || [];
+  const adjTotal = adjs.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+  // Mouvements + ajustements, du plus récent au plus ancien (à date égale, l'ajustement en premier)
+  const rows = [...txs.map(t => ({ date: t.date, t })), ...adjs.map(a => ({ date: a.date, adj: a }))]
+    .sort((x, y) => (y.date || "").localeCompare(x.date || "") || (y.adj ? 1 : 0) - (x.adj ? 1 : 0));
+
   let totE = 0, totD = 0;
   txs.forEach(t => {
     if (t.type === "epargne")     totE += parseFloat(t.amount) || 0;
@@ -2304,11 +2435,28 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
       </div>
 
       <div style={{ maxHeight: "45vh", overflowY: "auto" }}>
-        {txs.length === 0
+        {rows.length === 0
           ? <div className="empty-state"><div className="empty-icon">📭</div><p>Aucun mouvement enregistré</p></div>
-          : txs.map(t => <ItemRow key={t.id} t={t} categories={categories} cagnottes={cagnottes} />)
+          : rows.map(r => r.adj
+            ? (
+              // v1.58.0 : ajustement manuel (fiche ✏️) — hors solde bancaire et hors versé/retiré
+              <div key={r.adj.id} className="item-row" data-testid="cag-adjustment">
+                <div className="item-icon">✏️</div>
+                <div className="item-info">
+                  <div className="item-title">Ajustement manuel</div>
+                  <div className="item-sub">{r.adj.date} · {fmt(r.adj.before)} → {fmt(r.adj.after)}</div>
+                </div>
+                <div className="item-amount" style={{ color: "var(--text2)", flexShrink: 0 }}>{r.adj.amount >= 0 ? "+" : "−"}{fmt(Math.abs(r.adj.amount))}</div>
+              </div>
+            )
+            : <ItemRow key={r.t.id} t={r.t} categories={categories} cagnottes={cagnottes} />)
         }
       </div>
+      {adjs.length > 0 && (
+        <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 6, lineHeight: 1.45 }}>
+          ✏️ Ajustements manuels : {adjTotal >= 0 ? "+" : "−"}{fmt(Math.abs(adjTotal))} — modifications de « Déjà épargné » dans la fiche, sans effet sur ton solde bancaire.
+        </div>
+      )}
       <button className="btn btn-outline" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
     </Modal>
   );
