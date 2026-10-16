@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.63.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.66.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.63.0
+└── package.json         — version: 1.66.0
 ```
 
 ---
@@ -342,6 +342,9 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.66.0** | minor | **Récap à la paie** — quand tu pointes ton salaire (revenu fixe daté le plus élevé), une feuille s'ouvre : bilan simple du mois qui se termine (revenus, frais fixes, dépenses courantes, déjà mis de côté, reste du mois — mêmes chiffres que le Rapport) et **somme à mettre de côté** = reste du mois arrondi à la dizaine inférieure, avec versement direct vers une cagnotte (opération 🐷 Épargne « Reste de … »). |
+| **1.65.0** | patch | **Solde estimé : un revenu fixe daté n'est compté qu'à sa date de versement** (ou dès qu'il est pointé s'il arrive en avance), plus dès le début du mois ; avant, il est listé « à venir » hors solde. Reste à vivre : ajoute les revenus attendus avant la paie. **Règles « dernier / avant-dernier jour ouvré »** : une date qui tombe un lundi est avancée au jour ouvré précédent (banques fermées le lundi). |
+| **1.64.0** | minor | **Salaire : vraie date, bon mois, montant réel** — nouveau jour de versement/prélèvement « Dernier jour ouvré » / « Avant-dernier jour ouvré » (week-ends et jours fériés français sautés, date recalculée chaque mois). Revenu fixe : option **« Compter dans le budget du mois suivant »** (versé fin octobre → budget et rapports de novembre ; solde, paie, reste à vivre, projection et comparaison de relevé à la vraie date) et **montant prévu automatique** (moyenne des 3 derniers montants réels, repris au début des opérations de la même catégorie). Pointer un tel revenu ouvre une fenêtre « montant réel » pré-remplie, figée pour ce mois. Correction : le reste à vivre ne compte plus une paie du mois en cours pas encore arrivée. |
 | **1.63.0** | minor | **Comparer avec un relevé (lecture seule)** — bouton 🏦 dans la barre de l'Historique et Options › Mes données. Choisis le relevé PDF de ta banque (format Crédit Mutuel de Bretagne / Arkéa) : il est lu **sur le téléphone** avec pdf.js, sans réseau, puis oublié. Lecture vérifiée contre les sous-totaux, les totaux et « ancien solde + mouvements = nouveau solde ». Rapprochement par **montant au centime + date** (carte : date d'achat du libellé ±2 j ; virements/prélèvements ±4 j ; chèques jusqu'à 90 j), une ligne bancaire = une opération ; frais/revenus fixes et versements/retraits de cagnotte (livret) compris. Résultat : retrouvées, **oubliées** (à la banque, pas dans l'appli), **en trop** (doublon possible signalé), **presque pareilles** (chiffres inversés…), mis de côté (chèques non encaissés, après la fin du relevé), écart expliqué, solde du livret vs total des cagnottes. **Rien n'est créé, pointé, enregistré ni partagé** ; nom, adresse, IBAN et numéros de compte ne sont jamais lus. Nouvelle dépendance : `pdfjs-dist` 6.2.108 (chargée seulement à l'ouverture de cet écran) |
 | **1.62.1** | patch | **Historique filtré (Pointées / Attente) lisible** : les boutons Modifier / Supprimer restaient affichés sous chaque ligne pointée et se voyaient à travers son fond semi-transparent, masquant les montants. Ils n'apparaissent plus qu'en glissant la ligne vers la gauche, et le fond des lignes pointées est opaque |
 | **1.62.0** | minor | **Projection fiable** — corrections : le reste des dépenses courantes du mois en cours est enfin déduit (avant : projection trop optimiste d'environ un demi-mois) ; les mois sans aucune donnée ne comptent plus pour 0 dans la médiane ; la fiabilité compte les opérations d'équilibre et ne compare plus que les projections faites le mois d'avant (les anciennes, faites jusqu'à 3 mois avant, sont remplacées). Ajouts : récurrentes annuelles projetées au mois de leur dernière occurrence ; calcul **jour par jour** → point bas réel (« juste avant la paie ») au lieu de la fin de mois ; **fourchette** selon tes derniers mois ; courbe quotidienne avec les fins de mois — touche un point pour le **détail ligne par ligne** (départ, revenus, fixes, récurrentes, programmées, courant estimé, fin de mois) ; fiabilité résumée (« erreur moyenne ±x €, plutôt optimiste / prudente »). La simulation « Et si… ? » part des mêmes chiffres corrigés |
