@@ -141,6 +141,7 @@ export function RestToLiveSheet({ rest: r, onClose }) {
         Du {ddmm(today)} {r.payday ? `à la paie du ${ddmm(r.payday)}` : "à la fin du mois"} ({r.days} jour{r.days > 1 ? "s" : ""})
       </div>
       <Row label="Solde estimé" value={signed(r.base)} color="var(--text)" />
+      {r.incBeforePay > 0 && <Row label="💰 Revenus attendus avant la paie" value={"+" + fmt(r.incBeforePay)} color="var(--success)" />}
       {r.groceries > 0 && <Row label="🛒 Courses prévues (budget courses)" value={"−" + fmt(r.groceries)} color="var(--coral)" />}
       {r.nextBeforePay > 0 && <Row label="📅 Prélèvements du mois prochain avant la paie" value={"−" + fmt(r.nextBeforePay)} color="var(--danger)" />}
       {r.margin > 0 && <Row label="🛟 Marge de sécurité (Options)" value={"−" + fmt(r.margin)} color="var(--warning)" />}
