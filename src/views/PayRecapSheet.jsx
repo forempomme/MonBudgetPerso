@@ -5,7 +5,7 @@
 //  arrondi à la dizaine inférieure) + versement direct vers une cagnotte.
 //  Données : computePayRecap (hooks.js).
 // ─────────────────────────────────────────────────────────────────
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { fmt, cagIconOf } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
@@ -13,7 +13,10 @@ import { MONTHS_FR } from "./shared.jsx";
 const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
 const shortDate = iso => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); };
 
-export function PayRecapSheet({ recap: r, income, amount, paidDate, nextYM, cagnottes = [], cagTypes, onSave, onClose }) {
+export function PayRecapSheet({ recap: r, income, amount, paidDate, nextYM, cagnottes = [], cagTypes, onSave, onSnapshot, onClose }) {
+  // v1.67.0 : photo du reste au moment de la paie (comparée au reste final dans le bilan du 1er)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { onSnapshot?.(r.rest); }, []);
   const mName = MONTHS_FR[parseInt(r.ym.slice(5, 7), 10) - 1];
   const nextName = nextYM ? MONTHS_FR[parseInt(nextYM.slice(5, 7), 10) - 1].toLowerCase() : null;
   const [cagId, setCagId] = useState(cagnottes[0]?.id || "");
