@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.63.0";
+export const APP_VERSION = "1.66.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -189,3 +189,107 @@ if (typeof document !== "undefined") {
 }
 /** true si le geste en cours est un glissement (défilement), pas un tap. */
 export function touchMoved() { return _tap.moved; }
+
+// ─── Jour des frais / revenus fixes (v1.64.0) ────────────────────
+// `day` vaut 1–31 (ramené au dernier jour d'un mois plus court) ou une règle :
+//   -1 = dernier jour ouvré du mois, -2 = avant-dernier jour ouvré.
+// Jour ouvré = lundi–vendredi hors jours fériés français.
+// v1.65.0 : le jour obtenu ne peut pas être un LUNDI (banques fermées, pas de
+// virement) → il est avancé au jour ouvré précédent (le vendredi en général).
+export const DAY_LAST_BD = -1;
+export const DAY_PREV_LAST_BD = -2;
+const _pad2 = n => String(n).padStart(2, "0");
+const _isoOf = d => `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}-${_pad2(d.getDate())}`;
+const _holidayCache = {};
+/** Jours fériés français (métropole) d'une année, en "YYYY-MM-DD" */
+export function frenchHolidays(year) {
+  if (_holidayCache[year]) return _holidayCache[year];
+  // Dimanche de Pâques (algorithme de Meeus/Jones/Butcher)
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(year, month - 1, day);
+  const plus = n => _isoOf(new Date(year, easter.getMonth(), easter.getDate() + n));
+  const set = new Set([
+    `${year}-01-01`, plus(1), `${year}-05-01`, `${year}-05-08`, plus(39), plus(50),
+    `${year}-07-14`, `${year}-08-15`, `${year}-11-01`, `${year}-11-11`, `${year}-12-25`,
+  ]);
+  return (_holidayCache[year] = set);
+}
+export function isBusinessDay(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const wd = new Date(y, m - 1, d).getDay();
+  return wd !== 0 && wd !== 6 && !frenchHolidays(y).has(iso);
+}
+/** Jour où un virement (salaire) peut arriver : mardi–vendredi hors fériés */
+export function isBankCreditDay(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay() !== 1 && isBusinessDay(iso);
+}
+/** Jour (1–31) correspondant à `day` dans le mois `ym` ; null si aucun jour */
+export function resolveFixedDay(day, ym) {
+  const n = parseInt(day, 10);
+  if (!n) return null;
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(y, m, 0).getDate();
+  if (n > 0) return Math.min(n, last);
+  let skip = -n;  // 1 = dernier jour ouvré, 2 = avant-dernier
+  for (let d = last; d >= 1; d--) {
+    if (isBusinessDay(`${ym}-${_pad2(d)}`) && --skip === 0) {
+      while (d > 1 && !isBankCreditDay(`${ym}-${_pad2(d)}`)) d--;   // lundi → vendredi
+      return d;
+    }
+  }
+  return last;
+}
+/** Libellé court du jour : "le 5", "dern. j. ouvré", "av.-dern. j. ouvré" */
+export function fixedDayLabel(day, { long = false } = {}) {
+  const n = parseInt(day, 10);
+  if (!n) return null;
+  if (n === DAY_LAST_BD) return long ? "Dernier jour ouvré" : "dern. j. ouvré";
+  if (n === DAY_PREV_LAST_BD) return long ? "Avant-dernier jour ouvré" : "av.-dern. j. ouvré";
+  return long ? `Le ${n}` : `le ${n}`;
+}
+/** "2026-10" + n mois */
+export function ymShift(ym, n) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${_pad2(d.getMonth() + 1)}`;
+}
+// Revenu « compté dans le budget du mois suivant » (f.advance) : l'occurrence
+// du mois M (budget, rapports, pointage) est versée sur le compte en M−1.
+/** Mois où l'argent de l'occurrence `ym` arrive sur le compte */
+export function fixedCashYM(f, ym) { return f?.advance ? ymShift(ym, -1) : ym; }
+/** Occurrence (mois de budget) dont l'argent arrive pendant le mois `cashYM` */
+export function fixedOccurrenceYM(f, cashYM) { return f?.advance ? ymShift(cashYM, 1) : cashYM; }
+/** Date réelle (YYYY-MM-DD) de l'occurrence `ym`, ou null sans jour */
+export function fixedCashDateISO(f, ym) {
+  const cym = fixedCashYM(f, ym);
+  const d = resolveFixedDay(f?.day, cym);
+  return d ? `${cym}-${_pad2(d)}` : null;
+}
+
+// ─── Montant prévu automatique d'un revenu fixe (v1.64.0) ────────
+// Moyenne des 3 derniers montants réels : occurrences pointées (montant saisi
+// au pointage), complétées au début par les opérations de la même catégorie.
+export function autoIncomeHistory(f, transactions = []) {
+  const items = [];
+  Object.entries(f?.pointedMonths || {}).forEach(([ym, on]) => {
+    if (!on) return;
+    const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+    if (a > 0) items.push({ key: fixedCashDateISO(f, ym) || `${fixedCashYM(f, ym)}-28`, ym, amount: a, src: "fixed" });
+  });
+  if (f?.categoryId) transactions.forEach(t => {
+    if (t.type !== "income" || t.categoryId !== f.categoryId) return;
+    const a = parseFloat(t.amount) || 0;
+    if (a > 0) items.push({ key: t.date, ym: t.date.slice(0, 7), amount: a, src: "tx" });
+  });
+  items.sort((a, b) => b.key.localeCompare(a.key));
+  return items.slice(0, 3);
+}
+export function autoIncomeAmount(f, transactions = []) {
+  const h = autoIncomeHistory(f, transactions);
+  if (!h.length) return null;
+  return Math.round(h.reduce((s, x) => s + x.amount, 0) / h.length * 100) / 100;
+}
