@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { fmt, cagIconOf } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
 
+const pctTxt = r => `${Math.round(r * 100)} %`;
 const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
 const shortDate = iso => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); };
 
@@ -47,6 +48,18 @@ export function PayRecapSheet({ recap: r, income, amount, paidDate, nextYM, cagn
         {row("🛒 Dépenses courantes", signed(-r.variable), "var(--danger)")}
         {r.saved !== 0 && row(r.saved > 0 ? "🐷 Déjà mis de côté" : "🐷 Repris des cagnottes", signed(-r.saved), "var(--purple)")}
         {row(`= Reste ${/^[AEIOU]/.test(mName) ? "d'" : "de "}${mName.toLowerCase()}`, signed(r.rest), r.rest >= 0 ? "var(--success)" : "var(--danger)", true)}
+
+        {r.rate != null && (
+          <div data-testid="pay-recap-rate" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, padding: "8px 10px", borderRadius: 10, fontSize: ".72rem",
+            background: "rgba(176,144,224,.08)", border: "1px solid rgba(176,144,224,.4)" }}>
+            <span>📈</span>
+            <span style={{ flex: 1, lineHeight: 1.5 }}>
+              Taux d'épargne : <b>{pctTxt(r.rate)}</b>
+              {r.toSave > 0 && <> → <b style={{ color: "var(--purple)" }}>{pctTxt(r.rateAfter)}</b> si tu verses {fmt(r.toSave).replace(",00", "")}</>}
+              {r.avg12 != null && <><br /><span style={{ color: "var(--text2)", fontSize: ".62rem" }}>Ta moyenne sur 12 mois : {pctTxt(r.avg12)}</span></>}
+            </span>
+          </div>
+        )}
 
         <div data-testid="pay-recap-save" style={{ marginTop: 10, borderRadius: 14, padding: "12px 14px",
           background: r.toSave > 0 ? "rgba(176,144,224,.08)" : "rgba(200,184,96,.07)", border: `1.5px solid ${r.toSave > 0 ? "rgba(176,144,224,.45)" : "rgba(200,184,96,.4)"}` }}>
