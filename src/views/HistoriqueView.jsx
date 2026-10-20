@@ -1,6 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
-import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved } from "../utils.js";
+import { createPortal } from "react-dom";
+import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved, fixedAmountFor } from "../utils.js";
 import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
@@ -213,7 +214,8 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
   const [filter,   setFilter]   = useState("all");
   const [sort,     setSort]     = useState("date");
   const [catId,    setCatId]    = useState("");
-  const [viewMode, setViewMode] = useState("type");   // v1.47.0 : « Par type » par défaut
+  const [viewMode, setViewMode] = useState("frise");  // v1.71.0 : « Frise » par jour par défaut
+  const [txSheet,  setTxSheet]  = useState(null);     // v1.71.0 : feuille d'actions d'une opération
   const [openTypes, setOpenTypes] = useState({ expense: true });
   const [closedWeeks, setClosedWeeks] = useState({});
   const [calSelectedDay, setCalSelectedDay] = useState(null);
@@ -340,8 +342,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
       else           noPt += val;
     });
     monthFixes.forEach(f => {
-      const ov = f.monthlyOverrides?.[month];
-      const a  = (ov?.amount ?? f.amount) || 0;
+      const a  = fixedAmountFor(f, month);
       const isPointed = !!f.pointedMonths?.[month];
       if (isPointed) pt   -= a;
       else           noPt -= a;
@@ -415,6 +416,12 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
   }, [data.offAccountEntries, hideOff, tagFilter, pointFilter, filter, globalSearch, search, month, catId, categories, minAmt, maxAmt]);
 
   const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+  // v1.71.0 : remboursements encore attendus, par opération (badge « ↩️ X € attendus »)
+  const reimbPending = useMemo(() => {
+    const m = {};
+    (data.reimbursements || []).forEach(r => { if (r.txId && r.status !== "received") m[r.txId] = (m[r.txId] || 0) + (parseFloat(r.amount) || 0); });
+    return m;
+  }, [data.reimbursements]);
 
   // Cartes frais fixes / revenus fixes du mois — partagées par Liste et Par type
   const renderFixesCard = () => (
@@ -444,7 +451,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                 item={{
                   ...f,
                   name:        ov?.name   ?? f.name,
-                  amount:      ov?.amount ?? f.amount,
+                  amount:      fixedAmountFor(f, month),
                   cat,
                   date:        null,
                   pointed:     !!f.pointedMonths?.[month],
@@ -489,7 +496,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                   ...f,
                   type:        "income",
                   name:        ov?.name   ?? f.name,
-                  amount:      ov?.amount ?? f.amount,
+                  amount:      fixedAmountFor(f, month),
                   cat,
                   date:        null,
                   pointed:     !!f.pointedMonths?.[month],
@@ -555,7 +562,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
   });
   const activeCount = [
     filter !== "all", pointFilter !== "all", tagFilter !== "", hideOff,
-    sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "type",
+    sort !== "date", minAmt !== "", maxAmt !== "", viewMode !== "frise",
   ].filter(Boolean).length;
   const activePills = [
     filter !== "all"       && { label: filter === "expense" ? "Dépenses" : filter === "income" ? "Revenus" : "Cagnottes", clear: () => setFilter("all") },
@@ -564,9 +571,10 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
     tagFilter              && (() => { const tg = (data.tags||[]).find(t=>t.id===tagFilter); return tg && { label: `${tg.icon} ${tg.name}`, clear: () => setTagFilter("") }; })(),
     sort !== "date"        && { label: sort === "amt_d" ? "Montant ↓" : "Montant ↑", clear: () => setSort("date") },
     (minAmt || maxAmt)     && { label: `${minAmt||"0"}–${maxAmt||"∞"} €`, clear: () => { setMinAmt(""); setMaxAmt(""); } },
-    viewMode === "list"     && { label: "📋 Liste", clear: () => setViewMode("type") },
-    viewMode === "cats"     && { label: "📊 Catégories", clear: () => setViewMode("type") },
-    viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("type") },
+    viewMode === "type"     && { label: "🗂️ Par type", clear: () => setViewMode("frise") },
+    viewMode === "list"     && { label: "📋 Liste", clear: () => setViewMode("frise") },
+    viewMode === "cats"     && { label: "📊 Catégories", clear: () => setViewMode("frise") },
+    viewMode === "calendar" && { label: "📅 Calendrier", clear: () => setViewMode("frise") },
   ].filter(Boolean);
 
 
@@ -636,7 +644,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                       {p.label} <span style={{ opacity: .7 }}>✕</span>
                     </span>
                   ))}
-                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("type"); setTagFilter(""); setHideOff(false); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
+                  <span onClick={() => { setFilter("all"); setPointFilter("all"); setSort("date"); setMinAmt(""); setMaxAmt(""); setViewMode("frise"); setTagFilter(""); setHideOff(false); onClearPointFilter?.(); }} style={{ fontSize: ".58rem", padding: "2px 8px", background: "transparent", border: "1px solid var(--border)", borderRadius: 10, color: "var(--text3)", cursor: "pointer" }}>
                     ✕ Tout reset
                   </span>
                 </div>
@@ -745,9 +753,9 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                   {/* Vue */}
                   <div>
                     <div style={{ fontSize: ".55rem", color: "var(--text3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 5 }}>Vue</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-                      {[["type","🗂️ Par type"],["list","📋 Liste"],["cats","📊 Catégories"],["calendar","📅 Calendrier"]].map(([k,l]) => (
-                        <button key={k} onClick={() => setViewMode(k)} style={{
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+                      {[["frise","🗓️ Frise"],["type","🗂️ Par type"],["list","📋 Liste"],["cats","📊 Catégories"],["calendar","📅 Calendrier"]].map(([k,l]) => (
+                        <button key={k} data-view={k} onClick={() => setViewMode(k)} style={{
                           background: viewMode===k ? "var(--accent-glow)" : "transparent",
                           border: `1.5px solid ${viewMode===k ? "var(--accent)" : "var(--border)"}`,
                           borderRadius: 6, padding: "7px 0",
@@ -892,7 +900,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
       })()}
 
       {/* ── Filtre catégorie actif ── */}
-      {(viewMode === "list" || viewMode === "type") && catId && (() => {
+      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && catId && (() => {
         const activeCat = categories.find(c => c.id === catId);
         return activeCat ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "6px 12px", background: "var(--accent-glow)", border: "1px solid var(--accent)", borderRadius: "var(--radius-sm)" }}>
@@ -993,6 +1001,71 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
         );
       })()}
 
+      {/* ── v1.71.0 : vue « Frise » — une bulle par jour sur une ligne de temps ── */}
+      {viewMode === "frise" && (() => {
+        const offByDate = {};
+        filteredOff.forEach(e => (offByDate[e.date] = offByDate[e.date] || []).push(e));
+        const bankDates = new Set(grouped.map(([d]) => d));
+        const days = [...grouped, ...Object.keys(offByDate).filter(d => !bankDates.has(d)).map(d => [d, []])]
+          .sort((a, b) => b[0].localeCompare(a[0]));
+        if (days.length === 0) return <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />;
+        const today = todayISO();
+        return (
+          <div data-testid="hist-frise" style={{ position: "relative", paddingLeft: 36, marginBottom: 10 }}>
+            <div style={{ position: "absolute", left: 14, top: 6, bottom: 6, width: 2, borderRadius: 1, background: "var(--border)" }} />
+            {days.map(([date, dayTxs]) => {
+              const dayOff = offByDate[date] || [];
+              const dayNet = dayTxs.reduce((s, t) => s + (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
+              const d = new Date(date + "T12:00:00");
+              const isToday = date === today;
+              const allPointed = dayTxs.length > 0 && dayTxs.filter(t => isPointable(t.type)).every(t => t.pointed);
+              const lbl = d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", ...(date.slice(0, 4) !== String(year) ? { year: "numeric" } : {}) });
+              return (
+                <div key={date} data-day={date} style={{ position: "relative", marginBottom: 10 }}>
+                  <span style={{ position: "absolute", left: -35, top: 0, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: ".66rem", fontWeight: 800, fontVariantNumeric: "tabular-nums",
+                    background: isToday ? "var(--accent)" : "var(--surface3)", color: isToday ? "#04121c" : "var(--text2)",
+                    boxShadow: "0 0 0 2px var(--bg)" }}>{d.getDate()}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".6rem", fontWeight: 800, color: "var(--text2)", margin: "6px 2px 5px", minHeight: 16 }}>
+                    <span>{isToday ? `Aujourd'hui · ${lbl}` : lbl}</span>
+                    <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {allPointed && <span style={{ color: "var(--success)" }}>✓</span>}
+                      {dayTxs.length > 0 && <span style={{ fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums", color: dayNet >= 0 ? "var(--success)" : "var(--text2)" }}>{dayNet >= 0 ? "+" : "−"}{fmt(Math.abs(dayNet))}</span>}
+                    </span>
+                  </div>
+                  <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0, borderRadius: 14 }}>
+                    {dayTxs.map(t => (
+                      <SwipeRow key={t.id} t={t} variant="frise" categories={categories} cagnottes={cagnottes}
+                        onEdit={onEditTrans} onDelete={onDeleteTrans} onTogglePoint={onTogglePointTx} onDuplicate={onDuplicateTrans}
+                        onOpen={tx => setTxSheet(tx.id)} reimbAmt={reimbPending[t.id] || 0}
+                        allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []} />
+                    ))}
+                    {dayOff.map(e => {
+                      const cat = categories.find(c => c.id === e.categoryId);
+                      const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
+                      return (
+                        <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,.06)", background: "color-mix(in srgb, var(--tr) 6%, transparent)" }}>
+                          <div style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", background: "color-mix(in srgb, var(--tr) 16%, transparent)", border: "1px dashed var(--tr-border)" }}>{cat?.icon || st?.icon || "🎫"}</div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: ".74rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 2 }}>
+                              {e.note && cat && <span style={{ fontSize: ".58rem", color: "var(--text2)" }}>{cat.name}</span>}
+                              <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 7, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)" }}>{st?.icon || "🎫"} Hors compte</span>
+                            </div>
+                          </div>
+                          <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</span>
+                          <div style={{ width: 26, flexShrink: 0 }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* ── Liste avec pointage ── */}
       {viewMode === "list" && (
         filtered.length === 0 && filteredOff.length === 0
@@ -1050,7 +1123,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
 
       {/* ── Section récurrentes en attente ── */}
       {/* ── Versements auto à confirmer ── */}
-      {(viewMode === "list" || viewMode === "type") && !globalSearch && autoSavingsPending.length > 0 && (
+      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && !globalSearch && autoSavingsPending.length > 0 && (
         <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
             <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--purple)", textTransform:"uppercase", letterSpacing:".08em" }}>🎯 Épargnes à confirmer</div>
@@ -1084,7 +1157,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
       )}
 
       {/* ── Programmées en attente ce mois ── */}
-      {(viewMode === "list" || viewMode === "type") && !globalSearch && scheduledPending.length > 0 && (
+      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && !globalSearch && scheduledPending.length > 0 && (
         <div className="card" style={{ padding:0, overflow:"hidden", marginBottom:10 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 14px", borderBottom:"1px solid var(--border-soft)" }}>
             <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--warning)", textTransform:"uppercase", letterSpacing:".08em" }}>📅 Programmées ce mois</div>
@@ -1167,10 +1240,18 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
         </div>
 
       {/* ── Section frais fixes ── */}
-      {viewMode === "list" && monthFixes.length > 0 && pointFilter !== "pointed" && renderFixesCard()}
+      {(viewMode === "list" || viewMode === "frise") && monthFixes.length > 0 && pointFilter !== "pointed" && renderFixesCard()}
 
       {/* ── Section revenus fixes ── */}
-      {viewMode === "list" && monthIncomes.length > 0 && pointFilter !== "pointed" && renderIncomesCard()}
+      {(viewMode === "list" || viewMode === "frise") && monthIncomes.length > 0 && pointFilter !== "pointed" && renderIncomesCard()}
+
+      {txSheet && (() => {
+        const t = transactions.find(x => x.id === txSheet);
+        if (!t) return null;
+        return <TxActionSheet t={t} categories={categories} cagnottes={cagnottes} allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []}
+          reimbAmt={reimbPending[t.id] || 0} onClose={() => setTxSheet(null)}
+          onTogglePoint={onTogglePointTx} onEdit={onEditTrans} onDuplicate={onDuplicateTrans} onDelete={onDeleteTrans} />;
+      })()}
     </div>
   );
 }
@@ -1190,7 +1271,7 @@ function dateLabel(dateStr) {
   return new Date(dateStr + "T12:00:00")
     .toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 }
-function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [], allSideAmountTypes = [] }) {
+function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, onDuplicate, allTags = [], allSideAmountTypes = [], variant = "row", onOpen, reimbAmt = 0 }) {
   const [offset,   setOffset]   = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef(null);
@@ -1215,9 +1296,9 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   const PANEL = 165; // 3 × 55px
 
   return (
-    <div style={{ position: "relative", overflow: "hidden", borderBottom: "1px solid var(--border-soft)" }}>
+    <div style={{ position: "relative", overflow: "hidden", borderBottom: variant === "frise" ? "1px solid rgba(255,255,255,.06)" : "1px solid var(--border-soft)" }}>
       {/* Actions cachées — ✏️ 📋 🗑️ */}
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex" }}>
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex", visibility: offset === 0 ? "hidden" : "visible" }}>
         <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
           style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
         <div onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }}
@@ -1250,8 +1331,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           if (offset < -PANEL / 2) { setOffset(-PANEL); setRevealed(true); }
           else { setOffset(0); setRevealed(false); }
         }}
-        onClick={() => { if (revealed) { setOffset(0); setRevealed(false); } }}
-        style={{
+        onClick={() => { if (revealed) { setOffset(0); setRevealed(false); } else if (variant === "frise") onOpen?.(t); }}
+        data-testid={variant === "frise" ? "frise-row" : undefined}
+        style={variant === "frise" ? {
+          transform: `translateX(${offset}px)`,
+          transition: (offset === 0 || offset === -PANEL) ? "transform .2s" : "none",
+          background: offset === 0 ? "transparent" : "var(--bg)",
+          display: "flex", alignItems: "center", gap: 9, padding: "8px 10px",
+          cursor: "pointer",
+        } : {
           transform: `translateX(${offset}px)`,
           transition: (offset === 0 || offset === -PANEL) ? "transform .2s" : "none",
           background: t.type === "dissolution_cagnotte" ? "#080f0c"
@@ -1265,6 +1353,10 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           display: "flex", alignItems: "center", gap: 8, padding: "11px 14px",
           cursor: "pointer",
         }}>
+        {variant === "frise" ? (
+          <FriseRowContent t={t} cat={cat} icon={icon} label={label} sign={sign} categories={categories}
+            onTogglePoint={onTogglePoint} allTags={allTags} allSideAmountTypes={allSideAmountTypes} reimbAmt={reimbAmt} />
+        ) : (<>
         {/* Bouton pointage — masqué pour decagnottage et transfer, spacer pour alignement */}
         {onTogglePoint && isPointable(t.type) ? (
           <button
@@ -1374,8 +1466,125 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
           })()}
         </div>
         <span style={{ color: "var(--text3)", fontSize: ".7rem", marginLeft: 2 }}>‹</span>
+        </>)}
       </div>
     </div>
+  );
+}
+
+// ── v1.71.0 : vue « Frise » — badges partagés par la ligne et la feuille d'actions ──
+const FRISE_TYPE_COLOR = { epargne: "var(--purple)", decagnottage: "var(--purple)", transfer: "var(--accent)", balance_adjustment: "var(--sapin)", dissolution_cagnotte: "var(--success)" };
+export function friseAmountColor(t) {
+  return FRISE_TYPE_COLOR[t.type] || (isIncomeDirection(t) ? "var(--success)" : "var(--danger)");
+}
+function TxBadges({ t, allTags, allSideAmountTypes, reimbAmt }) {
+  const b = (key, text, color, extra = {}) => (
+    <span key={key} style={{ fontSize: ".5rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, flexShrink: 0, whiteSpace: "nowrap",
+      color, background: `color-mix(in srgb, ${color} 15%, transparent)`, ...extra }}>{text}</span>
+  );
+  const TYPE_BADGE = { dissolution_cagnotte: ["↑ Retrait cagnotte", "var(--success)"], decagnottage: ["↩ Retrait cagnotte", "var(--coral)"], epargne: ["↓ Épargne", "var(--purple)"], transfer: ["🔄 Transfert", "var(--accent)"], balance_adjustment: ["⚖️ Équilibre", "var(--sapin)"] };
+  const out = [];
+  if (TYPE_BADGE[t.type]) out.push(b("type", TYPE_BADGE[t.type][0], TYPE_BADGE[t.type][1]));
+  if (t.paymentMethod === "cheque") out.push(b("chq", `🧾 ${t.pointed ? "Encaissé" : `En attente · ${Math.max(0, daysBetweenISO(t.issuedDate || t.date, todayISO()))} j`}`, "var(--chq)"));
+  if (reimbAmt > 0) out.push(b("rb", `↩️ ${fmt(reimbAmt)} attendus`, "var(--success)"));
+  Object.entries(t.sideAmounts || {}).forEach(([satId, amt]) => {
+    if (!(amt > 0)) return;
+    const st = allSideAmountTypes.find(x => x.id === satId);
+    out.push(b(`sa-${satId}`, `${st?.icon || "🎫"} +${fmt(amt)}`, "var(--tr)"));
+  });
+  (t.tagIds || []).forEach(tid => {
+    const tag = allTags.find(tg => tg.id === tid);
+    if (tag) out.push(b(`tg-${tid}`, `${tag.icon} ${tag.name}`, tag.color));
+  });
+  return out;
+}
+function friseSub(t, cat, categories) {
+  if (t.type === "dissolution_cagnotte" && t.note && t.note.includes(" — ")) return t.note.split(" — ").slice(1).join(" — ");
+  if (t.note) return cat?.name || "";
+  const parent = cat?.parentId ? (categories || []).find(c => c.id === cat.parentId) : null;
+  return parent ? parent.name : "";
+}
+function FriseRowContent({ t, cat, icon, label, sign, categories, onTogglePoint, allTags, allSideAmountTypes, reimbAmt }) {
+  const tint = cat?.color || FRISE_TYPE_COLOR[t.type] || "var(--text3)";
+  const sub = friseSub(t, cat, categories);
+  const badges = TxBadges({ t, allTags, allSideAmountTypes, reimbAmt });
+  const sideTotal = Object.values(t.sideAmounts || {}).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  return (
+    <>
+      <div style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem",
+        background: `color-mix(in srgb, ${tint} 18%, transparent)` }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: ".74rem", fontWeight: 700, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+        {(sub || badges.length > 0) && (
+          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 2, flexWrap: "nowrap", overflow: "hidden" }}>
+            {sub && <span style={{ fontSize: ".58rem", color: "var(--text2)", flexShrink: 0, maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</span>}
+            {badges}
+          </div>
+        )}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flexShrink: 0 }}>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: friseAmountColor(t), fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{sign}{fmt(t.amount)}</span>
+        {sideTotal > 0 && <span style={{ fontSize: ".5rem", color: "var(--text3)" }}>budget : {fmt((parseFloat(t.amount) || 0) + sideTotal)}</span>}
+      </div>
+      {onTogglePoint && isPointable(t.type) ? (
+        <button data-testid="frise-check" aria-label={t.pointed ? "Dépointer" : "Pointer"}
+          onTouchStart={e => e.stopPropagation()}
+          onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onTogglePoint(t.id); }}
+          onClick={e => { e.stopPropagation(); if (!("ontouchstart" in window)) onTogglePoint(t.id); }}
+          style={{ width: 34, height: 34, margin: "-6px -6px -6px -2px", flexShrink: 0, background: "transparent", border: "none", padding: 0, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", touchAction: "manipulation", WebkitTapHighlightColor: "transparent" }}>
+          <span style={{ width: 20, height: 20, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".62rem", fontWeight: 900,
+            background: t.pointed ? "var(--success)" : "transparent", border: `1.8px solid ${t.pointed ? "var(--success)" : "var(--text3)"}`, color: "#04140c", transition: "all .15s" }}>{t.pointed ? "✓" : ""}</span>
+        </button>
+      ) : <div style={{ width: 26, flexShrink: 0 }} />}
+    </>
+  );
+}
+
+// Feuille d'actions d'une opération (toucher une ligne de la frise)
+function TxActionSheet({ t, categories, cagnottes, allTags, allSideAmountTypes, reimbAmt, onClose, onTogglePoint, onEdit, onDuplicate, onDelete }) {
+  const cat = categories.find(c => c.id === t.categoryId);
+  const label = t.type === "dissolution_cagnotte" && t.note ? t.note : txLabel(t, categories, cagnottes);
+  const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
+  const sign = t.type === "balance_adjustment" ? (t.adjSign === "+" ? "+" : "−") : txSign(t.type);
+  const longDate = new Date(t.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
+  const btn = (color, extra = {}) => ({ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 8px", borderRadius: 12,
+    background: "var(--surface2)", border: "1px solid var(--border)", color, fontSize: ".74rem", fontWeight: 800, cursor: "pointer", touchAction: "manipulation", ...extra });
+  const act = fn => () => { onClose(); fn(); };
+  return createPortal(
+    <div data-testid="tx-sheet" style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", animation: "fadeIn .2s ease" }} />
+      <div style={{
+        position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "88vh", overflowY: "auto",
+        background: "var(--surface)", borderTop: "1.5px solid var(--border)", borderRadius: "20px 20px 0 0",
+        padding: "10px 16px calc(16px + env(safe-area-inset-bottom))", boxShadow: "0 -20px 50px rgba(0,0,0,.7)",
+        animation: "slideUp .22s ease", maxWidth: 520, margin: "0 auto",
+      }}>
+        <div style={{ width: 40, height: 4, borderRadius: 3, background: "var(--border)", margin: "0 auto 10px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: "1.2rem" }}>{icon}</span>
+          <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 14, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: ".64rem", color: "var(--text2)" }}>{[cat?.name, longDate].filter(Boolean).join(" · ")}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>{TxBadges({ t, allTags, allSideAmountTypes, reimbAmt })}</div>
+          </div>
+          <b style={{ fontFamily: "var(--mono)", fontSize: "1.1rem", color: friseAmountColor(t), whiteSpace: "nowrap" }}>{sign}{fmt(t.amount)}</b>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+          {onTogglePoint && isPointable(t.type) && (
+            <button data-testid="sheet-point" onClick={act(() => onTogglePoint(t.id))} style={btn("var(--success)")}>{t.pointed ? "↩ Dépointer" : "✓ Pointer"}</button>
+          )}
+          <button data-testid="sheet-edit" onClick={act(() => onEdit?.(t.id))} style={btn("var(--text)")}>✏️ Modifier</button>
+          <button data-testid="sheet-dup" onClick={act(() => onDuplicate?.(t))} style={btn("var(--text)")}>⧉ Dupliquer</button>
+          <button data-testid="sheet-del" onClick={act(() => onDelete?.(t.id))} style={btn("var(--danger)")}>🗑 Supprimer</button>
+        </div>
+        <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 10 }}>Glisser une ligne vers la gauche donne aussi Modifier / Dupliquer / Supprimer.</div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
