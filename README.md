@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.67.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.70.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.67.0
+└── package.json         — version: 1.70.0
 ```
 
 ---
@@ -342,6 +342,10 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.70.0** | minor | **Thèmes « Verre bleu »** — nouveau groupe Options › 🎨 Apparence : *Verre bleu · Abysse* (par défaut), *Verre bleu · Glacier*, ou *Aube (classique)*, le thème d'origine conservé à l'identique. Thèmes verre : fond à halos bleus, cartes et feuilles en verre dépoli, barre d'onglets flottante arrondie, bouton + en dégradé bleu, titres en DM Sans. Code couleur des cartes et pastilles inchangé (violet réservé aux cagnottes). Interrupteur « Effets de verre » pour couper le flou. Choix enregistré dans les données (donc dans les sauvegardes). Copie de l'ancien CSS dans `theme-backup/`. Aucun écran ni fonction modifié. |
+| **1.69.1** | patch | Un « À recevoir » saisi seul (sans dépense liée) est lui aussi compté dans le solde estimé jusqu'à sa réception (retard compté depuis sa date prévue ou sa création). |
+| **1.69.0** | minor | **Remboursements attendus comptés** — une dépense marquée « sera remboursée » compte le remboursement dans le solde estimé (nouvelle ligne « ↩️ Remboursements attendus » dans le détail), donc dans le reste à vivre et la projection, dès sa saisie et jusqu'à sa réception (il devient alors un revenu normal : jamais compté deux fois). La part remboursée (attendue ou reçue) n'est plus comptée dans le budget courses ni dans le Rapport par catégorie. Pastille « … à recevoir · comptés », ⚠️ après un délai réglable (Options › Budget & prévisions › Remboursements attendus, 15 j par défaut). Un « À recevoir » sans dépense liée n'est pas compté. |
+| **1.68.0** | minor | **Taux d'épargne** ((versements − retraits) ÷ revenus) dans le récap à la paie (avant / après versement + moyenne 12 mois), le bilan du 1er et une carte 12 mois dans Rapport › Année (moyenne en pointillés, détail au toucher). **Bilan de l'année** (« 2026 en bref ») : s'ouvre le 1er janvier après celui de décembre, et depuis Rapport › Année ; revenus / dépenses vs année précédente, épargne et taux, cagnottes début → fin, meilleur / pire mois, catégories qui ont le plus bougé, frais fixes et hausses. **Changements de revenu prévus** (fiche d'un revenu fixe) : période + montant, pris en compte partout (budget, solde, reste à vivre, projection, récap), exclus de la moyenne automatique, alerte si la projection 3 mois passe sous 0 € à cause du changement. Correction : la projection ne compte plus comme « flux courant » les anciens salaires saisis à la main dans la catégorie d'un revenu fixe (ils doublaient le salaire). |
 | **1.67.0** | minor | **Salaire, suite** — Fixes : la case « Revenus oct. » indique aussi « +2 422 € attendus/reçus → nov. » et une phrase explique que le salaire du 29 compte pour novembre. Saisie d'un revenu dans la catégorie d'un revenu fixe : avertissement « déjà prévu en revenu fixe, compté deux fois » + bouton pour le pointer (« Enregistrer quand même » reste possible). Pointage : interrupteur **« Mois exceptionnel »** (congé, prime…) — compté au budget, exclu de la moyenne du montant prévu. Bilan du 1er : ligne **« À la paie : reste X, mis de côté Y · reste final Z »**, en orange si trop a été mis de côté. |
 | **1.66.1** | patch | Interne : la règle « frais/revenu fixe actif ce mois-ci » (démarrage, pauses) n'existe plus qu'à un seul endroit (`utils.js`), partagée par les calculs et la comparaison de relevé (avant : copiée dans `releve.js`). Aucun changement visible. |
 | **1.66.0** | minor | **Récap à la paie** — quand tu pointes ton salaire (revenu fixe daté le plus élevé), une feuille s'ouvre : bilan simple du mois qui se termine (revenus, frais fixes, dépenses courantes, déjà mis de côté, reste du mois — mêmes chiffres que le Rapport) et **somme à mettre de côté** = reste du mois arrondi à la dizaine inférieure, avec versement direct vers une cagnotte (opération 🐷 Épargne « Reste de … »). |
