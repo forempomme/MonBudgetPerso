@@ -85,7 +85,8 @@ export function MonthRecapSheet({ recap: r, categories = [], onClose, onOpenRapp
             <Kpi label="Dépenses" value={fmt(r.expenses)} color="var(--danger)" sub={e.sub} subColor={e.col} />
             <Kpi label="Revenus" value={fmt(r.incomes)} color="var(--success)" sub={i.sub} subColor={i.col} />
             <Kpi label="Épargné" value={signed(r.savings)} color="var(--purple)"
-              sub={r.savingsCags ? `vers ${r.savingsCags} cagnotte${r.savingsCags > 1 ? "s" : ""}` : "aucun versement"} />
+              sub={[r.savingsRate != null && r.savings !== 0 ? `${Math.round(r.savingsRate * 100)} % des revenus` : null,
+                r.savingsCags ? `${r.savingsCags} cagnotte${r.savingsCags > 1 ? "s" : ""}` : "aucun versement"].filter(Boolean).join(" · ")} />
             <Kpi label="Solde fin de mois" value={fmt(r.endBalance)}
               sub={r.balanceDelta == null ? "" : `${r.balanceDelta >= 0 ? "▲" : "▼"} ${signed(r.balanceDelta)} sur le mois`}
               subColor={r.balanceDelta >= 0 ? "var(--success)" : "var(--danger)"} />
