@@ -360,10 +360,28 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   const catLivedMonths = useMemo(() => livedMonths(transactions, catFrom, catTo), [transactions, catFrom, catTo]);
   const catSpentPeriod = id => catLivedMonths.reduce((s, m) => s + categorySpentForMonth(categories, transactions, fixedExpenses, id, m), 0);
   const prefix = catPer === "year" ? String(currentYear) : ym;
+  // v1.72.0 : « Où est parti l'argent » (onglet Mois) — toujours le mois affiché
+  const monthBreakdown = useMemo(() => computeCategoryBreakdown(data, ym, ym), [data, ym]);
+  const CAT_PALETTE = ["#d9a066", "#e08870", "#70b8e0", "#5cc8c0", "#9fb4e6", "#b090e0", "#68d498", "#c8b860", "#8fa9bd"];
+  // Couleur stable par catégorie (sa couleur, sinon une teinte fixe d'après sa place dans la liste) → même teinte dans Mois et Catégories
+  const rowColor = r => r.id === "__fixes__" ? "#e8944a" : r.id === "__other__" ? "#8fa9bd" : (categories.find(c => c.id === r.id)?.color || CAT_PALETTE[Math.max(0, categories.findIndex(c => c.id === r.id)) % CAT_PALETTE.length]);
+  const rowName = r => r.id === "__fixes__" ? "Frais fixes" : r.id === "__other__" ? "Sans catégorie" : categories.find(c => c.id === r.id)?.name || "Catégorie supprimée";
+  const rowIcon = r => r.id === "__fixes__" ? "📌" : categories.find(c => c.id === r.id)?.icon || "❔";
+  const fmt0 = v => `${Math.round(v).toLocaleString("fr-FR")} €`;
+  const MONTH_ABBR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
+  // Barre empilée par catégorie + légende (Mois : « Où est parti l'argent », Catégories : en-tête)
+  const stackBar = (rows, total, h = 14) => (
+    <div data-testid="cat-stack" style={{ display: "flex", height: h, borderRadius: 6, overflow: "hidden", gap: 2, background: "var(--surface3)" }}>
+      {rows.filter(r => r.net > 0).map((r, i) => (
+        <i key={r.id} title={rowName(r)} onClick={() => !r.id.startsWith("__") && setCatModal(r.id)}
+          style={{ display: "block", width: `${r.net / total * 100}%`, background: rowColor(r), cursor: r.id.startsWith("__") ? "default" : "pointer" }} />
+      ))}
+    </div>
+  );
 
   // ── petits éléments d'interface ──
   const segBtn = on => ({ flex: 1, textAlign: "center", fontSize: ".66rem", fontWeight: 800, padding: "7px 0", borderRadius: 8, cursor: "pointer", border: "none",
-    background: on ? "var(--accent)" : "transparent", color: on ? "#06121c" : "var(--text2)" });
+    background: on ? "var(--seg-on-bg, var(--accent))" : "transparent", color: on ? "var(--seg-on-text, #06121c)" : "var(--text2)" });
   const navBtn = off => ({ width: 32, height: 32, flexShrink: 0, borderRadius: 9, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--accent)",
     fontSize: ".8rem", cursor: off ? "default" : "pointer", opacity: off ? .35 : 1, padding: 0 });
   const secT = (txt, right) => (
@@ -387,13 +405,6 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
     const p = avg !== 0 ? Math.round(Math.abs((v - avg) / avg) * 100) : null;
     return { t: `${up ? "▲" : "▼"} ${p != null && Math.abs(avg) > 50 ? `${p} %` : fmt(Math.abs(v - avg))} vs moy. ${mAvg?.n} mois`, c: good ? "var(--success)" : "var(--danger)" };
   };
-  const kpi = (label, val, color, sub, subCol) => (
-    <div style={{ borderRadius: 11, padding: "8px 10px", background: "var(--surface2)", border: "1px solid var(--border-soft)", minWidth: 0 }}>
-      <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color }}>{label}</div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: "1rem", fontWeight: 800, color, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{val}</div>
-      {sub && <div style={{ fontSize: ".58rem", fontWeight: 700, color: subCol || "var(--text3)", marginTop: 1 }}>{sub}</div>}
-    </div>
-  );
   const signed = v => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
   const catOf = id => categories.find(c => c.id === id);
 
@@ -425,12 +436,30 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
 
       {/* ══════════════ 📅 MOIS ══════════════ */}
       {tab === "mois" && (<>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-          {(() => { const v = vsTxt(mT.inc, mAvg?.inc, true); return kpi("💰 Revenus", fmt(mT.inc), "var(--success)", v.t, v.c); })()}
-          {(() => { const v = vsTxt(mT.exp, mAvg?.exp, false); return kpi("💸 Dépenses", fmt(mT.exp), "var(--danger)", v.t, v.c); })()}
-          {kpi("🐷 Épargné", fmt(mT.sav), "var(--purple)", mT.inc > 0 ? `${Math.round(mT.sav / mT.inc * 100)} % des revenus` : "", "var(--text3)")}
-          {(() => { const v = vsTxt(mT.net, mAvg?.net, true); return kpi("📊 Net", signed(mT.net), mT.net >= 0 ? "var(--success)" : "var(--danger)", v.t, v.c); })()}
-        </div>
+        {/* v1.72.0 : le mois raconté en une phrase (mêmes chiffres que les anciennes cases) */}
+        {(() => {
+          const vI = vsTxt(mT.inc, mAvg?.inc, true), vE = vsTxt(mT.exp, mAvg?.exp, false), vN = vsTxt(mT.net, mAvg?.net, true);
+          const small = v => v.t ? <span style={{ fontSize: ".6rem", fontWeight: 700, color: v.c, whiteSpace: "nowrap" }}> ({v.t})</span> : null;
+          const pctInc = mT.inc > 0 ? Math.round(mT.sav / mT.inc * 100) : null;
+          const past = ym < curYM;
+          return (
+            <div className="card" data-testid="rap-story" style={{ padding: "12px 13px", marginBottom: 0 }}>
+              <div style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text2)" }}>{MONTHS_FR[mm - 1]} en bref</div>
+              <div style={{ fontSize: ".86rem", lineHeight: 1.6, marginTop: 5 }}>
+                Tu as {past ? "gagné" : "gagné jusqu'ici"} <b style={{ color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>{fmt(mT.inc)}</b>{small(vI)},{" "}
+                dépensé <b style={{ color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>{fmt(mT.exp)}</b>{small(vE)}{" "}
+                {mT.sav > 0 ? <>et mis <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(mT.sav)}</b> de côté</>
+                  : mT.sav < 0 ? <>et repris <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(-mT.sav)}</b> des cagnottes</>
+                  : <>et rien mis de côté</>}
+                {pctInc != null && mT.sav !== 0 && <span style={{ fontSize: ".66rem", color: "var(--text2)" }}> ({pctInc} % des revenus)</span>}.
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
+                <span style={{ flex: 1, fontSize: ".68rem", color: "var(--text2)" }}>{mT.net >= 0 ? "Il te reste" : "Il te manque"}{vN.t && <span style={{ display: "block", fontSize: ".58rem", fontWeight: 700, color: vN.c }}>{vN.t}</span>}</span>
+                <b data-testid="rap-net" style={{ fontFamily: "var(--mono)", fontSize: "1.25rem", color: mT.net >= 0 ? "var(--success)" : "var(--danger)", fontVariantNumeric: "tabular-nums" }}>{signed(mT.net)}</b>
+              </div>
+            </div>
+          );
+        })()}
 
         {!cmpYM ? (
           <div style={{ textAlign: "right", marginTop: 6 }}>
@@ -462,6 +491,21 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
           </div>
         )}
 
+        {monthBreakdown.total > 0 && <>
+          {secT("Où est parti l'argent", link("détail ›", () => { setCatPer("month"); setTab("cats"); }))}
+          <div style={{ ...card, padding: "10px 11px" }}>
+            {stackBar(monthBreakdown.rows, monthBreakdown.total, 16)}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px 11px", marginTop: 8 }}>
+              {monthBreakdown.rows.filter(r => r.net > 0).map((r, i) => (
+                <span key={r.id} onClick={() => !r.id.startsWith("__") && setCatModal(r.id)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: ".6rem", cursor: r.id.startsWith("__") ? "default" : "pointer", whiteSpace: "nowrap" }}>
+                  <i style={{ width: 7, height: 7, borderRadius: "50%", background: rowColor(r) }} />{rowIcon(r)} {rowName(r)} <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt0(r.net)}</b>
+                </span>
+              ))}
+            </div>
+          </div>
+        </>}
+
         {recap.movers.length > 0 && <>
           {secT(<>Ce qui a bougé <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· vs moyenne {recap.monthsCompared} mois</span></>)}
           <div style={card}>
@@ -470,7 +514,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
               return (
                 <div key={x.catId} style={{ ...rowSt(i === 0), cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
                   <span>{c?.icon || "❔"}</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"}</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"} <small style={{ color: "var(--text3)" }}>{x.pct == null ? "" : x.diff > 0 ? "plus que d'habitude" : "moins que d'habitude"}</small></span>
                   <span style={{ fontSize: ".62rem", fontWeight: 800, color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "▲ +" : "▼ −"}${Math.abs(x.pct)} %`}</span>
                   <b style={{ width: 82, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(x.amount)}</b>
                 </div>
@@ -494,7 +538,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                     <span style={{ flex: 1, minWidth: 0 }}>{b.label}{b.tag && <span style={{ marginLeft: 5, fontSize: ".52rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, background: "var(--surface3)", color: "var(--text3)" }}>{b.tag}</span>}</span>
                     <b style={{ color: col, fontVariantNumeric: "tabular-nums" }}>{fmt(b.spent)} / {fmt(b.limit)}</b>
                   </div>
-                  {bar(b.spent / b.limit * 100, col)}
+                  {bar(b.spent / b.limit * 100, col, 6)}
                 </div>
               );
             })}
@@ -544,7 +588,6 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
           const d = (v - p) / Math.abs(p) * 100, good = hi ? d > 0 : d < 0;
           return { t: `${d > 0 ? "▲" : "▼"} ${Math.abs(Math.round(d))} % vs ${currentYear - 1}`, c: Math.abs(d) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
         };
-        const mx = Math.max(1, ...months.map(m => Math.max(m.inc, m.exp)));
         const rate = yearly.inc > 0 ? (yearly.sav - (yearly.decag || 0)) / yearly.inc * 100 : 0;   // v1.68.0 : net des retraits
         const best = ranked[0], worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
         const rem = Math.max(0, goal - yearly.sav);
@@ -552,13 +595,47 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
           inc: yearly.inc + yearly.inc / nM * monthsLeft, exp: yearly.exp + yearly.exp / nM * monthsLeft,
         } : null;
         return (<>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            {(() => { const v = vsY(yearly.inc, prevSame.inc, true); return kpi("💰 Revenus", fmt(yearly.inc), "var(--success)", v.t || `${nM} mois · ${fmt(yearly.inc / nM)}/mois`, v.c); })()}
-            {(() => { const v = vsY(yearly.exp, prevSame.exp, false); return kpi("💸 Dépenses", fmt(yearly.exp), "var(--danger)", v.t || `${fmt(yearly.exp / nM)}/mois`, v.c); })()}
-            {kpi("🐷 Épargné", fmt(yearly.sav), "var(--purple)", `taux : ${rate.toFixed(1).replace(".", ",")} %`)}
-            {(() => { const v = vsY(yearly.net, prevSame.net, true); return kpi("📊 Net", signed(yearly.net), yearly.net >= 0 ? "var(--success)" : "var(--danger)", v.t || `${signed(yearly.net / nM)}/mois`, v.c); })()}
-          </div>
-          {!hasPrev && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "6px 2px 0" }}>{currentYear - 1} : pas de données à comparer pour l'instant.</div>}
+          {/* v1.72.0 : l'année racontée + courbe du net cumulé (projection en pointillés) */}
+          {(() => {
+            const vI = vsY(yearly.inc, prevSame.inc, true), vE = vsY(yearly.exp, prevSame.exp, false), vN = vsY(yearly.net, prevSame.net, true);
+            const small = v => v.t ? <span style={{ fontSize: ".6rem", fontWeight: 700, color: v.c, whiteSpace: "nowrap" }}> ({v.t})</span> : null;
+            let cum = 0;
+            const pts = months.map((m, i) => (m.hasData ? { i, v: (cum += m.net) } : null)).filter(Boolean);
+            const lastP = pts[pts.length - 1];
+            const projNet = proj ? proj.inc - proj.exp : null;
+            const vals = [0, ...pts.map(p => p.v), ...(projNet != null ? [projNet] : [])];
+            const lo = Math.min(...vals), hi = Math.max(...vals), span = Math.max(1, hi - lo);
+            const W = 300, H = 86, X = i => 8 + i * ((W - 16) / 11), Y = v => 8 + (hi - v) / span * (H - 20);
+            return (
+              <div className="card" data-testid="rap-year-story" style={{ padding: "12px 13px", marginBottom: 0 }}>
+                <div style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text2)" }}>{currentYear} en bref</div>
+                <div style={{ fontSize: ".84rem", lineHeight: 1.6, marginTop: 5 }}>
+                  En {nM} mois : <b style={{ color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.inc)}</b> gagnés{small(vI)},{" "}
+                  <b style={{ color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.exp)}</b> dépensés{small(vE)},{" "}
+                  <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.sav)}</b> épargnés <span style={{ fontSize: ".66rem", color: "var(--text2)" }}>(taux : {rate.toFixed(1).replace(".", ",")} %)</span>.
+                </div>
+                <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
+                  Soit {fmt(yearly.inc / nM)}/mois de revenus et {fmt(yearly.exp / nM)}/mois de dépenses · net <b style={{ color: yearly.net >= 0 ? "var(--success)" : "var(--danger)" }}>{signed(yearly.net)}</b>{small(vN)}
+                </div>
+                {!hasPrev && <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 2 }}>{currentYear - 1} : pas de données à comparer pour l'instant.</div>}
+                {pts.length > 0 && (
+                  <>
+                    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, marginTop: 6, display: "block" }}>
+                      <line x1="8" x2={W - 8} y1={Y(0)} y2={Y(0)} stroke="rgba(255,255,255,.12)" />
+                      <polyline fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinejoin="round" points={pts.map(p => `${X(p.i)},${Y(p.v)}`).join(" ")} />
+                      {pts.map(p => <circle key={p.i} cx={X(p.i)} cy={Y(p.v)} r="2.2" fill="var(--success)" />)}
+                      {projNet != null && lastP && lastP.i < 11 && <>
+                        <polyline fill="none" stroke="var(--success)" strokeWidth="2" strokeDasharray="4 4" opacity=".6" points={`${X(lastP.i)},${Y(lastP.v)} ${X(11)},${Y(projNet)}`} />
+                        <circle cx={X(11)} cy={Y(projNet)} r="3.5" fill="var(--success)" />
+                        <text x={X(11) - 4} y={Math.max(10, Y(projNet) - 6)} textAnchor="end" fontSize="9" fontWeight="800" fill="var(--success)">{signed(projNet).replace(",00", "")} au 31 déc.</text>
+                      </>}
+                    </svg>
+                    <div style={{ fontSize: ".54rem", color: "var(--text3)" }}>Courbe = net cumulé depuis janvier{projNet != null ? " · pointillés = projection au rythme moyen" : ""}</div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           {onOpenYearRecap && lived.length > 0 && (
             <button data-testid="open-year-recap" onClick={() => onOpenYearRecap(currentYear)}
               style={{ width: "100%", marginTop: 8, padding: "9px 12px", borderRadius: 11, border: "1px solid rgba(176,144,224,.45)", background: "rgba(176,144,224,.08)", color: "var(--text)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", textAlign: "left" }}>
@@ -566,31 +643,37 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
             </button>
           )}
 
-          {secT(<>Mois par mois <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· touche un mois pour l'ouvrir</span></>)}
-          <div style={{ ...card, padding: "10px 8px 6px" }}>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 92 }}>
-              {months.map((m, i) => {
-                const ymI = `${currentYear}-${String(i + 1).padStart(2, "0")}`;
-                return (
-                  <div key={i} onClick={() => { if (m.hasData) { setYm(ymI); setCmpYM(null); setTab("mois"); } }}
-                    style={{ flex: 1, display: "flex", gap: 1, alignItems: "flex-end", height: "100%", opacity: m.hasData ? 1 : .25, cursor: m.hasData ? "pointer" : "default" }}>
-                    {m.hasData
-                      ? <><i style={{ flex: 1, height: `${m.inc / mx * 100}%`, background: "rgba(104,212,152,.7)", borderRadius: "2px 2px 0 0" }} />
-                          <i style={{ flex: 1, height: `${m.exp / mx * 100}%`, background: "rgba(200,112,112,.7)", borderRadius: "2px 2px 0 0" }} /></>
-                      : <i style={{ flex: 1, height: 3, background: "var(--surface3)" }} />}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-              {"JFMAMJJASOND".split("").map((l, i) => <span key={i} style={{ flex: 1, textAlign: "center", fontSize: ".54rem", color: "var(--text3)" }}>{l}</span>)}
-            </div>
-            {best && (
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".6rem", marginTop: 8, paddingTop: 7, borderTop: "1px solid var(--border-soft)" }}>
-                <span>🥇 Meilleur : <b style={{ color: "var(--success)" }}>{MONTHS_FR[months.indexOf(best)].toLowerCase()} {signed(best.net)}</b></span>
-                {worst && <span>Moins bon : <b style={{ color: worst.net < 0 ? "var(--danger)" : "var(--warning)" }}>{MONTHS_FR[months.indexOf(worst)].toLowerCase()} {signed(worst.net)}</b></span>}
+          {secT(<>Calendrier <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· net de chaque mois · touche pour l'ouvrir</span></>)}
+          {(() => {
+            const avgNet = lived.length ? lived.reduce((a, m) => a + m.net, 0) / lived.length : 0;
+            const mxF = Math.max(1, ...months.map(m => Math.max(m.inc, m.exp)));
+            return (
+              <div data-testid="rap-calendar" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 5 }}>
+                {months.map((m, i) => {
+                  const ymI = `${currentYear}-${String(i + 1).padStart(2, "0")}`;
+                  const col = !m.hasData ? "var(--text3)" : m.net < 0 ? "var(--danger)" : m.net >= avgNet ? "var(--success)" : "var(--sapin)";
+                  const isCur = ymI === curYM;
+                  return (
+                    <div key={i} data-month={ymI} onClick={() => { if (m.hasData) { setYm(ymI); setCmpYM(null); setTab("mois"); } }}
+                      style={{ borderRadius: 11, padding: "6px 7px 7px", minWidth: 0, cursor: m.hasData ? "pointer" : "default", opacity: m.hasData ? 1 : .35,
+                        background: m.hasData ? `color-mix(in srgb, ${col} 11%, var(--surface))` : "var(--surface)", border: `1px solid ${isCur ? "var(--accent)" : "var(--border)"}` }}>
+                      <div style={{ fontSize: ".56rem", fontWeight: 800, color: "var(--text2)" }}>{MONTH_ABBR[i]}</div>
+                      <div style={{ fontFamily: "var(--mono)", fontSize: ".7rem", fontWeight: 800, color: col, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontVariantNumeric: "tabular-nums" }}>{m.hasData ? `${m.net >= 0 ? "+" : "−"}${fmt0(Math.abs(m.net))}` : "—"}</div>
+                      {m.hasData && (
+                        <div style={{ display: "grid", gap: 2, marginTop: 4 }} title={`Revenus ${fmt(m.inc)} · Dépenses ${fmt(m.exp)}`}>
+                          <i style={{ display: "block", height: 3, borderRadius: 2, width: `${m.inc / mxF * 100}%`, background: "rgba(104,212,152,.75)" }} />
+                          <i style={{ display: "block", height: 3, borderRadius: 2, width: `${m.exp / mxF * 100}%`, background: "rgba(200,112,112,.75)" }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
+            );
+          })()}
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: ".58rem", color: "var(--text3)", margin: "6px 2px 0" }}>
+            <span><i style={{ display: "inline-block", width: 10, height: 3, borderRadius: 2, background: "rgba(104,212,152,.75)", verticalAlign: "middle" }} /> revenus · <i style={{ display: "inline-block", width: 10, height: 3, borderRadius: 2, background: "rgba(200,112,112,.75)", verticalAlign: "middle" }} /> dépenses</span>
+            {best && <span>🥇 <b style={{ color: "var(--success)" }}>{MONTHS_FR[months.indexOf(best)].toLowerCase()} {signed(best.net)}</b>{worst && <> · moins bon : <b style={{ color: worst.net < 0 ? "var(--danger)" : "var(--warning)" }}>{MONTHS_FR[months.indexOf(worst)].toLowerCase()} {signed(worst.net)}</b></>}</span>}
           </div>
 
           {secT("🐷 Épargne")}
@@ -650,8 +733,16 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
           return { tag, count: txs.length, spent, limit, spentForBudget };
         }).sort((a, b) => b.spent - a.spent);
         return (<>
-          <div style={card}>
-            {breakdown.rows.length === 0 && <div style={{ fontSize: ".7rem", color: "var(--text3)", textAlign: "center", padding: 14 }}>Aucune dépense sur cette période.</div>}
+          {/* v1.72.0 : total + barre empilée, puis une carte par catégorie (liseré de sa couleur) */}
+          <div style={{ ...card, padding: "10px 11px" }} data-testid="cat-total">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text2)" }}>Total dépensé · {catPer === "year" ? currentYear : MONTHS_FR[mm - 1].toLowerCase()}</span>
+              <b style={{ fontFamily: "var(--mono)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>{fmt(breakdown.total)}</b>
+            </div>
+            {breakdown.total > 0 && <div style={{ marginTop: 7 }}>{stackBar(breakdown.rows, breakdown.total)}</div>}
+            {breakdown.rows.length === 0 && <div style={{ fontSize: ".7rem", color: "var(--text3)", textAlign: "center", padding: "10px 0 4px" }}>Aucune dépense sur cette période.</div>}
+          </div>
+          <div>
             {breakdown.rows.map((r, i) => {
               const c = r.id.startsWith("__") ? null : catOf(r.id);
               const name = r.id === "__fixes__" ? "Frais fixes" : r.id === "__other__" ? "Sans catégorie" : c?.name || "Catégorie supprimée";
@@ -662,7 +753,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
               const spentB = lim > 0 ? catSpentPeriod(c.id) : 0;
               const editing = editBudget?.catId === r.id;
               return (
-                <div key={r.id} style={{ ...rowSt(i === 0), display: "block" }}>
+                <div key={r.id} data-cat-row={r.id} style={{ ...card, padding: "8px 11px", borderLeft: `3px solid ${rowColor(r)}`, fontSize: ".72rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
                     <span>{icon}</span>
                     <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}
@@ -677,7 +768,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                       {r.deducted > 0 && <>{r.subs.length > 0 ? " · " : ""}− {fmt(r.deducted)} de revenus liés déduits</>}
                     </div>
                   )}
-                  {bar(pct, "rgba(112,184,224,.7)")}
+                  {bar(pct, rowColor(r))}
                   {c && (editing ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                       <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>🎯 Budget / mois</span>
@@ -697,9 +788,6 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 </div>
               );
             })}
-            {breakdown.rows.length > 0 && (
-              <div style={{ ...rowSt(false), fontWeight: 800 }}><span style={{ flex: 1 }}>Total</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(breakdown.total)}</span></div>
-            )}
           </div>
 
           {anySide && <>
