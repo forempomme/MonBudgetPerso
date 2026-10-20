@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect } from "react";
-import { fmt, currentYM, isIncome } from "../utils.js";
-import { useYearMonths, computeMonthTotals, computePeriodTotals, isActiveForMonth, isIncomeDirection, computeSidePaidByCategory, catFamilyIds, computeMonthRecap, categorySpentForMonth, firstDataYM, livedMonths, computeCategoryBreakdown } from "../hooks.js";
+import { fmt, currentYM, isIncome, fixedAmountFor } from "../utils.js";
+import { useYearMonths, computeMonthTotals, computePeriodTotals, isActiveForMonth, isIncomeDirection, computeSidePaidByCategory, catFamilyIds, computeMonthRecap, categorySpentForMonth, firstDataYM, livedMonths, computeCategoryBreakdown, computeSavingsRates } from "../hooks.js";
 import { TagsModal, MONTHS_FR } from "./shared.jsx";
 
 // ─────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses,
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
       const fixExp = inRange ? fixedExpenses
         .filter(f => fam.includes(f.categoryId) && isActiveForMonth(f, ym))
-        .reduce((s, f) => { const ov = f.monthlyOverrides?.[ym]; return s + ((ov?.amount ?? f.amount) || 0); }, 0) : 0;
+        .reduce((s, f) => s + fixedAmountFor(f, ym), 0) : 0;
       const inc    = getLinkedIncomeForCat(selCatId, categories, transactions, ym);
       const total  = exp + fixExp;
       return { ym, label: d.toLocaleDateString("fr-FR", { month: "short" }), exp: total, fixExp, inc, net: Math.max(0, total - inc) };
@@ -76,8 +76,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses,
         const ym = `${yearStr}-${String(m).padStart(2, "0")}`;
         if (ym < startYM) continue; // avant le démarrage de l'app
         if (!isActiveForMonth(f, ym)) continue; // avant le démarrage ou en pause pour ce frais précis
-        const ov = f.monthlyOverrides?.[ym];
-        total += (ov?.amount ?? f.amount) || 0;
+        total += fixedAmountFor(f, ym);
       }
       return s + total;
     }, 0);
@@ -230,7 +229,54 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses,
 // ─────────────────────────────────────────────────────────────────
 //  RAPPORT
 // ─────────────────────────────────────────────────────────────────
-export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onSaveSavingsGoal, onGoToHistorique, onSubtitle, onPushBack, onPopBack }) {
+// ─────────────────────────────────────────────────────────────────
+//  v1.68.0 — Taux d'épargne des 12 derniers mois (barres + moyenne)
+// ─────────────────────────────────────────────────────────────────
+const MINI = ["J","F","M","A","M","J","J","A","S","O","N","D"];
+export function SavingsRateChart({ data, endYM, sel, onSel }) {
+  const { months, avg } = useMemo(() => computeSavingsRates(data, endYM, 12), [data, endYM]);
+  const pct = r => `${Math.round(r * 100)} %`;
+  const lived = months.filter(m => m.rate != null);
+  const top = Math.max(0.1, avg || 0, ...lived.map(m => m.rate));
+  const cur = months.find(m => m.ym === sel) || [...lived].pop();
+  const best = lived.length ? lived.reduce((a, b) => (b.rate > a.rate ? b : a)) : null;
+  const H = 100;
+  return (
+    <div data-testid="savings-rate" style={{ marginTop: 11, paddingTop: 9, borderTop: "1px solid var(--border-soft)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", fontSize: ".72rem" }}>
+        <span style={{ flex: 1, fontWeight: 800 }}>🐷 Taux d'épargne <small style={{ color: "var(--text3)", fontWeight: 400 }}>12 mois</small></span>
+        {avg != null && <span style={{ fontSize: ".64rem", color: "var(--text2)" }}>moyenne <b style={{ color: "var(--purple)" }}>{pct(avg)}</b></span>}
+      </div>
+      <div style={{ position: "relative", display: "flex", alignItems: "flex-end", gap: 5, height: H, marginTop: 8 }}>
+        {avg != null && avg > 0 && <div style={{ position: "absolute", left: 0, right: 0, bottom: `${avg / top * 100}%`, borderTop: "1px dashed var(--text2)", pointerEvents: "none" }} />}
+        {months.map(m => {
+          const on = cur && m.ym === cur.ym;
+          const h = m.rate == null ? 2 : m.rate <= 0 ? 6 : Math.max(4, m.rate / top * H);
+          return (
+            <div key={m.ym} onClick={() => m.rate != null && onSel?.(m.ym)} style={{ flex: 1, height: "100%", display: "flex", alignItems: "flex-end", cursor: m.rate != null ? "pointer" : "default" }}>
+              <div style={{ width: "100%", height: h, borderRadius: "4px 4px 0 0", opacity: m.rate == null ? .25 : .9,
+                background: m.rate == null ? "var(--surface3)" : m.rate < 0 ? "var(--danger)" : "var(--purple)",
+                outline: on ? "2px solid var(--purple)" : "none", outlineOffset: 1 }} />
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+        {months.map(m => <span key={m.ym} style={{ flex: 1, textAlign: "center", fontSize: ".52rem", color: "var(--text3)" }}>{MINI[parseInt(m.ym.slice(5, 7), 10) - 1]}</span>)}
+      </div>
+      {cur && (
+        <div data-testid="savings-rate-detail" style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 7, lineHeight: 1.5 }}>
+          {MONTHS_FR[parseInt(cur.ym.slice(5, 7), 10) - 1]} : <b style={{ color: cur.rate < 0 ? "var(--danger)" : "var(--text)" }}>{pct(cur.rate)}</b> ({fmt(cur.saved)} sur {fmt(cur.inc)})
+          {cur.rate < 0 && " · plus retiré des cagnottes que versé"}
+          {best && best.ym !== cur.ym && best.rate > 0 && <> · meilleur mois : {MONTHS_FR[parseInt(best.ym.slice(5, 7), 10) - 1].toLowerCase()} {pct(best.rate)}</>}
+        </div>
+      )}
+      <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 4 }}>Taux = (versements en cagnottes − retraits) ÷ revenus du mois. Touche une barre pour son détail.</div>
+    </div>
+  );
+}
+
+export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onSaveSavingsGoal, onGoToHistorique, onSubtitle, onPushBack, onPopBack, onOpenYearRecap }) {
   // ── v1.52.0 : 3 onglets organisés par question ──
   //  📅 Mois        « Comment s'est passé ce mois ? »
   //  📆 Année       « Où j'en suis sur l'année ? »
@@ -249,6 +295,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   const [noteDraft, setNoteDraft] = useState(null);
   const [goalDraft, setGoalDraft] = useState(null);
   const [sideType, setSideType] = useState("all");
+  const [rateSel, setRateSel] = useState(null);           // v1.68.0 : mois touché dans le graphique du taux d'épargne
 
   // Bouton retour Android : ferme d'abord les fenêtres ouvertes
   useEffect(() => { if (!catModal) return; onPushBack?.(() => setCatModal(null)); return () => onPopBack?.(); }, [catModal]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -498,7 +545,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
           return { t: `${d > 0 ? "▲" : "▼"} ${Math.abs(Math.round(d))} % vs ${currentYear - 1}`, c: Math.abs(d) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
         };
         const mx = Math.max(1, ...months.map(m => Math.max(m.inc, m.exp)));
-        const rate = yearly.inc > 0 ? yearly.sav / yearly.inc * 100 : 0;
+        const rate = yearly.inc > 0 ? (yearly.sav - (yearly.decag || 0)) / yearly.inc * 100 : 0;   // v1.68.0 : net des retraits
         const best = ranked[0], worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
         const rem = Math.max(0, goal - yearly.sav);
         const proj = isCurYear && lived.length > 0 ? {
@@ -512,6 +559,12 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
             {(() => { const v = vsY(yearly.net, prevSame.net, true); return kpi("📊 Net", signed(yearly.net), yearly.net >= 0 ? "var(--success)" : "var(--danger)", v.t || `${signed(yearly.net / nM)}/mois`, v.c); })()}
           </div>
           {!hasPrev && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "6px 2px 0" }}>{currentYear - 1} : pas de données à comparer pour l'instant.</div>}
+          {onOpenYearRecap && lived.length > 0 && (
+            <button data-testid="open-year-recap" onClick={() => onOpenYearRecap(currentYear)}
+              style={{ width: "100%", marginTop: 8, padding: "9px 12px", borderRadius: 11, border: "1px solid rgba(176,144,224,.45)", background: "rgba(176,144,224,.08)", color: "var(--text)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", textAlign: "left" }}>
+              🎆 Bilan de l'année {currentYear}{isCurYear ? " (jusqu'ici)" : ""} <span style={{ float: "right", color: "var(--purple)" }}>›</span>
+            </button>
+          )}
 
           {secT(<>Mois par mois <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· touche un mois pour l'ouvrir</span></>)}
           <div style={{ ...card, padding: "10px 8px 6px" }}>
@@ -558,22 +611,8 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 {rem <= 0 ? "✅ Objectif atteint" : monthsLeft > 0 ? <>Pour l'atteindre : <b>{fmt(rem / monthsLeft)}/mois</b> sur les {monthsLeft} mois restants</> : <>Il manque <b>{fmt(rem)}</b></>}
               </div>
             </>}
-            <div style={{ display: "flex", alignItems: "center", fontSize: ".72rem", marginTop: 11, paddingTop: 9, borderTop: "1px solid var(--border-soft)" }}>
-              <span style={{ flex: 1 }}>Taux d'épargne <small style={{ color: "var(--text3)" }}>(épargné ÷ revenus)</small></span>
-              <b style={{ color: "var(--purple)" }}>{rate.toFixed(1).replace(".", ",")} %</b>
-            </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 44, marginTop: 6 }}>
-              {months.map((m, i) => {
-                const r = m.hasData && m.inc > 0 ? Math.max(0, m.sav / m.inc * 100) : null;
-                return (
-                  <div key={i} style={{ flex: 1, textAlign: "center", opacity: r == null ? .25 : 1 }}>
-                    <div style={{ height: r == null ? 2 : Math.max(3, Math.min(30, r * 1.5)), background: "rgba(176,144,224,.6)", borderRadius: "3px 3px 0 0" }} />
-                    <div style={{ fontSize: ".46rem", color: "var(--text3)", marginTop: 2 }}>{r == null ? "" : `${Math.round(r)}%`}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 5 }}>🎯 Repère courant : 10 % des revenus ({fmt(yearly.inc / nM * .1)}/mois)</div>
+            {/* v1.68.0 : taux d'épargne sur 12 mois (versements − retraits) ÷ revenus, moyenne en pointillés, détail au toucher */}
+            <SavingsRateChart data={data} endYM={isCurYear ? curYM : `${currentYear}-12`} sel={rateSel} onSel={setRateSel} />
           </div>
 
           {proj && <>
