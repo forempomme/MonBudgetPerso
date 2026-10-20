@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.67.0";
+export const APP_VERSION = "1.70.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -208,6 +208,19 @@ export function isActiveForMonth(f, ym) {
   return true;
 }
 
+// ─── Montant d'un frais / revenu fixe pour un mois (v1.68.0) ─────
+// Source UNIQUE : correction « ce mois uniquement » (monthlyOverrides) >
+// changement prévu sur une période (plannedChanges, revenus) > montant habituel.
+export function plannedChangeFor(f, ym) {
+  return (f?.plannedChanges || []).find(c => c.from && ym >= c.from && ym <= (c.until || c.from)) || null;
+}
+export function fixedAmountFor(f, ym) {
+  const ov = f?.monthlyOverrides?.[ym]?.amount;
+  if (ov != null) return parseFloat(ov) || 0;
+  const pc = plannedChangeFor(f, ym);
+  return parseFloat(pc ? pc.amount : f?.amount) || 0;
+}
+
 // ─── Jour des frais / revenus fixes (v1.64.0) ────────────────────
 // `day` vaut 1–31 (ramené au dernier jour d'un mois plus court) ou une règle :
 //   -1 = dernier jour ouvré du mois, -2 = avant-dernier jour ouvré.
@@ -294,8 +307,8 @@ export function fixedCashDateISO(f, ym) {
 export function autoIncomeHistory(f, transactions = []) {
   const items = [];
   Object.entries(f?.pointedMonths || {}).forEach(([ym, on]) => {
-    if (!on || f.avgExcluded?.[ym]) return;   // v1.67.0 : mois exceptionnel exclu de la moyenne
-    const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+    if (!on || f.avgExcluded?.[ym] || plannedChangeFor(f, ym)) return;   // mois exceptionnel (v1.67.0) ou changement prévu (v1.68.0) : exclus de la moyenne
+    const a = fixedAmountFor(f, ym);
     if (a > 0) items.push({ key: fixedCashDateISO(f, ym) || `${fixedCashYM(f, ym)}-28`, ym, amount: a, src: "fixed" });
   });
   if (f?.categoryId) transactions.forEach(t => {
