@@ -39,7 +39,7 @@ export function LockScreen({ pinHash, bioEnabled, onUnlock }) {
   const KEYS = [[1,2,3],[4,5,6],[7,8,9],["",0,"⌫"]];
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"#060810", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
+    <div style={{ position:"fixed", inset:0, background:"var(--bg, #060810)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
       <div style={{ fontSize:"2.8rem", marginBottom:12 }}>🐷</div>
       <div style={{ fontSize:".95rem", fontWeight:800, marginBottom:4 }}>Gestion du Budget</div>
       <div style={{ fontSize:".65rem", color:"var(--text3)", marginBottom:28 }}>Entre ton code PIN pour continuer</div>
