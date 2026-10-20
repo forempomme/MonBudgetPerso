@@ -429,101 +429,155 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
   return (
     <div>
-      {/* ── Rappel de sauvegarde (> 7 jours ou jamais) ── */}
-      {backupLate && (
-        <div data-testid="backup-alert" style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:13, border:"1px solid rgba(200,112,112,.45)", background:"rgba(200,112,112,.08)", marginBottom:6 }}>
-          <span style={{ fontSize:"1rem" }}>💾</span>
-          <span style={{ flex:1, minWidth:0 }}>
-            <span style={{ display:"block", fontSize:".76rem", fontWeight:800 }}>{last ? `Dernière sauvegarde il y a ${daysSinceBackup} jours` : "Aucune sauvegarde"}</span>
-            <span style={{ display:"block", fontSize:".6rem", color:"var(--text2)", marginTop:1 }}>Si le téléphone est perdu, tes données le sont aussi.</span>
-          </span>
-          <button
-            onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onExport?.(); }}
-            onClick={()=>onExport?.()}
-            style={{ border:"none", background:"var(--accent)", color:"#06121c", borderRadius:8, padding:"7px 10px", fontSize:".7rem", fontWeight:800, whiteSpace:"nowrap", flexShrink:0, cursor:"pointer" }}>
-            Sauvegarder
-          </button>
-        </div>
-      )}
-
-      {/* ── Menu groupé ── */}
-      {/* ── 🎨 Apparence (v1.70.0) : bascule entre les thèmes, l'original « Aube » reste disponible ── */}
       {(() => {
+        // ── v1.72.0 : « État de l'appli » + Mes données (boutons) + Apparence (vignettes) + réglages en tuiles ──
+        const ITEM = Object.fromEntries(GROUPS.flatMap(g => g.items).map(it => [it.id, it]));
+        const tap = item => ({
+          onTouchStart: e => { e.stopPropagation(); touchPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; touchMovedRef.current = false; },
+          onTouchMove:  e => { const dx = Math.abs(e.touches[0].clientX - touchPosRef.current.x); const dy = Math.abs(e.touches[0].clientY - touchPosRef.current.y); if (dx > 8 || dy > 8) touchMovedRef.current = true; },
+          onTouchEnd:   e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); if (touchMovedRef.current) return; if (!item.configured && item.hint) showTooltip(item.hint); openItem(item); },
+          onClick: () => openItem(item),
+        });
+        const OK = "var(--success)", KO = "var(--warning)";
+        const secT = t => <div style={{ fontSize: ".6rem", fontWeight: 800, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em", margin: "14px 2px 6px" }}>{t}</div>;
+        const backupTxt = last ? (daysSinceBackup === 0 ? "faite aujourd'hui" : `il y a ${daysSinceBackup} j`) : "jamais faite";
+        const STATE = [
+          { id: "backup",   icon: "💾", label: "Sauvegarde",     txt: backupTxt, ok: !backupLate },
+          { id: "security", icon: "🔒", label: "Verrouillage",   txt: pinOn ? "PIN actif" : "PIN désactivé", ok: pinOn },
+          { id: "notif",    icon: "🔔", label: "Notifications",  txt: notifOn ? "actives" : "désactivées", ok: notifOn },
+          { id: "grocery",  icon: "🛒", label: "Budget courses", txt: ITEM.grocery.badge, ok: ITEM.grocery.configured },
+        ];
+        const nOk = STATE.filter(x => x.ok).length;
+        const ringC = nOk === STATE.length ? OK : KO, R = 19, C = 2 * Math.PI * R;
         const cur = ["abysse", "glacier", "aube"].includes(data.appTheme) ? data.appTheme : "abysse";
         const glassOn = data.glassEffects !== false;
         const THEMES = [
-          { id: "abysse",  name: "Verre bleu · Abysse",  desc: "Bleu marine profond, cartes en verre", sw: "radial-gradient(80% 80% at 0% 0%,#123a6e,transparent 70%),radial-gradient(80% 80% at 100% 100%,#0a5576,transparent 70%),#050b18" },
-          { id: "glacier", name: "Verre bleu · Glacier", desc: "Bleu acier et cyan, plus lumineux", sw: "radial-gradient(80% 80% at 0% 0%,#1d5a8f,transparent 70%),radial-gradient(80% 80% at 100% 100%,#13788f,transparent 70%),#071321" },
-          { id: "aube",    name: "Aube (classique)",     desc: "Le thème d'origine, inchangé", sw: "#060810" },
+          { id: "abysse",  name: "Abysse",  desc: "bleu marine profond",    sw: "radial-gradient(80% 80% at 0% 0%,#123a6e,transparent 70%),radial-gradient(80% 80% at 100% 100%,#0a5576,transparent 70%),#050b18" },
+          { id: "glacier", name: "Glacier", desc: "bleu acier, plus clair", sw: "radial-gradient(80% 80% at 0% 0%,#1d5a8f,transparent 70%),radial-gradient(80% 80% at 100% 100%,#13788f,transparent 70%),#071321" },
+          { id: "aube",    name: "Aube",    desc: "thème d'origine",        sw: "linear-gradient(160deg,#1b1530,#060810)" },
         ];
+        const TILE_GROUPS = [GROUPS[0], GROUPS[1], GROUPS[2], { title: "🔔 Notifications & 🔒 Sécurité", items: [...GROUPS[3].items, ...GROUPS[4].items] }];
+        const tile = item => (
+          <div key={item.id} data-opt={item.id} className="card" {...tap(item)}
+            style={{ margin: 0, padding: "9px 10px", borderRadius: 14, cursor: "pointer", touchAction: "manipulation", display: "flex", flexDirection: "column", minHeight: 92, minWidth: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 4 }}>
+              <span style={{ fontSize: "1.05rem" }}>{item.icon}</span>
+              {item.badge && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: ".52rem", fontWeight: 800, padding: "2px 6px", borderRadius: 8, minWidth: 0, maxWidth: "72%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  color: item.configured ? OK : KO, background: `color-mix(in srgb, ${item.configured ? OK : KO} 13%, transparent)` }}>
+                  <i style={{ width: 6, height: 6, borderRadius: "50%", background: item.configured ? OK : KO, flexShrink: 0 }} />{item.badge}
+                </span>
+              )}
+            </div>
+            <span style={{ display: "block", fontSize: ".72rem", fontWeight: 700, marginTop: 4, lineHeight: 1.2 }}>{item.label}</span>
+            <span style={{ fontSize: ".56rem", lineHeight: 1.3, color: "var(--text3)", marginTop: 2, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{item.desc}</span>
+          </div>
+        );
+        const dataBtn = (item, pri, sub) => (
+          <div key={item.id} data-opt={item.id} {...tap(item)}
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, padding: "8px 4px", borderRadius: 12, cursor: "pointer", touchAction: "manipulation", textAlign: "center", minWidth: 0,
+              background: pri ? "var(--btn-pri-bg, var(--accent))" : "var(--surface2)", border: `1px solid ${pri ? "var(--btn-pri-border, var(--accent))" : "var(--border)"}`, color: pri ? "var(--btn-pri-text, #06121c)" : "var(--text)" }}>
+            <span style={{ fontSize: "1.05rem" }}>{item.icon}</span>
+            <b style={{ fontSize: ".68rem" }}>{item.short}</b>
+            <span style={{ fontSize: ".52rem", fontWeight: 600, opacity: .8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{sub}</span>
+          </div>
+        );
         return (
-          <div>
-            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"12px 2px 6px" }}>🎨 Apparence</div>
-            <div data-testid="appearance" style={{ background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)" }}>
-              {THEMES.map((t, i) => (
-                <div key={t.id} data-theme-opt={t.id} onClick={() => onSaveAppearance?.({ appTheme: t.id })}
-                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderTop: i>0 ? "1px solid var(--border-soft)" : "none", cursor:"pointer",
-                    background: cur === t.id ? "rgba(112,184,224,.10)" : "transparent" }}>
-                  <span style={{ width:34, height:34, borderRadius:10, flexShrink:0, background:t.sw, border:`1.5px solid ${cur === t.id ? "var(--accent)" : "rgba(255,255,255,.18)"}` }} />
-                  <span style={{ flex:1, minWidth:0 }}>
-                    <span style={{ display:"block", fontSize:".78rem", fontWeight:700 }}>{t.name}</span>
-                    <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{t.desc}</span>
+          <>
+            {/* État de l'appli */}
+            <div className="card" data-testid="app-state" style={{ padding: "11px 12px", marginBottom: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <svg width="46" height="46" viewBox="0 0 46 46" style={{ flexShrink: 0 }}>
+                  <circle cx="23" cy="23" r={R} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
+                  <circle cx="23" cy="23" r={R} fill="none" stroke={ringC} strokeWidth="4" strokeLinecap="round" strokeDasharray={`${(nOk / STATE.length * C).toFixed(1)} ${C.toFixed(1)}`} transform="rotate(-90 23 23)" />
+                  <text x="23" y="26.5" textAnchor="middle" fontSize="10" fontWeight="800" fill="var(--text)">{nOk}/{STATE.length}</text>
+                </svg>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: ".82rem", fontWeight: 800 }}>État de l'appli</span>
+                  <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)" }}>{nOk === STATE.length ? "Tout est en ordre ✓" : `${STATE.length - nOk} point${STATE.length - nOk > 1 ? "s" : ""} à regarder pour être tranquille`}</span>
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 9 }}>
+                {STATE.map(x => (
+                  <div key={x.id} data-state={x.id} {...tap(ITEM[x.id])}
+                    style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 8px", borderRadius: 11, cursor: "pointer", touchAction: "manipulation", minWidth: 0,
+                      background: `color-mix(in srgb, ${x.ok ? OK : KO} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${x.ok ? OK : KO} 35%, transparent)` }}>
+                    <span>{x.icon}</span>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: ".66rem", fontWeight: 700 }}>{x.label}</span>
+                      <span style={{ display: "block", fontSize: ".56rem", fontWeight: 800, color: x.ok ? OK : KO, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.ok ? "✓ " : ""}{x.txt}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {backupLate && (
+                <div data-testid="backup-alert" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: ".58rem", color: "var(--text2)" }}>
+                    <b style={{ color: "var(--danger)" }}>{last ? `Dernière sauvegarde il y a ${daysSinceBackup} jours` : "Aucune sauvegarde"}</b> — si le téléphone est perdu, tes données le sont aussi.
                   </span>
-                  {cur === t.id && <span style={{ color:"var(--accent)", fontWeight:800 }}>✓</span>}
+                  <button onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onExport?.(); }} onClick={() => onExport?.()}
+                    style={{ border: "1px solid var(--btn-pri-border, var(--accent))", background: "var(--btn-pri-bg, var(--accent))", color: "var(--btn-pri-text, #06121c)", borderRadius: 9, padding: "7px 10px", fontSize: ".66rem", fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0, cursor: "pointer" }}>
+                    Sauvegarder
+                  </button>
                 </div>
-              ))}
+              )}
+            </div>
+
+            {/* Mes données */}
+            {secT("💾 Mes données")}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+              {dataBtn({ ...ITEM.backup, short: "Sauvegarder" }, true, last ? (daysSinceBackup === 0 ? "faite aujourd'hui" : `dernière il y a ${daysSinceBackup} j`) : "jamais faite")}
+              {dataBtn({ ...ITEM.releve, short: "Relevé PDF" }, false, "rien n'est gardé")}
+              {dataBtn({ ...ITEM.import, short: "Importer" }, false, "remplace tout")}
+            </div>
+
+            {/* Apparence (v1.70.0) */}
+            {secT("🎨 Apparence")}
+            <div className="card" data-testid="appearance" style={{ padding: "9px 10px", marginBottom: 0 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 6 }}>
+                {THEMES.map(t => (
+                  <div key={t.id} data-theme-opt={t.id} onClick={() => onSaveAppearance?.({ appTheme: t.id })} style={{ cursor: "pointer", textAlign: "center", minWidth: 0 }}>
+                    <div style={{ position: "relative", height: 48, borderRadius: 12, background: t.sw, border: `2px solid ${cur === t.id ? "var(--accent)" : "rgba(255,255,255,.15)"}` }}>
+                      {cur === t.id && <span style={{ position: "absolute", right: 5, top: 3, color: "var(--accent)", fontWeight: 900, fontSize: ".75rem" }}>✓</span>}
+                    </div>
+                    <span style={{ display: "block", fontSize: ".66rem", fontWeight: 700, marginTop: 3, color: cur === t.id ? "var(--text)" : "var(--text2)" }}>{t.name}</span>
+                    <span style={{ display: "block", fontSize: ".52rem", color: "var(--text3)" }}>{t.desc}</span>
+                  </div>
+                ))}
+              </div>
               {cur !== "aube" && (
                 <div data-testid="glass-toggle" onClick={() => onSaveAppearance?.({ glassEffects: !glassOn })}
-                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderTop:"1px solid var(--border-soft)", cursor:"pointer" }}>
-                  <span style={{ fontSize:".95rem", width:20, textAlign:"center", flexShrink:0 }}>🫧</span>
-                  <span style={{ flex:1, minWidth:0 }}>
-                    <span style={{ display:"block", fontSize:".78rem", fontWeight:600 }}>Effets de verre</span>
-                    <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Flou derrière les cartes · à couper si l'appli rame</span>
+                  style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 2px 2px", marginTop: 7, borderTop: "1px solid var(--border-soft)", cursor: "pointer" }}>
+                  <span style={{ fontSize: ".95rem" }}>🫧</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: ".72rem", fontWeight: 600 }}>Effets de verre</span>
+                    <span style={{ display: "block", fontSize: ".56rem", color: "var(--text3)", marginTop: 1 }}>Flou derrière les cartes · à couper si l'appli rame</span>
                   </span>
-                  <span style={{ width:40, height:22, borderRadius:11, background: glassOn ? "var(--accent)" : "var(--border)", position:"relative", flexShrink:0 }}>
-                    <span style={{ position:"absolute", top:3, left: glassOn ? 21 : 3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+                  <span style={{ width: 40, height: 22, borderRadius: 11, background: glassOn ? "var(--accent)" : "var(--border)", position: "relative", flexShrink: 0 }}>
+                    <span style={{ position: "absolute", top: 3, left: glassOn ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
                   </span>
                 </div>
               )}
             </div>
-          </div>
-        );
-      })()}
 
-      {GROUPS.map(group => (
-        <div key={group.title}>
-          <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"12px 2px 6px" }}>
-            {group.title}
-          </div>
-          <div style={{ background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)" }}>
-            {group.items.map((item, i) => (
-              <div key={item.id}
-                data-opt={item.id}
-                onTouchStart={e=>{ e.stopPropagation(); touchPosRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY}; touchMovedRef.current=false; }}
-                onTouchMove={e=>{ const dx=Math.abs(e.touches[0].clientX-touchPosRef.current.x); const dy=Math.abs(e.touches[0].clientY-touchPosRef.current.y); if(dx>8||dy>8) touchMovedRef.current=true; }}
-                onTouchEnd={e=>{ e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); if(touchMovedRef.current) return; if(!item.configured && item.hint) showTooltip(item.hint); openItem(item); }}
-                onClick={()=> openItem(item)}
-                style={{
-                  display:"flex", alignItems:"center", gap:10, padding:"10px 12px",
-                  borderTop: i>0 ? "1px solid var(--border-soft)" : "none",
-                  cursor:"pointer", touchAction:"manipulation",
-                }}>
-                <span style={{ fontSize:".95rem", width:20, textAlign:"center", flexShrink:0 }}>{item.icon}</span>
-                <span style={{ flex:1, minWidth:0 }}>
-                  <span style={{ display:"block", fontSize:".78rem", fontWeight:600, color: item.danger ? "var(--danger)" : undefined }}>{item.label}</span>
-                  <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{item.desc}</span>
-                </span>
-                {item.badge && (
-                  <span style={{ fontSize:".6rem", fontWeight:800, color: item.configured ? "var(--success)" : "var(--warning)", padding:"2px 8px", background: item.configured ? "rgba(104,212,152,.12)" : "rgba(200,184,96,.12)", borderRadius:8, flexShrink:0, whiteSpace:"nowrap", maxWidth:110, overflow:"hidden", textOverflow:"ellipsis" }}>
-                    {item.badge}
-                  </span>
-                )}
-                <span style={{ color: item.danger ? "var(--danger)" : "var(--text3)", opacity: item.danger ? .5 : 1, fontSize:".75rem", flexShrink:0 }}>›</span>
+            {/* Réglages en tuiles, avec leur petite description */}
+            {TILE_GROUPS.map(g => (
+              <div key={g.title}>
+                {secT(g.title)}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>{g.items.map(tile)}</div>
               </div>
             ))}
-          </div>
-        </div>
-      ))}
+
+            {/* Réinitialiser — à part, en bas */}
+            <div data-opt="reset" {...tap(ITEM.reset)}
+              style={{ marginTop: 16, padding: "9px 12px", borderRadius: 12, textAlign: "center", cursor: "pointer", touchAction: "manipulation",
+                border: "1px solid rgba(200,112,112,.45)", background: "rgba(200,112,112,.06)" }}>
+              <span style={{ display: "block", fontSize: ".74rem", fontWeight: 800, color: "var(--danger)" }}>⚠️ {ITEM.reset.label}</span>
+              <span style={{ display: "block", fontSize: ".56rem", color: "var(--text2)", marginTop: 1 }}>{ITEM.reset.desc} · confirmation demandée</span>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Toast "non configuré" */}
       {tooltip && (
