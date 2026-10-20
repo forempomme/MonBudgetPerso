@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO, isActiveForMonth } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO, isActiveForMonth, fixedAmountFor } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -20,8 +20,7 @@ export { isActiveForMonth };
 export function effectiveFixesForMonth(fixedExpenses, ym) {
   return fixedExpenses.reduce((s, f) => {
     if (!isActiveForMonth(f, ym)) return s;
-    const ov = f.monthlyOverrides?.[ym];
-    return s + ((ov?.amount ?? f.amount) || 0);
+    return s + fixedAmountFor(f, ym);
   }, 0);
 }
 
@@ -30,7 +29,7 @@ export function effectiveIncomesForMonth(fixedIncomes, ym) {
   // comme effectiveFixesForMonth — déjà le cas dans le rapprochement et la projection.
   return (fixedIncomes || []).reduce((s, f) => {
     if (!isActiveForMonth(f, ym)) return s;
-    return s + (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+    return s + (fixedAmountFor(f, ym));
   }, 0);
 }
 
@@ -45,7 +44,7 @@ export function cashIncomesForMonth(fixedIncomes, cashYM) {
   return (fixedIncomes || []).reduce((s, f) => {
     const ym = fixedOccurrenceYM(f, cashYM);
     if (!isActiveForMonth(f, ym)) return s;
-    return s + (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+    return s + (fixedAmountFor(f, ym));
   }, 0);
 }
 
@@ -72,8 +71,7 @@ export function useTotalFixes(fixedExpenses, ym = null) {
     () => fixedExpenses
       .filter(f => !ym || isActiveForMonth(f, ym))
       .reduce((s, f) => {
-        const ov = ym ? f.monthlyOverrides?.[ym] : null;
-        return s + ((ov?.amount ?? f.amount) || 0);
+        return s + fixedAmountFor(f, ym);
       }, 0),
     [fixedExpenses, ym]
   );
@@ -228,8 +226,7 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
       const ym = cym;
       if (!isActiveForMonth(f, ym)) return;
       totalFix++;
-      const ov = f.monthlyOverrides?.[ym];
-      const a  = (ov?.amount ?? f.amount) || 0;
+      const a  = fixedAmountFor(f, ym);
       if (f.pointedMonths?.[ym]) { ptExp += a; nbPtFix++; }
       else { noPtExp += a; pendingFixes.push({ f, ym, signed: -a }); }
     });
@@ -241,8 +238,7 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
       const ym = fixedOccurrenceYM(f, cym);
       if (!isActiveForMonth(f, ym)) return;
       totalInc++;
-      const ov = f.monthlyOverrides?.[ym];
-      const a  = (ov?.amount ?? f.amount) || 0;
+      const a  = fixedAmountFor(f, ym);
       if (f.pointedMonths?.[ym]) { ptInc += a; nbPtInc++; return; }
       const date = fixedCashDateISO(f, ym);
       if (date && date > asOf) { totalInc--; futureIncomes.push({ f, ym, date, signed: a }); return; }
@@ -283,7 +279,7 @@ export function useReconciliation(transactions, fixedExpenses, fixedIncomes) {
 //  Les frais fixes non pointés sont dans « en attente » et UNIQUEMENT là :
 //  jamais comptés deux fois.
 // ─────────────────────────────────────────────────────────────────
-export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, now = new Date()) {
+export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, now = new Date(), reimbursements = [], lateDays = 15) {
   const curYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const curY  = now.getFullYear().toString();
   const pad = n => String(n).padStart(2, "0");
@@ -316,7 +312,11 @@ export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncome
     .map(s => ({ s, signed: -(parseFloat(s.amount) || 0) }));
 
   const pendingTotal = rec.soldeAttente;
-  const total = rec.soldePointe + pendingTotal + recurring.reduce((s, x) => s + x.signed, 0) + scheduled.reduce((s, x) => s + x.signed, 0);
+  // v1.69.0 : remboursements attendus (liés à une dépense) comptés dès qu'ils sont marqués,
+  // jusqu'à leur réception (ils deviennent alors un revenu normal → jamais deux fois)
+  const todayStr = `${curYM}-${String(now.getDate()).padStart(2, "0")}`;
+  const expected = expectedReimbursements(reimbursements, transactions, todayStr, lateDays);
+  const total = rec.soldePointe + pendingTotal + recurring.reduce((s, x) => s + x.signed, 0) + scheduled.reduce((s, x) => s + x.signed, 0) + expected.reduce((s, x) => s + x.signed, 0);
 
   return {
     pointed:   { total: rec.soldePointe, count: rec.nbPointed },
@@ -330,21 +330,44 @@ export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncome
     futureIncomes: { total: sum(rec.futureIncomes), items: rec.futureIncomes },   // v1.65.0 : pas encore dans le solde
     recurring: { total: sum(recurring), items: recurring },
     scheduled: { total: sum(scheduled), items: scheduled },
+    reimbursements: { total: sum(expected), items: expected },
     total,
   };
 }
 
-export function useBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions) {
+export function useBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, reimbursements = [], lateDays = 15) {
   return useMemo(
-    () => computeBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions),
-    [transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions]
+    () => computeBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, new Date(), reimbursements, lateDays),
+    [transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, reimbursements, lateDays]
   );
 }
 
-export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions) {
+/**
+ * v1.69.0 — Remboursements attendus comptés dans le solde estimé : liés à une
+ * dépense existante, pas encore reçus. `late` = jours écoulés depuis la date
+ * prévue (ou la dépense) au-delà du délai réglable (Options, 15 j par défaut).
+ */
+export function expectedReimbursements(reimbursements, transactions, today = todayISO(), lateDays = 15) {
+  const byId = new Map((transactions || []).map(t => [t.id, t]));
+  // v1.69.1 : un « À recevoir » saisi seul (sans dépense liée) est compté aussi
+  return (reimbursements || []).filter(r => r.status !== "received").map(r => {
+    const tx = (r.txId && byId.get(r.txId)) || null;
+    const ref = r.expectedDate || tx?.date || r.createdAt;
+    const age = ref && ref < today ? daysBetweenISO(ref, today) : 0;
+    return { r, tx, signed: Math.round((parseFloat(r.amount) || 0) * 100) / 100, late: age > lateDays ? age : 0 };
+  });
+}
+/** v1.69.0 — Montant remboursé (attendu ou reçu) par dépense : { [txId]: montant } */
+export function reimbursedByTx(reimbursements) {
+  const m = {};
+  (reimbursements || []).forEach(r => { if (r.txId) m[r.txId] = (m[r.txId] || 0) + (parseFloat(r.amount) || 0); });
+  return m;
+}
+
+export function useBalanceWithRecurring(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, reimbursements = [], lateDays = 15) {
   // Le solde estimé = total de computeBalanceBreakdown : le chiffre de la
   // carte et le panneau « Calcul du solde » viennent du même calcul.
-  return useBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions).total;
+  return useBalanceBreakdown(transactions, fixedExpenses, fixedIncomes, recurringTemplates, scheduledTransactions, reimbursements, lateDays).total;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -549,7 +572,7 @@ export function groceryCategoryIds(categories, settings) {
   return [...out];
 }
 
-export function computeGroceryBudget(transactions, categories, settings, now = new Date()) {
+export function computeGroceryBudget(transactions, categories, settings, now = new Date(), reimbursements = []) {
   if (settings && settings.enabled === false) return null;
   const catIds = groceryCategoryIds(categories, settings);
   if (catIds.length === 0) return null;
@@ -559,10 +582,18 @@ export function computeGroceryBudget(transactions, categories, settings, now = n
   const txs = transactions || [];
   const firstYM = txs.length ? txs.reduce((m, t) => (t.date < m ? t.date : m), txs[0].date).slice(0, 7) : curYM;
   const isGrocery = t => t.type === "expense" && cats.has(t.categoryId) && !t.templateId && !t.isRounding;
+  // v1.69.0 : la part remboursée (attendue ou reçue) d'une dépense n'est pas « tes » courses
+  const reimb = reimbursedByTx(reimbursements);
   const sumMonth = ym => {
-    let total = 0, count = 0;
-    txs.forEach(t => { if (isGrocery(t) && t.date.startsWith(ym)) { total += parseFloat(t.amount) || 0; count++; } });
-    return { ym, total: Math.round(total * 100) / 100, count };
+    let total = 0, count = 0, refunded = 0;
+    const items = [];
+    txs.forEach(t => {
+      if (!isGrocery(t) || !t.date.startsWith(ym)) return;
+      const a = parseFloat(t.amount) || 0, back = Math.min(a, reimb[t.id] || 0);
+      total += a - back; refunded += back; count++;
+      if (back > 0) items.push({ t, amount: Math.round(back * 100) / 100 });
+    });
+    return { ym, total: Math.round(total * 100) / 100, count, refunded: Math.round(refunded * 100) / 100, refundItems: items };
   };
 
   const n = Math.max(1, Math.min(3, parseInt(settings?.months, 10) || 2));
@@ -586,12 +617,13 @@ export function computeGroceryBudget(transactions, categories, settings, now = n
   const remaining = Math.max(0, Math.round((average - current.total) * 100) / 100);
   const over      = Math.max(0, Math.round((current.total - average) * 100) / 100);
   return { catIds, months, monthsWanted: n, average, spent: current.total, count: current.count, remaining, over, curYM,
+           refunded: current.refunded, refundItems: current.refundItems,
            day: now.getDate(), daysInMonth, weight };
 }
 
-export function useGroceryBudget(transactions, categories, settings) {
-  return useMemo(() => computeGroceryBudget(transactions, categories, settings),
-    [transactions, categories, settings]);
+export function useGroceryBudget(transactions, categories, settings, reimbursements = []) {
+  return useMemo(() => computeGroceryBudget(transactions, categories, settings, new Date(), reimbursements),
+    [transactions, categories, settings, reimbursements]);
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -624,7 +656,7 @@ export function categorySpentForMonth(categories, transactions, fixedExpenses, c
   const tx = (transactions || []).filter(t => t.id !== excludeTxId && t.type === "expense" && (t.date || "").startsWith(ym) && fam.includes(t.categoryId))
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
   const fx = (fixedExpenses || []).filter(f => fam.includes(f.categoryId) && isActiveForMonth(f, ym))
-    .reduce((s, f) => s + ((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), 0);
+    .reduce((s, f) => s + (fixedAmountFor(f, ym)), 0);
   return tx + fx;
 }
 /** [id, ...ids de ses sous-catégories] */
@@ -682,7 +714,7 @@ function catSpend(data, ym) {
   (data.transactions || []).forEach(t => { if (t.type === "expense" && (t.date || "").startsWith(ym)) add(t.categoryId, parseFloat(t.amount) || 0); });
   (data.fixedExpenses || []).forEach(f => {
     if (!isActiveForMonth(f, ym)) return;
-    add(f.categoryId, (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+    add(f.categoryId, fixedAmountFor(f, ym));
   });
   return map;
 }
@@ -729,7 +761,7 @@ export function computeMonthRecap(data, ym) {
 
   const [y, m] = ym.split("-").map(Number);
   const lastDay = new Date(y, m, 0);
-  const grocery = computeGroceryBudget(data.transactions, data.categories, data.groceryBudget, lastDay);
+  const grocery = computeGroceryBudget(data.transactions, data.categories, data.groceryBudget, lastDay, data.reimbursements);
   const tagBudgets = computeTagBudgets(data.tags, data.transactions, ym).filter(b => b.period === "month");
 
   const unpointedTx = cur.txs.filter(t => isPointable(t.type) && !t.pointed).length;
@@ -745,6 +777,7 @@ export function computeMonthRecap(data, ym) {
     expenses: cur.exp, expensesAvg: avg("exp"), expensesPct: pct(cur.exp, avg("exp")),
     incomes: cur.inc, incomesAvg: avg("inc"), incomesPct: pct(cur.inc, avg("inc")),
     savings: cur.sav,
+    savingsRate: cur.inc > 0 ? cur.sav / cur.inc : null,   // v1.68.0
     savingsCags: new Set(cur.txs.filter(t => t.type === "epargne").map(t => t.targetCagId)).size,
     endBalance: endBal, balanceDelta: startBal == null ? null : endBal - startBal,
     movers, grocery, tagBudgets,
@@ -853,8 +886,8 @@ export function fixedLinesForPeriod(list, months, kind) {
       if (!isActiveForMonth(f, ym)) return;
       n++;
       total += kind === "expense"
-        ? (((f.monthlyOverrides?.[ym])?.amount ?? f.amount) || 0)
-        : (parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0);
+        ? fixedAmountFor(f, ym)
+        : (fixedAmountFor(f, ym));
     });
     return { f, total, n };
   }).filter(l => l.n > 0);
@@ -927,14 +960,14 @@ export function pendingEventsThisMonth(data, breakdown, today = todayISO()) {
   (data.fixedExpenses || []).forEach(f => {
     if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
     const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
-    const a = (f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0;
+    const a = fixedAmountFor(f, curYM);
     ev(d, -a, f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌" }); addBack += a;
   });
   (data.fixedIncomes || []).forEach(f => {
     const ym = fixedOccurrenceYM(f, curYM);   // v1.64.0 : occurrence versée ce mois-ci
     if (!f.day || !isActiveForMonth(f, ym) || f.pointedMonths?.[ym]) return;
     const d = fixedCashDateISO(f, ym); if (d <= today) return;
-    const a = (f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+    const a = fixedAmountFor(f, ym);
     // v1.65.0 : un revenu daté après aujourd'hui n'est PAS dans le solde estimé → rien à retirer
     ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", id: f.id, occYM: ym });
   });
@@ -969,13 +1002,13 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
       (data.fixedExpenses || []).forEach(f => {
         if (!f.day || !isActiveForMonth(f, ym)) return;
         const d = dayInMonthISO(f.day, ym); if (d > end) return;
-        ev(d, -((f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0), f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌", next: true });
+        ev(d, -(fixedAmountFor(f, ym)), f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌", next: true });
       });
       (data.fixedIncomes || []).forEach(f => {
         const oym = fixedOccurrenceYM(f, ym);
         if (!f.day || !isActiveForMonth(f, oym)) return;
         const d = fixedCashDateISO(f, oym); if (d > end) return;
-        ev(d, (f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", next: true, isPay: pay && f.id === pay.income.id && d === pay.date });
+        ev(d, fixedAmountFor(f, oym), f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", next: true, isPay: pay && f.id === pay.income.id && d === pay.date });
       });
       (data.scheduledTransactions || []).forEach(s => {
         if (!s.date.startsWith(ym) || s.date > end) return;
@@ -1123,7 +1156,7 @@ export function detectInsights(data, today = todayISO()) {
     const days = months.map(ym => parseInt(byMonth[ym][0].date.slice(8, 10), 10));
     const day = Math.round(median(days));
     if (days.some(d => Math.abs(d - day) > 5)) return;
-    const covered = (data.fixedExpenses || []).some(f => f.categoryId === catId && (isActiveForMonth(f, curYM) || (f.startYM && f.startYM > curYM)) && near(parseFloat(f.monthlyOverrides?.[curYM]?.amount ?? f.amount) || 0, ref))
+    const covered = (data.fixedExpenses || []).some(f => f.categoryId === catId && (isActiveForMonth(f, curYM) || (f.startYM && f.startYM > curYM)) && near(fixedAmountFor(f, curYM), ref))
       || (data.recurringTemplates || []).some(r => r.categoryId === catId && r.type !== "income" && near(parseFloat(r.amount) || 0, ref));
     if (covered) return;
     const key = `reg:${catId}:${note}`;
@@ -1202,6 +1235,15 @@ export function computeCategoryBreakdown(data, fromYM, toYM) {
     const own = t.categoryId ? catRootId(cats, t.categoryId) : null;
     if (lk && exp[lk]) ded[lk] = (ded[lk] || 0) + a;
     else if (own && exp[own]) ded[own] = (ded[own] || 0) + a;
+  });
+  // v1.69.0 : remboursement attendu (pas encore reçu) déduit de la catégorie de sa dépense
+  const txById = new Map((data.transactions || []).map(t => [t.id, t]));
+  (data.reimbursements || []).forEach(r => {
+    if (r.status === "received" || !r.txId) return;
+    const t = txById.get(r.txId);
+    if (!t || t.type !== "expense" || !inP(t.date)) return;
+    const root = (t.categoryId && catRootId(cats, t.categoryId)) || "__other__";
+    if (exp[root]) ded[root] = (ded[root] || 0) + (parseFloat(r.amount) || 0);
   });
   const fix = computePeriodTotals(data.transactions || [], data.fixedExpenses || [], [], fromYM, toYM).fixExp;
   const rows = Object.keys(exp).map(id => ({
@@ -1290,9 +1332,12 @@ function quantile(sorted, p) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
 }
 /** Flux courant net d'un mois : dépenses et revenus ponctuels (hors récurrentes, arrondis, cagnottes) */
-export function variableNetForMonth(transactions, ym) {
+export function variableNetForMonth(transactions, ym, excludeIncomeCats = null) {
   return (transactions || []).reduce((s, t) => {
     if (t.templateId || t.isRounding || !(t.date || "").startsWith(ym)) return s;
+    // v1.68.0 : un revenu saisi à la main dans la catégorie d'un revenu fixe (ancien salaire
+    // saisi le 1er) n'est pas du « flux courant » : le revenu fixe le compte déjà
+    if (t.type === "income" && excludeIncomeCats?.has(t.categoryId)) return s;
     const a = parseFloat(t.amount) || 0;
     return t.type === "expense" ? s - a : t.type === "income" ? s + a : s;
   }, 0);
@@ -1308,7 +1353,8 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
 
   // 1) Flux courant : mois COMPLETS réellement vécus (6 au plus)
   const hist = [];
-  for (let i = 1; i <= 6; i++) { const ym = ymAdd(curYM, -i); if (ym < first) break; hist.push(variableNetForMonth(tx, ym)); }
+  const fixedIncCats = new Set((data.fixedIncomes || []).map(f => f.categoryId).filter(Boolean));
+  for (let i = 1; i <= 6; i++) { const ym = ymAdd(curYM, -i); if (ym < first) break; hist.push(variableNetForMonth(tx, ym, fixedIncCats)); }
   const med = median(hist);
   const sorted = [...hist].sort((a, b) => a - b);
   const p25 = quantile(sorted, .25), p75 = quantile(sorted, .75);
@@ -1317,7 +1363,7 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
   //    + reste des dépenses courantes habituelles (jamais un ajout : on ne compte pas
   //    sur un revenu ponctuel pas encore reçu)
   const cur = pendingEventsThisMonth(data, breakdown, today);
-  const soFar = variableNetForMonth(tx, curYM);
+  const soFar = variableNetForMonth(tx, curYM, fixedIncCats);
   const remCur = Math.min(0, med - soFar);
   const daysLeftCur = lastDayOf(curYM) - parseInt(today.slice(8, 10), 10);
 
@@ -1340,12 +1386,12 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
     (data.fixedIncomes || []).forEach(f => {
       const oym = fixedOccurrenceYM(f, ym);   // v1.64.0 : occurrence versée ce mois-là
       if (!isActiveForMonth(f, oym)) return;
-      const a = parseFloat(f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0;
+      const a = fixedAmountFor(f, oym);
       push(f.day ? fixedCashDateISO(f, oym) : `${ym}-01`, a, f.name, "inc", icon(f.categoryId, "💰"), { isPay: f.id === payId });
     });
     (data.fixedExpenses || []).forEach(f => {
       if (!isActiveForMonth(f, ym)) return;
-      const a = parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0;
+      const a = fixedAmountFor(f, ym);
       push(dayInMonthISO(f.day || 1, ym), -a, f.name, "fix", icon(f.categoryId, "📌"));
     });
     (data.recurringTemplates || []).forEach(tpl => {
@@ -1443,12 +1489,98 @@ export function computePayRecap(data, ym) {
   const r2 = n => Math.round(n * 100) / 100;
   const saved = r2(t.sav - t.decag);
   const rest = r2(t.inc - t.exp - saved);
-  return { ym, incomes: r2(t.inc), fixed: r2(t.fixExp), variable: r2(t.expVar), saved, rest,
-    toSave: rest > 0 ? Math.floor(rest / 10) * 10 : 0 };
+  const toSave = rest > 0 ? Math.floor(rest / 10) * 10 : 0;
+  return { ym, incomes: r2(t.inc), fixed: r2(t.fixExp), variable: r2(t.expVar), saved, rest, toSave,
+    // v1.68.0 : taux d'épargne avant / après la mise de côté proposée + moyenne 12 mois
+    rate: t.inc > 0 ? saved / t.inc : null, rateAfter: t.inc > 0 ? (saved + toSave) / t.inc : null,
+    avg12: computeSavingsRates(data, ym, 12).avg };
 }
 
 /** Revenu fixe principal (la paie) : le revenu daté le plus élevé — même règle que nextPayday */
 export function mainPayIncome(data) {
   const dated = (data.fixedIncomes || []).filter(f => f.day);
   return dated.length ? [...dated].sort((a, b) => (parseFloat(b.amount) || 0) - (parseFloat(a.amount) || 0))[0] : null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.68.0 — Taux d'épargne = (versements en cagnottes − retraits) ÷ revenus
+//  du mois (mois de budget, mêmes chiffres que Rapport / Bilan). Source unique
+//  pour le récap à la paie, le bilan du 1er, le Rapport et le bilan de l'année.
+// ─────────────────────────────────────────────────────────────────
+export function savingsRateOf(t) {
+  return t && t.inc > 0 ? (t.sav - t.decag) / t.inc : null;
+}
+/** Taux des `n` mois finissant à `endYM` (mois vécus seulement) + moyenne pondérée */
+export function computeSavingsRates(data, endYM, n = 12) {
+  const tx = data.transactions || [];
+  const first = firstDataYM(tx), cur = currentYM();
+  const months = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const ym = ymAdd(endYM, -i);
+    if (ym < first || ym > cur) { months.push({ ym, rate: null, saved: 0, inc: 0 }); continue; }
+    const t = computeMonthTotals(tx, data.fixedExpenses || [], data.fixedIncomes || [], ym, first, cur);
+    months.push({ ym, inc: t.inc, saved: t.sav - t.decag, rate: savingsRateOf(t) });
+  }
+  const lived = months.filter(m => m.rate != null);
+  const inc = lived.reduce((s, m) => s + m.inc, 0), saved = lived.reduce((s, m) => s + m.saved, 0);
+  return { months, avg: inc > 0 ? saved / inc : null };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.68.0 — Bilan de l'année (ouvert le 1er janvier, retrouvable dans le
+//  Rapport › Année). Mêmes totaux que le Rapport (computePeriodTotals).
+// ─────────────────────────────────────────────────────────────────
+/** Mouvements nets vers les cagnottes APRÈS une date (versements − retraits ± ajustements manuels) */
+function cagnotteFlowsAfter(data, iso) {
+  let s = 0;
+  (data.transactions || []).forEach(t => {
+    if (!t.date || t.date <= iso) return;
+    const a = parseFloat(t.amount) || 0;
+    if (t.type === "epargne") s += a;
+    else if (t.type === "decagnottage" || t.type === "dissolution_cagnotte") s -= a;
+  });
+  (data.cagnottes || []).forEach(c => (c.adjustments || []).forEach(a => {
+    if (a.date && a.date > iso) s += (parseFloat(a.after) || 0) - (parseFloat(a.before) || 0);
+  }));
+  return s;
+}
+export function computeYearRecap(data, year) {
+  const tx = data.transactions || [], fe = data.fixedExpenses || [], fi = data.fixedIncomes || [];
+  const y = String(year), py = String(year - 1);
+  const t = computePeriodTotals(tx, fe, fi, `${y}-01`, `${y}-12`);
+  const p = computePeriodTotals(tx, fe, fi, `${py}-01`, `${py}-12`);
+  const hasPrev = p.months > 0;
+  const pct = (v, a) => (hasPrev && a > 0 ? Math.round((v - a) / a * 100) : null);
+  const r2 = n => Math.round(n * 100) / 100;
+  const first = firstDataYM(tx), cur = currentYM();
+  // Mois : reste du mois (revenus − dépenses − épargne nette), comme le récap à la paie
+  const months = monthRange(`${y}-01`, `${y}-12`).filter(ym => ym >= first && ym <= cur).map(ym => ({ ym, rest: computePayRecap(data, ym).rest }));
+  const best = months.length ? months.reduce((a, b) => (b.rest > a.rest ? b : a)) : null;
+  const worst = months.length > 1 ? months.reduce((a, b) => (b.rest < a.rest ? b : a)) : null;
+  // Catégories : ce qui a le plus bougé vs l'an passé (sinon : les plus grosses)
+  const sumCats = yy => monthRange(`${yy}-01`, `${yy}-12`).filter(ym => ym >= first && ym <= cur).reduce((acc, ym) => {
+    Object.entries(catSpend(data, ym)).forEach(([k, v]) => { acc[k] = (acc[k] || 0) + v; }); return acc; }, {});
+  const cc = sumCats(y), pc = hasPrev ? sumCats(py) : {};
+  const keys = [...new Set([...Object.keys(cc), ...Object.keys(pc)])].filter(k => k !== "__none__");
+  const cats = (hasPrev
+    ? keys.map(k => ({ catId: k, amount: r2(cc[k] || 0), diff: (cc[k] || 0) - (pc[k] || 0), pct: pc[k] > 0 ? Math.round(((cc[k] || 0) - pc[k]) / pc[k] * 100) : null }))
+        .filter(x => Math.abs(x.diff) >= 30).sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff))
+    : keys.map(k => ({ catId: k, amount: r2(cc[k] || 0), diff: 0, pct: null })).sort((a, b) => b.amount - a.amount)
+  ).slice(0, 3);
+  // Frais fixes de l'année + hausses de prix survenues dans l'année
+  const rises = fe.filter(f => f.prevAmount != null && (f.prevAmountYM || "").startsWith(y) && parseFloat(f.amount) !== parseFloat(f.prevAmount));
+  const riseYear = r2(rises.reduce((s, f) => s + ((parseFloat(f.amount) || 0) - (parseFloat(f.prevAmount) || 0)) * 12, 0));
+  // Cagnottes au 1er janvier et au 31 décembre (reconstruit depuis le total actuel)
+  const now = (data.cagnottes || []).reduce((s, c) => s + (parseFloat(c.current) || 0), 0);
+  const cagEnd = r2(now - cagnotteFlowsAfter(data, `${y}-12-31`));
+  const cagStart = r2(now - cagnotteFlowsAfter(data, `${py}-12-31`));
+  const saved = t.sav - t.decag;
+  return {
+    year, hasPrev, partial: y === cur.slice(0, 4), monthsCount: t.months,
+    incomes: r2(t.inc), incomesPct: pct(t.inc, p.inc),
+    expenses: r2(t.exp), expensesPct: pct(t.exp, p.exp),
+    saved: r2(saved), rate: t.inc > 0 ? saved / t.inc : null,
+    cagStart, cagEnd, best, worst, cats,
+    fixedYear: r2(t.fixExp), rises: rises.length, riseYear,
+  };
 }
