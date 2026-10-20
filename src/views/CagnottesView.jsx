@@ -1,5 +1,5 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { fmt, currentYM, cagTypeOf, DEFAULT_CAG_TYPES } from "../utils.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { computeProjectStatus, computeCagnottesSummary } from "../hooks.js";
@@ -73,6 +73,20 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
   );
 }
 
+// v1.71.0 : petit anneau de progression vers l'objectif (cartes compactes)
+function ProgressRing({ ratio }) {
+  const C = 72.3, done = ratio >= 1;
+  const col = done ? "var(--success)" : "var(--purple)";
+  return (
+    <svg width="30" height="30" viewBox="0 0 30 30" style={{ flexShrink: 0 }} data-testid="cag-ring">
+      <circle cx="15" cy="15" r="11.5" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="3.5" />
+      <circle cx="15" cy="15" r="11.5" fill="none" stroke={col} strokeWidth="3.5" strokeLinecap="round"
+        strokeDasharray={`${(Math.min(1, ratio) * C).toFixed(1)} ${C}`} transform="rotate(-90 15 15)" />
+      <text x="15" y="18.3" textAnchor="middle" fontSize="8" fontWeight="800" fill="var(--text)">{done ? "✓" : Math.round(ratio * 100)}</text>
+    </svg>
+  );
+}
+
 export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving }) {
   // v1.53.0 — « grille compacte » : barre collée (total, transfert, nouvelle), récap
   // (v1.57.0 : net du mois, répartition par type, détail au toucher), projets en bandeau horizontal (détail complet au toucher), cartes basses.
@@ -93,18 +107,7 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
   const signed = n => `${n >= 0 ? "+" : "−"}${fmt(Math.abs(n))}`;
   const netCol = n => n >= 0 ? "var(--success)" : "var(--coral)";
 
-  // Barre collée sous l'en-tête (même principe que l'Historique et le Rapport)
-  const [stickyTop, setStickyTop] = useState(0);
-  useEffect(() => {
-    const h = document.querySelector(".bp-header");
-    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
-    upd(); window.addEventListener("resize", upd);
-    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
-    ro?.observe(h);
-    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
-  }, []);
-
-  const btn = pri => ({ height: 34, minWidth: 34, padding: "0 11px", borderRadius: 9, border: pri ? "none" : "1px solid var(--border)", background: pri ? "var(--accent)" : "var(--surface2)", color: pri ? "#06121c" : "var(--accent)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 });
+  const btn = pri => ({ height: 34, minWidth: 34, padding: "0 11px", borderRadius: 11, border: pri ? "1px solid var(--btn-pri-border, var(--accent))" : "1px solid var(--border)", background: pri ? "var(--btn-pri-bg, var(--accent))" : "var(--surface2)", color: pri ? "var(--btn-pri-text, #06121c)" : "var(--accent)", fontSize: ".72rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 });
   const secT = (txt, right) => (
     <div style={{ display: "flex", alignItems: "center", fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "4px 2px 6px" }}>
       <span style={{ flex: 1 }}>{txt}</span>{right}
@@ -120,27 +123,22 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
 
   return (
     <div>
-      {/* ── Barre collée : total + net du mois + actions, répartition, résumé (v1.57.0) ── */}
-      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)" }}>Total mis de côté</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, whiteSpace: "nowrap" }}>
-              <span data-testid="cag-total" style={{ fontFamily: "var(--display)", fontSize: "1.15rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(sum.total)}</span>
-              {(sum.month.sav > 0 || sum.month.decag > 0) && (
-                <span data-testid="cag-month-net" style={{ fontSize: ".62rem", fontWeight: 800, color: netCol(sum.month.net), fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis" }}>{signed(sum.month.net)} ce mois</span>
-              )}
-            </div>
-          </div>
-          <button onClick={onTransfer} style={btn(false)} title="Transfert">🔄</button>
-          <button onClick={onNewCag} style={btn(true)}>＋ Cagnotte</button>
+      {/* ── v1.71.0 : carte « Total mis de côté » (n'est plus collée) : total, net du mois, répartition, résumé, actions ── */}
+      <div data-testid="cag-total-card" className="card" style={{ padding: "11px 12px", marginBottom: 10, borderColor: "color-mix(in srgb, var(--purple) 40%, transparent)" }}>
+        <div style={{ fontSize: ".54rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)" }}>Total mis de côté</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginTop: 2 }}>
+          <span data-testid="cag-total" style={{ fontFamily: "var(--display)", fontSize: "1.45rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(sum.total)}</span>
+          {(sum.month.sav > 0 || sum.month.decag > 0) && (
+            <span data-testid="cag-month-net" style={{ fontSize: ".6rem", fontWeight: 800, padding: "3px 8px", borderRadius: 10, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums",
+              color: netCol(sum.month.net), background: `color-mix(in srgb, ${netCol(sum.month.net)} 13%, transparent)`, border: `1px solid color-mix(in srgb, ${netCol(sum.month.net)} 40%, transparent)` }}>{signed(sum.month.net)} ce mois</span>
+          )}
         </div>
         {sum.total > 0 && sum.byType.some(t => t.amount > 0) && (
-          <div data-testid="cag-type-bar" style={{ display: "flex", height: 7, borderRadius: 4, overflow: "hidden", marginTop: 7, background: "var(--surface3)" }}>
+          <div data-testid="cag-type-bar" style={{ display: "flex", height: 8, borderRadius: 5, overflow: "hidden", marginTop: 9, background: "var(--surface3)" }}>
             {sum.byType.filter(t => t.amount > 0).map(t => <i key={t.id || "none"} title={`${t.label} ${Math.round(t.pct)} %`} style={{ display: "block", height: "100%", width: `${t.pct}%`, background: t.color }} />)}
           </div>
         )}
-        <div data-testid="cag-recap-line" onClick={toggleRecap} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: ".66rem", color: "var(--text2)", cursor: "pointer" }}>
+        <div data-testid="cag-recap-line" onClick={toggleRecap} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: ".64rem", color: "var(--text2)", cursor: "pointer" }}>
           <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontVariantNumeric: "tabular-nums" }}>
             {MONTHS_ABBR[mIdx(sum.ym)]} <b style={{ color: netCol(sum.month.net) }}>{signed(sum.month.net)}</b>
             {sum.goal > 0
@@ -149,6 +147,10 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
             {sum.auto.monthly > 0 && <> · 🔁 {fmt(sum.auto.monthly)}/mois</>}
           </span>
           <b style={{ color: "var(--accent)", flexShrink: 0 }}>{recapOpen ? "Moins ▴" : "Détail ▾"}</b>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+          <button data-testid="cag-new" onClick={onNewCag} style={{ ...btn(true), flex: 1, height: 36 }}>＋ Cagnotte</button>
+          <button data-testid="cag-transfer" onClick={onTransfer} style={{ ...btn(false), flex: 1, height: 36, color: "var(--text)" }}>🔄 Transférer</button>
         </div>
       </div>
 
@@ -244,48 +246,34 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
       {cagnottes.length === 0
         ? <EmptyIllustration type="cagnottes" title="Aucune cagnotte" sub="Crée ta première cagnotte pour commencer à épargner" cta="＋ Créer une cagnotte" onCta={onNewCag} ctaColor="var(--success)" />
         : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+          <div data-testid="cag-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6 }}>
             {filtered.map(c => {
               const t = cagTypeOf(cagTypes, c.cagType);
-              const pct = c.target ? Math.min(100, (c.current / c.target) * 100) : 0;
-              const perMonth = (() => {
-                if (!c.target || !c.targetDate) return null;
-                const rem = c.target - c.current;
-                const today = new Date(), tgt = new Date(c.targetDate);
-                const months = Math.max(1, (tgt.getFullYear() - today.getFullYear()) * 12 + (tgt.getMonth() - today.getMonth()));
-                return rem > 0 ? rem / months : null;
-              })();
+              const ratio = c.target ? Math.max(0, c.current / c.target) : 0;
               const plan = plans.find(a => a.cagnotteId === c.id && a.enabled);
               const proj = projects.find(p => p.cagId === c.id);
               const isRounding = data.roundingEnabled && data.roundingCagnotteId === c.id;
-              const sub = [
-                c.target ? `${Math.round(pct)} % de ${fmt(c.target)}` : "pas d'objectif",
-                perMonth ? `≈ ${fmt(perMonth)}/mois` : null,
-              ].filter(Boolean).join(" · ");
-              const extra = [plan ? `🔁 ${fmt(plan.amount)} le ${plan.dayOfMonth}` : null, isRounding ? "🪙 arrondis" : null, proj ? `${proj.icon} ${proj.name}` : null].filter(Boolean).join(" · ");
+              const marks = [plan ? "🔁" : null, isRounding ? "🪙" : null, proj ? proj.icon : null].filter(Boolean).join(" ");
               return (
-                <div key={c.id} onClick={() => onShowCagHistory(c.id)}
-                  style={{ position: "relative", background: "var(--surface)", border: "1px solid var(--border)", borderLeft: `3px solid ${t ? t.color : "var(--khaki)"}`, borderRadius: 12, padding: "9px 10px", cursor: "pointer", minWidth: 0 }}>
-                  <button onClick={e => { e.stopPropagation(); onEditCag(c.id); }}
-                    style={{ position: "absolute", right: 4, top: 4, background: "none", border: "none", fontSize: ".72rem", padding: 4, cursor: "pointer", opacity: .75 }}>✏️</button>
-                  <div style={{ fontSize: ".74rem", fontWeight: 700, paddingRight: 22, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t ? t.icon : "🐷"} {c.name}</div>
-                  <div style={{ fontFamily: "var(--mono)", fontSize: ".84rem", fontWeight: 800, color: "var(--khaki)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{fmt(c.current)}</div>
-                  {c.target ? (
-                    <div style={{ height: 5, borderRadius: 3, background: "var(--surface3)", overflow: "hidden", marginTop: 5 }}>
-                      <div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: pct >= 100 ? "var(--success)" : "var(--khaki)" }} />
-                    </div>
-                  ) : null}
-                  <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                    onClick={!c.target ? e => { e.stopPropagation(); onEditCag(c.id); } : undefined}>
-                    {c.target ? sub : <span style={{ color: "var(--accent)" }}>＋ Définir un objectif</span>}
-                  </div>
-                  {extra && <div style={{ fontSize: ".54rem", color: "var(--text2)", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{extra}</div>}
+                <div key={c.id} data-cag={c.id} onClick={() => onShowCagHistory(c.id)} className="card"
+                  style={{ position: "relative", margin: 0, borderRadius: 14, padding: "8px 9px 8px 12px", cursor: "pointer", minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ position: "absolute", left: 0, top: 10, bottom: 10, width: 3, borderRadius: 2, background: t ? t.color : "var(--success)" }} />
+                  <span style={{ fontSize: "1.05rem", flexShrink: 0 }}>{t ? t.icon : "🐷"}</span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: ".66rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</span>
+                    <span style={{ display: "flex", alignItems: "baseline", gap: 4, minWidth: 0 }}>
+                      <b style={{ fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(c.current)}</b>
+                      {marks && <span style={{ fontSize: ".55rem", opacity: .85, whiteSpace: "nowrap", overflow: "hidden" }}>{marks}</span>}
+                    </span>
+                  </span>
+                  {c.target ? <ProgressRing ratio={ratio} /> : null}
                 </div>
               );
             })}
           </div>
         )
       }
+      {cagnottes.length > 0 && <div style={{ fontSize: ".58rem", color: "var(--text3)", margin: "7px 4px 0" }}>Toucher une cagnotte : verser, retirer, transférer, objectif, historique, modifier.</div>}
     </div>
   );
 }
