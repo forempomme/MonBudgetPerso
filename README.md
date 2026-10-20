@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.70.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.71.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.70.0
+└── package.json         — version: 1.71.0
 ```
 
 ---
@@ -342,6 +342,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.71.0** | minor | **Écrans plus lisibles** — *Bouton +* opaque (bleu plein, bord clair) et, menu ouvert, fond de l'écran légèrement flouté pour faire ressortir les choix (menu sur fond plein). *Historique* : nouvelle vue **Frise** par défaut — une bulle par jour sur une ligne de temps, total du jour, lignes avec icône teintée de la catégorie, badges (chèque, montants à part, tags, « ↩️ X € attendus »), montant coloré par type et rond de pointage à droite ; toucher une ligne ouvre Pointer / Modifier / Dupliquer / Supprimer, le glissement vers la gauche reste. Vues Par type, Liste, Catégories et Calendrier toujours dans ⚙️ › Vue, filtres et sections à confirmer inchangés. *Cagnottes* : carte « Total mis de côté » avec ＋ Cagnotte / 🔄 Transférer, cartes compactes sur 2 colonnes (montant violet, anneau d'objectif, liseré du type, repères 🔁 🪙 projet) ; toucher une cagnotte ouvre sa fiche avec Verser / Retirer / Transférer (pré-réglés sur elle), objectif, historique et ✏️ Modifier. *Fixes* : frise du mois (un point par échéance, trait « aujourd'hui ») et échéancier rangé par jour avec bulle du jour, statut (✓ / à pointer / à venir) et la même barre d'actions (pointer, jour, pause, modifier, supprimer) ; sections En pause et Commencent plus tard ; prévisions ponctuelles en lignes. Accueil et saisies inchangés. |
 | **1.70.0** | minor | **Thèmes « Verre bleu »** — nouveau groupe Options › 🎨 Apparence : *Verre bleu · Abysse* (par défaut), *Verre bleu · Glacier*, ou *Aube (classique)*, le thème d'origine conservé à l'identique. Thèmes verre : fond à halos bleus, cartes et feuilles en verre dépoli, barre d'onglets flottante arrondie, bouton + en dégradé bleu, titres en DM Sans. Code couleur des cartes et pastilles inchangé (violet réservé aux cagnottes). Interrupteur « Effets de verre » pour couper le flou. Choix enregistré dans les données (donc dans les sauvegardes). Copie de l'ancien CSS dans `theme-backup/`. Aucun écran ni fonction modifié. |
 | **1.69.1** | patch | Un « À recevoir » saisi seul (sans dépense liée) est lui aussi compté dans le solde estimé jusqu'à sa réception (retard compté depuis sa date prévue ou sa création). |
 | **1.69.0** | minor | **Remboursements attendus comptés** — une dépense marquée « sera remboursée » compte le remboursement dans le solde estimé (nouvelle ligne « ↩️ Remboursements attendus » dans le détail), donc dans le reste à vivre et la projection, dès sa saisie et jusqu'à sa réception (il devient alors un revenu normal : jamais compté deux fois). La part remboursée (attendue ou reçue) n'est plus comptée dans le budget courses ni dans le Rapport par catégorie. Pastille « … à recevoir · comptés », ⚠️ après un délai réglable (Options › Budget & prévisions › Remboursements attendus, 15 j par défaut). Un « À recevoir » sans dépense liée n'est pas compté. |
