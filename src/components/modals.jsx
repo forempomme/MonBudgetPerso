@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, isActiveForMonth } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, fixedCashYM, isActiveForMonth, plannedChangeFor, fixedAmountFor } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
 const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -1090,6 +1090,8 @@ function addMonthsYM(ym, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 const ymLabel = ym => ym ? `${MONTHS_SHORT[parseInt(ym.slice(5, 7), 10) - 1]} ${ym.slice(0, 4)}` : "";
+const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 /** Date locale + n jours → "YYYY-MM-DD" (jamais toISOString : UTC) */
 function plusDaysISO(n) {
   const d = new Date(); d.setDate(d.getDate() + n);
@@ -1338,7 +1340,7 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
 //  l'autre ; en modification le type est verrouillé (un frais existant
 //  reste un frais).
 // ─────────────────────────────────────────────────────────────────
-function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedIncomes = [], transactions = [], editingIdx, onSaveExpense, onSaveIncome, onClose }) {
+function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedIncomes = [], transactions = [], editingIdx, onSaveExpense, onSaveIncome, onClose, previewLow }) {
   const toast = useToast();
   const isEdit = editingIdx != null;
   const [kind, setKind] = useState(initialKind);
@@ -1355,6 +1357,9 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   // v1.64.0 : montant prévu fixe ou automatique (moyenne des 3 derniers réels) + budget du mois suivant
   const [amountMode, setAmountMode] = useState(f?.amountMode || "fixed");
   const [advance, setAdvance] = useState(!!f?.advance);
+  // v1.68.0 : changements de revenu prévus sur une période (congé, temps partiel…)
+  const [planned, setPlanned] = useState(f?.plannedChanges || []);
+  const [newPlan, setNewPlan] = useState(null); // { from, until, amount, label } en cours d'ajout
   const [paused,      setPaused]      = useState(f?.paused || false);
   const [pausedFrom,  setPausedFrom]  = useState(f?.pausedFrom || "");
   const [pausedUntil, setPausedUntil] = useState(f?.pausedUntil || "");
@@ -1390,7 +1395,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       pausedFrom:  paused ? (pausedFrom || curM) : null,
       pausedUntil: paused ? (pausedUntil || null) : null,
       pauseHistory: pastPauses.length ? pastPauses : undefined,
-      ...(isInc ? { amountMode, advance } : {}),
+      ...(isInc ? { amountMode, advance, plannedChanges: planned.length ? planned : undefined } : {}),
     };
     if (isInc) onSaveIncome({ idx: editingIdx, income: payload });
     else       onSaveExpense({ idx: editingIdx, fixed: payload });
@@ -1467,6 +1472,88 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
         ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
       ]} />
+      {isInc && (() => {
+        // v1.68.0 : changements prévus + effet sur la projection (3 mois)
+        const base = autoOn && autoAmt != null ? autoAmt : (amountOf(amt) || 0);
+        const months = c => { const [y1, m1] = c.from.split("-").map(Number), [y2, m2] = (c.until || c.from).split("-").map(Number); return (y2 - y1) * 12 + m2 - m1 + 1; };
+        const draft = isEdit ? { ...f, amount: base, amountMode, advance, day, plannedChanges: planned } : null;
+        // Point bas pendant / après le changement (pas avant : un creux déjà prévu sans lui ne le concerne pas)
+        const low = (() => {
+          if (!draft || !planned.length || !previewLow) return null;
+          const pv = previewLow(draft), pv0 = previewLow({ ...draft, plannedChanges: [] });
+          const startCash = fixedCashYM(draft, planned[0].from);
+          const lowOf = v => { let lo = null; (v?.days || []).forEach(d => { if (d.date.slice(0, 7) >= startCash && (lo == null || d.balance < lo.balance)) lo = d; }); return lo; };
+          const lo = lowOf(pv), lo0 = lowOf(pv0);
+          if (!lo) return null;
+          // Alerte seulement si le changement creuse vraiment le point bas (sinon le creux existe déjà sans lui)
+          if (lo0 && lo.balance >= lo0.balance - 1) return { ...lo, notCaused: true };
+          const next = new Date(lo.date + "T12:00:00"); next.setDate(next.getDate() + 1);
+          const nextISO = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+          return { ...lo, beforePay: (pv.pays || []).some(p => p === lo.date || p === nextISO) };
+        })();
+        const horizonEnd = addMonthsYM(curM, 3);
+        const inHorizon = planned.some(c => c.from <= horizonEnd && (c.until || c.from) >= curM);
+        const lowYM = low?.date?.slice(0, 7);
+        const k = lowYM ? Math.max(1, (parseInt(lowYM.slice(0, 4), 10) - parseInt(curM.slice(0, 4), 10)) * 12 + parseInt(lowYM.slice(5, 7), 10) - parseInt(curM.slice(5, 7), 10)) : 1;
+        const perMonth = low && low.balance < 0 ? Math.ceil(-low.balance / k / 10) * 10 : 0;
+        const pill = (on, col) => ({ padding: "5px 10px", borderRadius: 14, fontSize: ".64rem", fontWeight: 700, cursor: "pointer", border: `1px solid ${on ? col : "var(--border)"}`, color: on ? col : "var(--text2)", background: "transparent" });
+        const inp = { width: "100%", boxSizing: "border-box", fontSize: ".72rem", padding: "7px 6px" };
+        return (
+          <div data-testid="planned-changes" style={{ marginBottom: 10 }}>
+            <SectionLabel color="var(--warning)">Changements prévus</SectionLabel>
+            {planned.map((c, i) => (
+              <div key={c.id || i} data-testid="planned-item" style={{ borderRadius: 12, padding: "9px 11px", marginBottom: 6, background: "rgba(200,184,96,.07)", border: "1px solid rgba(200,184,96,.4)", fontSize: ".7rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <b style={{ flex: 1 }}>{c.from === (c.until || c.from) ? ymLabel(c.from) : `${ymLabel(c.from)} → ${ymLabel(c.until)}`}</b>
+                  <b style={{ color: "var(--warning)" }}>{fmt(parseFloat(c.amount) || 0)}/mois</b>
+                  <span {...tap(() => setPlanned(list => list.filter((_, j) => j !== i)))} style={{ color: "var(--text3)", cursor: "pointer", padding: "0 2px" }}>✕</span>
+                </div>
+                <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 3 }}>
+                  {c.label ? `« ${c.label} » · ` : ""}au lieu de {fmt(base)} · {signed((parseFloat(c.amount) - base) * months(c))} sur la période
+                </div>
+                <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 2 }}>Ces mois sont exclus automatiquement de la moyenne.</div>
+              </div>
+            ))}
+            {!newPlan && <span data-testid="planned-add" style={pill(false, "var(--accent)")} {...tap(() => setNewPlan({ from: addMonthsYM(curM, 1), until: addMonthsYM(curM, 1), amount: "", label: "" }))}>＋ Ajouter un changement</span>}
+            {newPlan && (
+              <div style={{ padding: 10, borderRadius: 12, border: "1px solid var(--border)", background: "var(--surface2)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  <div><div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>DU MOIS</div>
+                    <input data-testid="planned-from" type="month" value={newPlan.from} min={curM} onChange={e => setNewPlan(v => ({ ...v, from: e.target.value, until: v.until < e.target.value ? e.target.value : v.until }))} style={inp} /></div>
+                  <div><div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>AU MOIS (INCLUS)</div>
+                    <input data-testid="planned-until" type="month" value={newPlan.until} min={newPlan.from} onChange={e => setNewPlan(v => ({ ...v, until: e.target.value }))} style={inp} /></div>
+                  <div><div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>MONTANT / MOIS</div>
+                    <input data-testid="planned-amount" inputMode="decimal" value={newPlan.amount} placeholder="1600" onChange={e => setNewPlan(v => ({ ...v, amount: e.target.value }))} style={inp} /></div>
+                  <div><div style={{ fontSize: ".55rem", color: "var(--text3)", marginBottom: 3 }}>MOTIF (OPTIONNEL)</div>
+                    <input data-testid="planned-label" value={newPlan.label} placeholder="Congé…" onChange={e => setNewPlan(v => ({ ...v, label: e.target.value }))} style={inp} /></div>
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                  <span style={pill(false, "var(--text2)")} {...tap(() => setNewPlan(null))}>Annuler</span>
+                  <span data-testid="planned-ok" style={pill(true, "var(--accent)")} {...tap(() => {
+                    const amtN = amountOf(String(newPlan.amount));
+                    if (!newPlan.from || !newPlan.until || newPlan.until < newPlan.from || isNaN(amtN) || amtN < 0) return;
+                    setPlanned(list => [...list.filter(c => (c.until || c.from) < newPlan.from || c.from > newPlan.until),
+                      { id: uid("pc"), from: newPlan.from, until: newPlan.until, amount: amtN, label: newPlan.label.trim() || undefined }].sort((x, y) => x.from.localeCompare(y.from)));
+                    setNewPlan(null);
+                  })}>OK</span>
+                </div>
+              </div>
+            )}
+            {planned.length > 0 && isEdit && (
+              low && low.balance < 0 && !low.notCaused && inHorizon ? (
+                <div data-testid="planned-alert" style={{ marginTop: 8, borderRadius: 12, padding: "10px 12px", background: "rgba(200,112,112,.08)", border: "1px solid rgba(200,112,112,.45)", fontSize: ".64rem", lineHeight: 1.5 }}>
+                  ⚠️ <b style={{ color: "var(--danger)" }}>{cap(ymLabel(lowYM))} : solde au plus bas {signed(low.balance)}</b> le {(() => { const t = shortDateFR(low.date) + (low.beforePay ? ", juste avant la paie" : ""); return /\.$/.test(t) ? t : t + "."; })()}<br />
+                  Pour rester au-dessus de 0 € : mettre de côté <b>~{fmt(perMonth).replace(",00", "")} de moins par mois</b> d'ici là, ou prévoir un retrait de cagnotte.
+                </div>
+              ) : (
+                <div data-testid="planned-ok-note" style={{ marginTop: 8, fontSize: ".6rem", color: "var(--text3)", lineHeight: 1.5 }}>
+                  {inHorizon ? (low?.notCaused && low.balance < 0 ? "Ce changement ne creuse pas le point bas des 3 prochains mois (déjà négatif sans lui : voir la Projection)." : "✓ La projection sur 3 mois reste au-dessus de 0 € avec ce changement.") : "La projection va à 3 mois : l'alerte éventuelle apparaîtra quand la période sera à moins de 3 mois."}
+                </div>
+              )
+            )}
+          </div>
+        );
+      })()}
       <OptionsField hint="Mettre en pause, pauses passées…"
         chips={[
           ...(paused ? [[`⏸️ En pause${pausedUntil ? " → " + ymLabel(pausedUntil) : ""}`, "var(--warning)", "var(--warning-glow)"]] : []),
@@ -1555,8 +1642,8 @@ export function FixedModal({ categories, fixedExpenses, fixedIncomes, transactio
     editingIdx={editingIdx} onSaveExpense={onSave} onSaveIncome={onSaveIncome || (() => {})} onClose={onClose} />;
 }
 
-export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, transactions, editingIdx, onSave, onSaveExpense, onClose }) {
-  return <FixedFormModal initialKind="income" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes} transactions={transactions}
+export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, transactions, editingIdx, onSave, onSaveExpense, onClose, previewLow }) {
+  return <FixedFormModal initialKind="income" categories={categories} fixedExpenses={fixedExpenses} fixedIncomes={fixedIncomes} transactions={transactions} previewLow={previewLow}
     editingIdx={editingIdx} onSaveExpense={onSaveExpense || (() => {})} onSaveIncome={onSave} onClose={onClose} />;
 }
 
@@ -1565,7 +1652,7 @@ export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, tran
 //  (revenus en montant prévu « automatique » : salaire variable…)
 // ─────────────────────────────────────────────────────────────────
 export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onClose }) {
-  const predicted = parseFloat(income.monthlyOverrides?.[ym]?.amount ?? income.amount) || 0;
+  const predicted = fixedAmountFor(income, ym);
   const [amt, setAmt] = useState(toPadStr(predicted));
   const fresh = useRef(true);
   const a = amountOf(amt);
@@ -1573,7 +1660,8 @@ export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onC
   const diff = ok ? Math.round((a - predicted) * 100) / 100 : 0;
   const paid = fixedCashDateISO(income, ym);
   // v1.67.0 : mois exceptionnel → compté au budget, exclu de la moyenne du montant prévu
-  const [excl, setExcl] = useState(!!income.avgExcluded?.[ym]);
+  const planned = plannedChangeFor(income, ym);   // v1.68.0 : mois d'un changement prévu → déjà exclu
+  const [excl, setExcl] = useState(!!income.avgExcluded?.[ym] || !!planned);
   const isAuto = income.amountMode === "auto";
   const simulate = ex => ok ? autoIncomeAmount({
     ...income,
