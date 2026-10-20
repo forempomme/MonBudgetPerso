@@ -1149,13 +1149,8 @@ export default function App() {
       })()}
       <div style={{ position:"fixed", bottom:110, right:18, zIndex:104, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
         {fabOpen && (
-          <div data-testid="fab-menu" style={{
-            background:"var(--fab-menu-panel, var(--surface))", border:"1px solid var(--border)",
-            borderRadius:14, padding:"8px",
-            boxShadow:"0 8px 32px rgba(0,0,0,.6)",
-            display:"flex", flexDirection:"column", gap:6,
-            animation:"fabItemIn .15s cubic-bezier(.34,1.56,.64,1) both",
-          }}>
+          /* v1.73.0 : comme le mockup — pas de panneau, une étiquette + une pastille ronde par type */
+          <div data-testid="fab-menu" style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:8 }}>
           {[
             { type:"reimbursement",      icon:"↩️", label:"À recevoir", color:"#5cc8c0"        },
             { type:"balance_adjustment", icon:"⚖️", label:"Équilibre",  color:"var(--sapin)"   },
@@ -1165,7 +1160,7 @@ export default function App() {
             { type:"income",             icon:"💰", label:"Revenu",     color:"var(--success)" },
             { type:"expense",            icon:"💸", label:"Dépense",    color:"var(--danger)"  },
           ].map((item, i) => (
-            <div key={item.type}
+            <div key={item.type} data-fab-item={item.type}
               onClick={() => {
                 setFabOpen(false);
                 if (item.type === "scheduled") setScheduledModal(true);
@@ -1174,23 +1169,23 @@ export default function App() {
                 else setTransModal({ editingId: null, defaultType: item.type });
               }}
               style={{
-                display:"flex", alignItems:"center", gap:10, cursor:"pointer",
-                padding:"6px 8px", borderRadius:9,
-                background:"var(--fab-menu-bg, var(--surface2))",
-                border:`1px solid var(--border)`,
-                animation:`fabItemIn .2s ${i * 0.04}s both cubic-bezier(.34,1.56,.64,1)`,
+                display:"flex", alignItems:"center", gap:9, cursor:"pointer",
+                animation:`fabItemIn .2s ${i * 0.035}s both cubic-bezier(.34,1.56,.64,1)`,
               }}>
               <span style={{
-                flex:1,
-                fontSize:".68rem", fontWeight:700, color:item.color,
+                fontSize:".72rem", fontWeight:800, color:"var(--text)", whiteSpace:"nowrap",
+                padding:"6px 11px", borderRadius:11, background:"var(--fab-menu-bg, var(--surface2))", border:"1px solid var(--border)",
+                boxShadow:"0 4px 14px rgba(0,0,0,.4)",
               }}>{item.label}</span>
-              <div style={{
-                width:34, height:34, borderRadius:"50%",
-                background:`color-mix(in srgb, ${item.color} 16%, var(--fab-menu-bg, var(--surface2)))`, border:`1.5px solid color-mix(in srgb, ${item.color} 55%, transparent)`,
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:".95rem",
-              }}>{item.icon}</div>
+              <span style={{
+                width:44, height:44, borderRadius:"50%", flexShrink:0,
+                background:"var(--fab-menu-bg, var(--surface2))", border:`2px solid ${item.color}`,
+                display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.15rem",
+                boxShadow:"0 4px 14px rgba(0,0,0,.4)",
+              }}>{item.icon}</span>
             </div>
           ))}
+          <div style={{ fontSize:".58rem", color:"var(--text2)", marginTop:1, marginRight:4 }}>Appui long sur + : modèles rapides</div>
           </div>
         )}
         {/* Le bouton .fab a position:fixed dans le CSS — on l'override avec position:relative.
