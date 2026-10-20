@@ -17,7 +17,7 @@
 //  sous-total, lignes de détail sous l'opération, « CARTE jj/mm » = date d'achat.
 // ─────────────────────────────────────────────────────────────────
 
-import { resolveFixedDay, fixedOccurrenceYM, isActiveForMonth } from "./utils.js";
+import { resolveFixedDay, fixedOccurrenceYM, isActiveForMonth, fixedAmountFor } from "./utils.js";
 
 const NUM = /^-?\+?\d{1,3}(?:[  .]\d{3})*,\d{2}(?:\s*€)?$/;
 const toNum = s => parseFloat(String(s).replace(/[€\s  ]/g, "").replace(/\./g, "").replace(",", "."));
@@ -225,7 +225,7 @@ export function appMovements(data, start, end, margin = 5) {
   [["fixedExpenses", -1, "📌"], ["fixedIncomes", 1, "💰"]].forEach(([key, sign, ic]) => (data[key] || []).forEach(f => months.forEach(ym => {
     const oym = fixedOccurrenceYM(f, ym);
     if (!isActiveForMonth(f, oym)) return;
-    const a = parseFloat(f.monthlyOverrides?.[oym]?.amount ?? f.amount) || 0;
+    const a = fixedAmountFor(f, oym);
     if (!a) return;
     const day = resolveFixedDay(f.day, ym);
     const date = day ? `${ym}-${pad2(day)}` : null;
