@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM } from "../utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM, fixedAmountFor } from "../utils.js";
 import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
@@ -75,7 +75,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
       {open && (
         <div style={{
           position: "absolute", top: 18, right: 0,
-          background: "#141618", border: `1px solid ${status.color}`,
+          background: "var(--tooltip-bg, #141618)", border: `1px solid ${status.color}`,
           borderRadius: 10, padding: "10px 12px", width: 200,
           boxShadow: `0 4px 20px rgba(0,0,0,.5)`,
           animation: "fade-in-down .15s ease",
@@ -136,11 +136,12 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
   // v1.45.0 : le détail du calcul (panneau ouvert en touchant le montant)
   // et le montant lui-même viennent de la même fonction.
-  const breakdown = useBalanceBreakdown(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || []);
+  const reimbLateDays = parseInt(data.restSettings?.reimbLateDays, 10) || 15;   // v1.69.0 : délai de retard réglable
+  const breakdown = useBalanceBreakdown(transactions, fixedExpenses, data.fixedIncomes || [], data.recurringTemplates || [], data.scheduledTransactions || [], data.reimbursements || [], reimbLateDays);
   const balance   = breakdown.total;
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   // v1.46.0 : budget courses restant — informatif, jamais déduit du solde
-  const grocery = useGroceryBudget(transactions, data.categories, data.groceryBudget);
+  const grocery = useGroceryBudget(transactions, data.categories, data.groceryBudget, data.reimbursements || []);
   // v1.48.0 : solde jour par jour, reste à vivre, remboursements attendus
   const forecast = useMemo(() => computeDailyForecast(data, breakdown, grocery), [data, breakdown, grocery]);
   const rest     = useMemo(() => computeRestToLive(data, breakdown, grocery, forecast), [data, breakdown, grocery, forecast]);
@@ -319,7 +320,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
     // v1.64.0 : occurrence versée ce mois-ci (revenu compté dans le budget du mois suivant → M+1)
     return fixedIncomes.map(f => ({ f, ym: fixedOccurrenceYM(f, curM) }))
       .filter(({ f, ym }) => isActiveForMonth(f, ym) && !f.pointedMonths?.[ym])
-      .map(({ f, ym }) => ({ ...f, _ym: ym, amount: f.monthlyOverrides?.[ym]?.amount ?? f.amount }));
+      .map(({ f, ym }) => ({ ...f, _ym: ym, amount: fixedAmountFor(f, ym) }));
   }, [data.fixedIncomes, curM]);
 
   function daysUntil(dateStr) {
@@ -491,7 +492,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         ref={heroCardRefs[0]}
         data-testid="hero-card"
         style={{
-          background: "linear-gradient(135deg, #0c1830 0%, #182a48 45%, #101e38 100%)",
+          background: "var(--hero-solde, linear-gradient(135deg, #0c1830 0%, #182a48 45%, #101e38 100%))",
           border: "none",
           boxShadow: "0 4px 24px rgba(112,184,224,.2)",
           overflow: "hidden",
@@ -576,7 +577,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                 )}
                 {reimbs.length > 0 && (
                   <span role="button" onClick={() => { if (touchMoved()) return; setReimbOpen(true); }} style={heroPill("#a6e3a1", "rgba(104,212,152,.1)")}>
-                    ↩️ {fmt(reimbs.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0))} à recevoir{reimbs.some(r => r.late > 15) ? " ⚠️" : ""}
+                    ↩️ {fmt(reimbs.reduce((t, r) => t + (parseFloat(r.amount) || 0), 0))} à recevoir{breakdown.reimbursements.total > 0 ? " · comptés" : ""}{reimbs.some(r => r.late > reimbLateDays) || breakdown.reimbursements.items.some(x => x.late) ? " ⚠️" : ""}
                   </span>
                 )}
                 {provTotal > 0 && (
@@ -630,7 +631,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
       {/* ── Carte Projection (médiane des dépenses courantes) ── */}
       <div className="hero-card" ref={heroCardRefs[1]} style={{
-        background: "linear-gradient(135deg, #101f18 0%, #16321f 45%, #0e1e18 100%)",
+        background: "var(--hero-proj, linear-gradient(135deg, #101f18 0%, #16321f 45%, #0e1e18 100%))",
         border: "none", boxShadow: "0 4px 24px rgba(104,212,152,.15)",
         overflow: "hidden", padding: "18px 16px 16px",
       }}>
