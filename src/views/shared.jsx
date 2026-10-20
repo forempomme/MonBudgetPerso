@@ -233,7 +233,7 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
               {selTag && (
                 <div>
                   {/* Hero résumé */}
-                  <div style={{ background:"linear-gradient(135deg,#0c1830,#182a48)", borderRadius:12, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${selTag.color}` }}>
+                  <div style={{ background:"var(--hero-solde, linear-gradient(135deg,#0c1830,#182a48))", borderRadius:12, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${selTag.color}` }}>
                     <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.5)", marginBottom:6 }}>{selTag.icon} {selTag.name} · {tagTxs.length} opération{tagTxs.length!==1?"s":""}</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
                       {[
