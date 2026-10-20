@@ -173,7 +173,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
@@ -294,7 +294,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const restCfg = data.restSettings || { enabled: true, margin: 0 };
   // Budget courses (v1.46.0) — informatif
   const groceryCfg  = data.groceryBudget || { enabled: true, categoryIds: null, months: 2 };
-  const grocery     = useGroceryBudget(data.transactions, data.categories, groceryCfg);
+  const grocery     = useGroceryBudget(data.transactions, data.categories, groceryCfg, data.reimbursements || []);
   const groceryCats = groceryCategoryIds(data.categories, groceryCfg);
 
   const backupLate = !last || daysSinceBackup > 7;
@@ -312,6 +312,10 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: restCfg.enabled !== false,
           hint: "Reste à vivre masqué",
           desc: "Par jour jusqu'à la paie" },
+        { id:"reimb", icon:"↩️", label:"Remboursements attendus",
+          badge: `retard après ${parseInt(restCfg.reimbLateDays, 10) || 15} j`,
+          configured: true, hint: "",
+          desc: "Comptés dans le solde jusqu'à leur réception" },
         { id:"alert", icon:"🔔", label:"Alerte solde bas",
           badge: alertOn ? `${thresh} €` : "Désactivé",
           configured: alertOn,
@@ -443,6 +447,49 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       )}
 
       {/* ── Menu groupé ── */}
+      {/* ── 🎨 Apparence (v1.70.0) : bascule entre les thèmes, l'original « Aube » reste disponible ── */}
+      {(() => {
+        const cur = ["abysse", "glacier", "aube"].includes(data.appTheme) ? data.appTheme : "abysse";
+        const glassOn = data.glassEffects !== false;
+        const THEMES = [
+          { id: "abysse",  name: "Verre bleu · Abysse",  desc: "Bleu marine profond, cartes en verre", sw: "radial-gradient(80% 80% at 0% 0%,#123a6e,transparent 70%),radial-gradient(80% 80% at 100% 100%,#0a5576,transparent 70%),#050b18" },
+          { id: "glacier", name: "Verre bleu · Glacier", desc: "Bleu acier et cyan, plus lumineux", sw: "radial-gradient(80% 80% at 0% 0%,#1d5a8f,transparent 70%),radial-gradient(80% 80% at 100% 100%,#13788f,transparent 70%),#071321" },
+          { id: "aube",    name: "Aube (classique)",     desc: "Le thème d'origine, inchangé", sw: "#060810" },
+        ];
+        return (
+          <div>
+            <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"12px 2px 6px" }}>🎨 Apparence</div>
+            <div data-testid="appearance" style={{ background:"var(--surface)", borderRadius:14, overflow:"hidden", border:"1px solid var(--border)" }}>
+              {THEMES.map((t, i) => (
+                <div key={t.id} data-theme-opt={t.id} onClick={() => onSaveAppearance?.({ appTheme: t.id })}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderTop: i>0 ? "1px solid var(--border-soft)" : "none", cursor:"pointer",
+                    background: cur === t.id ? "rgba(112,184,224,.10)" : "transparent" }}>
+                  <span style={{ width:34, height:34, borderRadius:10, flexShrink:0, background:t.sw, border:`1.5px solid ${cur === t.id ? "var(--accent)" : "rgba(255,255,255,.18)"}` }} />
+                  <span style={{ flex:1, minWidth:0 }}>
+                    <span style={{ display:"block", fontSize:".78rem", fontWeight:700 }}>{t.name}</span>
+                    <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{t.desc}</span>
+                  </span>
+                  {cur === t.id && <span style={{ color:"var(--accent)", fontWeight:800 }}>✓</span>}
+                </div>
+              ))}
+              {cur !== "aube" && (
+                <div data-testid="glass-toggle" onClick={() => onSaveAppearance?.({ glassEffects: !glassOn })}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderTop:"1px solid var(--border-soft)", cursor:"pointer" }}>
+                  <span style={{ fontSize:".95rem", width:20, textAlign:"center", flexShrink:0 }}>🫧</span>
+                  <span style={{ flex:1, minWidth:0 }}>
+                    <span style={{ display:"block", fontSize:".78rem", fontWeight:600 }}>Effets de verre</span>
+                    <span style={{ display:"block", fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Flou derrière les cartes · à couper si l'appli rame</span>
+                  </span>
+                  <span style={{ width:40, height:22, borderRadius:11, background: glassOn ? "var(--accent)" : "var(--border)", position:"relative", flexShrink:0 }}>
+                    <span style={{ position:"absolute", top:3, left: glassOn ? 21 : 3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {GROUPS.map(group => (
         <div key={group.title}>
           <div style={{ fontSize:".6rem", fontWeight:800, color:"var(--text3)", textTransform:"uppercase", letterSpacing:".1em", margin:"12px 2px 6px" }}>
@@ -723,6 +770,33 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               </div>
               <div style={{ fontSize:".6rem", color:"var(--text3)", lineHeight:1.5 }}>
                 Somme que tu veux garder de côté sur le compte : elle est retirée avant de diviser par le nombre de jours. La date de paie vient du « jour de versement » de ton revenu fixe le plus élevé (Fixes → ✏️) ; sans elle, le calcul va jusqu'à la fin du mois.
+              </div>
+            </>
+          );
+        })()}
+      </Sheet>
+
+      {/* ↩️ Remboursements attendus (v1.69.0) */}
+      <Sheet open={openSheet==="reimb"} onClose={close} title="↩️ Remboursements attendus">
+        {(() => {
+          const days = parseInt(restCfg.reimbLateDays, 10) || 15;
+          return (
+            <>
+              <div style={{ fontSize:".66rem", color:"var(--text2)", lineHeight:1.5, marginBottom:12 }}>
+                Un remboursement attendu (dépense marquée « sera remboursée » ou « À recevoir » saisi seul) compte dans le <b style={{ color:"var(--text)" }}>solde estimé</b>, le reste à vivre et la projection dès sa saisie ; la part remboursée d'une dépense ne compte pas dans tes courses. Quand tu touches « Reçu », il devient une opération normale : jamais compté deux fois.
+              </div>
+              <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>⚠️ En retard après (jours)</div>
+              <input data-testid="reimb-late-days" type="number" min="1" step="1" value={days}
+                onChange={e => onSaveRestSettings?.({ reimbLateDays: Math.max(1, parseInt(e.target.value, 10) || 15) })}
+                style={{ width:"100%", background:"var(--bg)", border:"1.5px solid var(--success)", borderRadius:9, padding:"11px 14px", color:"var(--text)", fontSize:"1.1rem", fontFamily:"var(--mono)", boxSizing:"border-box", marginBottom:10 }} />
+              <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+                {[7,15,30,45].map(v => (
+                  <button key={v} onClick={() => onSaveRestSettings?.({ reimbLateDays: v })}
+                    style={{ flex:1, background:days===v?"rgba(104,212,152,.15)":"transparent", border:`1px solid ${days===v?"var(--success)":"var(--border)"}`, borderRadius:8, padding:"8px 0", color:days===v?"var(--success)":"var(--text3)", fontSize:".68rem", fontWeight:700, cursor:"pointer" }}>{v} j</button>
+                ))}
+              </div>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", lineHeight:1.5 }}>
+                Compté à partir de la date prévue du remboursement (ou de la dépense si aucune date). En retard, il reste compté mais s'affiche ⚠️ sur l'accueil : annule-le s'il ne viendra pas.
               </div>
             </>
           );
