@@ -455,15 +455,10 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
   // ── v1.60.0 : cartes différenciées (fond teinté + pastille d'icône + titres de section) ──
   const CARD_COL = { chq: "#8fb4f0", ven: "#d2dff5", cag: "#b090e0", fix: "#e8944a", bil: "#70b8e0" };
-  const tintCard = col => ({ background: `linear-gradient(135deg, color-mix(in srgb, ${col} 20%, var(--surface)), var(--surface) 75%)`, border: `1px solid color-mix(in srgb, ${col} 35%, var(--border))` });
-  const iconBox = (col, emoji, size = 34) => (
-    <span style={{ width: size, height: size, borderRadius: 10, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-      fontSize: size > 30 ? "1.05rem" : ".92rem", background: `color-mix(in srgb, ${col} 18%, transparent)`, border: `1px solid color-mix(in srgb, ${col} 40%, transparent)` }}>{emoji}</span>
-  );
+  // v1.73.0 : cartes harmonisées avec le reste de l'appli (verre + liseré teinté, plus de pastille d'icône)
+  const tintCard = col => ({ background: `color-mix(in srgb, ${col} 6%, var(--surface))`, border: `1px solid color-mix(in srgb, ${col} 42%, transparent)` });
   const secTitle = (txt, id) => (
-    <div data-testid={id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 2px 8px" }}>
-      <span>{txt}</span><span style={{ flex: 1, height: 1, background: "var(--border-soft)" }} />
-    </div>
+    <div data-testid={id} style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 3px 6px" }}>{txt}</div>
   );
   const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0
     || unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0;
@@ -877,10 +872,10 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         const alertCol = oldest.level === "expired" || oldest.level === "veryold" ? "var(--danger)" : oldest.level === "old" ? "var(--warning)" : "var(--text2)";
         return (
           <div data-testid="card-cheques" onClick={() => setChequesOpen(true)} style={{
-            display: "flex", alignItems: "center", gap: 11, margin: "0 0 10px", padding: "10px 13px", borderRadius: 14,
+            display: "flex", alignItems: "center", gap: 10, margin: "0 0 7px", padding: "10px 12px", borderRadius: 16,
             ...tintCard(CARD_COL.chq), cursor: "pointer",
           }}>
-            {iconBox(CARD_COL.chq, "🧾")}
+            <span style={{ fontSize: "1.1rem" }}>🧾</span>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: ".7rem", fontWeight: 800, color: CARD_COL.chq }}>
                 {pend.length} chèque{pend.length > 1 ? "s" : ""} non encaissé{pend.length > 1 ? "s" : ""} · {fmt(total)}
@@ -1009,15 +1004,11 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
         return (
           <>
-            <style>{`@keyframes av-sh{0%{left:-60%;opacity:0}20%{opacity:1}80%{opacity:1}100%{left:110%;opacity:0}}`}</style>
 
             {/* Carte déclencheur — état fermé, inchangée visuellement */}
-            <div data-testid="card-upcoming" onClick={()=>setOpenUpcoming(true)} style={{ overflow:"hidden", borderRadius:14, ...tintCard(CARD_COL.ven), position:"relative", marginBottom:10, cursor:"pointer", userSelect:"none" }}>
-              <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:"linear-gradient(90deg,rgba(255,255,255,.18),rgba(200,220,255,.08),transparent)", zIndex:1 }}/>
-              <div style={{ position:"absolute", top:0, left:"-60%", width:"55%", height:"100%", background:"linear-gradient(105deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%)", animation:"av-sh 4s ease-in-out infinite", pointerEvents:"none", zIndex:1 }}/>
-              <div style={{ position:"absolute", top:-20, right:-20, width:70, height:70, borderRadius:"50%", background:"radial-gradient(circle,rgba(255,255,255,.06) 0%,transparent 70%)", pointerEvents:"none" }}/>
-              <div style={{ display:"flex", alignItems:"center", gap:9, padding:"11px 14px 4px", position:"relative", zIndex:2 }}>
-                {iconBox(CARD_COL.ven, "⏳")}
+            <div data-testid="card-upcoming" onClick={()=>setOpenUpcoming(true)} style={{ overflow:"hidden", borderRadius:16, background:"var(--surface)", border:"1px solid var(--border)", position:"relative", marginBottom:7, cursor:"pointer", userSelect:"none" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px 3px", position:"relative", zIndex:2 }}>
+                <span style={{ fontSize:"1.05rem" }}>⏳</span>
                 <span style={{ fontSize:".68rem", fontWeight:800, color:C, textTransform:"uppercase", letterSpacing:".08em", flex:1 }}>À venir</span>
                 <div style={{ display:"flex", alignItems:"center", gap:5 }}>
                   {recurItems.length>0 && <span style={{ fontSize:".58rem", fontWeight:700, padding:"2px 8px", borderRadius:20, background:"rgba(220,228,240,.10)", color:C, border:`1px solid ${Cbord}` }}>🔄 {recurItems.length}</span>}
@@ -1027,7 +1018,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                 </div>
                 <span style={{ color:C, fontSize:".8rem", opacity:.7 }}>›</span>
               </div>
-              <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:8, padding:"0 14px 11px", position:"relative", zIndex:2 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", gap:8, padding:"0 12px 10px", position:"relative", zIndex:2 }}>
                 <span style={{ fontSize:".62rem", color:"rgba(200,220,245,.65)" }}>
                   Ce mois <b style={{ fontFamily:"var(--mono)", color: thisMonthTotal >= 0 ? "var(--success)" : C, fontWeight:800 }}>{thisMonthTotal >= 0 ? "+" : ""}{fmt(thisMonthTotal)}</b>
                 </span>
@@ -1150,23 +1141,21 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
            le taux d'épargne du mois est affiché dans le détail (tap). */}
       <Sec id="cagnottes_fixes">
       {secTitle("Patrimoine", "sec-patrimoine")}
-      <div className="grid-2" style={{ marginBottom: 10 }}>
-        <div className="stat-mini" data-testid="card-cagnottes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, ...tintCard(CARD_COL.cag) }}
+      <div className="grid-2" style={{ marginBottom: 6, gap: 6 }}>
+        <div className="stat-mini" data-testid="card-cagnottes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, borderRadius: 16, ...tintCard(CARD_COL.cag) }}
           onClick={() => {
             const rate     = curMonth.inc > 0 ? Math.round((savMonth / curMonth.inc) * 100) : null;
             const prevRate = prevMonth.inc > 0 ? Math.round((prevSavMonth / prevMonth.inc) * 100) : null;
             onShowDetail("cagnottes", "all", { rate, prevRate });
           }}>
-          {iconBox(CARD_COL.cag, "🐷", 30)}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.cag }}>Cagnottes</div>
+            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.cag }}>🐷 Cagnottes</div>
             <div className="stat-val" style={{ margin: "2px 0 0", color: CARD_COL.cag, whiteSpace: "nowrap" }}>{fmt(cagTotal)}</div>
           </div>
         </div>
-        <div className="stat-mini" data-testid="card-fixes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, ...tintCard(CARD_COL.fix), cursor: "default" }}>
-          {iconBox(CARD_COL.fix, "📌", 30)}
+        <div className="stat-mini" data-testid="card-fixes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, borderRadius: 16, ...tintCard(CARD_COL.fix), cursor: "default" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.fix }}>Fixes / mois</div>
+            <div className="stat-label" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", letterSpacing: ".03em", color: CARD_COL.fix }}>📌 Fixes / mois</div>
             <div className="stat-val" style={{ margin: "2px 0 0", color: CARD_COL.fix, whiteSpace: "nowrap" }}>{fmt(tf)}</div>
           </div>
         </div>
@@ -1277,43 +1266,33 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
         const val  = color => ({ fontFamily: "var(--mono)", fontSize: ".98rem", fontWeight: 800, marginTop: 3, color, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" });
         const arrow = <span className="stat-arrow">›</span>;
         return (
-          <div className="card" data-testid="card-bilan" style={{ padding: 0, overflow: "hidden", marginBottom: 12, ...tintCard(CARD_COL.bil) }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "10px 11px 8px" }}>
-              {iconBox(CARD_COL.bil, "📊")}
-              <span style={{ flex: 1, fontWeight: 800, fontSize: ".6rem", letterSpacing: ".1em", textTransform: "uppercase", color: CARD_COL.bil }}>Bilan</span>
-              <div style={{ display: "flex", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10, padding: 3, gap: 3, width: 168 }}>
+          <div className="card" data-testid="card-bilan" style={{ padding: "10px 11px", overflow: "hidden", marginBottom: 12, borderRadius: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span>📊</span>
+              <span style={{ flex: 1, fontWeight: 800, fontSize: ".64rem", letterSpacing: ".08em", textTransform: "uppercase" }}>Bilan</span>
+              <div style={{ display: "flex", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 11, padding: 3, gap: 2, width: 160 }}>
                 {[["month", MONTHS_FR[now.getMonth()]], ["year", String(now.getFullYear())]].map(([k, l]) => (
                   <button key={k} onClick={() => setBilanPer(k)}
-                    style={{ flex: 1, border: "none", borderRadius: 7, padding: "5px 0", fontSize: ".64rem", fontWeight: 800, cursor: "pointer",
-                      background: bilanPer === k ? "var(--accent)" : "transparent", color: bilanPer === k ? "#06121c" : "var(--text2)" }}>{l}</button>
+                    style={{ flex: 1, border: "none", borderRadius: 8, padding: "5px 0", fontSize: ".64rem", fontWeight: 800, cursor: "pointer",
+                      background: bilanPer === k ? "var(--seg-on-bg, var(--accent))" : "transparent", color: bilanPer === k ? "var(--seg-on-text, #06121c)" : "var(--text2)" }}>{l}</button>
                 ))}
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-              <div style={cell({ borderTop: "1px solid var(--border-soft)", borderRight: "1px solid var(--border-soft)" })} onClick={() => onShowDetail("income", per)}>
-                <div style={lab("var(--success)")}>💰 Revenus</div>
-                <div style={val("var(--success)")}>{fmt(B.inc)}</div>
-                <Delta cur={B.inc} prev={B.pInc} />{arrow}
-              </div>
-              <div style={cell({ borderTop: "1px solid var(--border-soft)" })} onClick={() => onShowDetail("expense", per)}>
-                <div style={lab("var(--danger)")}>💸 Dépenses</div>
-                <div style={val("var(--danger)")}>{fmt(B.exp)}</div>
-                <Delta cur={B.exp} prev={B.pExp} inverted />{arrow}
-              </div>
-              <div style={cell({ borderTop: "1px solid var(--border-soft)", borderRight: "1px solid var(--border-soft)" })} onClick={() => setCagSheet(per)}>
-                <div style={lab("var(--purple)")}>🐷 Épargné</div>
-                <div style={val("var(--purple)")}>{fmt(B.sav)}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Delta cur={B.sav} prev={B.pSav} />
-                  {B.dec > 0 && <span style={{ fontSize: ".56rem", fontWeight: 700, color: "var(--coral)", fontVariantNumeric: "tabular-nums" }}>↩️ {fmt(B.dec)} retiré</span>}
+            {/* v1.73.0 : 4 tuiles teintées (comme le mockup), mêmes chiffres et mêmes détails au toucher */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 9 }}>
+              {[
+                { k: "inc", col: "var(--success)", lbl: "💰 Revenus", v: B.inc, d: <Delta cur={B.inc} prev={B.pInc} />, on: () => onShowDetail("income", per) },
+                { k: "exp", col: "var(--danger)",  lbl: "💸 Dépenses", v: B.exp, d: <Delta cur={B.exp} prev={B.pExp} inverted />, on: () => onShowDetail("expense", per) },
+                { k: "sav", col: "var(--purple)",  lbl: "🐷 Épargné", v: B.sav, d: <><Delta cur={B.sav} prev={B.pSav} />{B.dec > 0 && <span style={{ fontSize: ".54rem", fontWeight: 700, color: "var(--coral)", fontVariantNumeric: "tabular-nums" }}>↩️ {fmt(B.dec)} retiré</span>}</>, on: () => setCagSheet(per) },
+                { k: "var", col: "var(--accent)",  lbl: "📊 Dép. variables", v: B.var, d: <Delta cur={B.var} prev={B.pVar} inverted />, on: () => onShowDetail("expense_var", per) },
+              ].map(t => (
+                <div key={t.k} data-bilan={t.k} onClick={t.on} style={cell({ borderRadius: 12, padding: "7px 9px", background: `color-mix(in srgb, ${t.col} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${t.col} 30%, transparent)` })}>
+                  <div style={lab(t.col)}>{t.lbl}</div>
+                  <div style={val(t.col)}>{fmt(t.v)}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>{t.d}</div>
+                  {arrow}
                 </div>
-                {arrow}
-              </div>
-              <div style={cell({ borderTop: "1px solid var(--border-soft)" })} onClick={() => onShowDetail("expense_var", per)}>
-                <div style={lab("var(--warning)")}>📊 Dép. variables</div>
-                <div style={val("var(--accent)")}>{fmt(B.var)}</div>
-                <Delta cur={B.var} prev={B.pVar} inverted />{arrow}
-              </div>
+              ))}
             </div>
           </div>
         );
