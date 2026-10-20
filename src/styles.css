@@ -453,9 +453,18 @@ html[data-theme="abysse"] .tabs, html[data-theme="glacier"] .tabs {
 html[data-theme="abysse"] .tab-btn.active::after, html[data-theme="glacier"] .tab-btn.active::after {
   content: ""; width: 16px; height: 3px; border-radius: 2px; background: var(--accent); margin-top: 1px;
 }
-/* Bouton + en dégradé bleu */
-html[data-theme="abysse"] .fab, html[data-theme="glacier"] .fab {
-  background: var(--fab-bg); box-shadow: 0 10px 30px var(--fab-glow), inset 0 1px 0 rgba(255,255,255,.35);
+/* Bouton + : opaque, bord clair pour le détacher du fond (v1.71) */
+html[data-theme="abysse"] {
+  --fab-solid: #2f7fc9; --fab-solid-open: #1f5f9e; --fab-border: 2px solid #8cc8ee;
+  --fab-shadow: 0 8px 22px rgba(0,0,0,.55), 0 0 0 4px rgba(5,11,24,.9);
+  --fab-menu-bg: #0e1e36; --fab-menu-panel: #0a1628;
+  --btn-pri-bg: #3b84cf; --btn-pri-border: #5aa0e4; --btn-pri-text: #fff;
+}
+html[data-theme="glacier"] {
+  --fab-solid: #3a8fd0; --fab-solid-open: #2a6fa8; --fab-border: 2px solid #a8dcf2;
+  --fab-shadow: 0 8px 22px rgba(0,0,0,.5), 0 0 0 4px rgba(7,19,33,.9);
+  --fab-menu-bg: #13304e; --fab-menu-panel: #0d2238;
+  --btn-pri-bg: #3f8fd2; --btn-pri-border: #6cb0e6; --btn-pri-text: #fff;
 }
 /* Cartes */
 html[data-theme="abysse"] .hero-card, html[data-theme="glacier"] .hero-card { border: 1px solid var(--border) !important; }
