@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.71.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.73.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.71.0
+└── package.json         — version: 1.73.0
 ```
 
 ---
@@ -342,6 +342,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.73.0** | minor | **Cohérence visuelle + sections repliables** — *Historique* : les parties Opérations, Épargnes à confirmer, Programmées, Récurrentes à confirmer, Frais fixes et Revenus fixes du mois se replient / déplient d'un toucher sur leur titre (choix mémorisé). Les lignes des frais et revenus fixes (et le mode « pointage ») ont le même style que la frise : icône teintée, badge « FIXE · le 5 », montant, rond de pointage à droite ; toucher la ligne = corriger ce mois-ci (remplace le bouton ✏️), rangées par jour. Récurrentes, programmées et épargnes à confirmer en lignes du même style ; « Récurrentes à confirmer » n'apparaît plus quand il n'y a rien à confirmer. Total des fixes calculé avec les changements prévus. *Accueil* : aligné sur le mockup — titres de section sans trait, cartes en verre à liseré teinté sans pastille d'icône, Bilan en 4 tuiles teintées (mêmes chiffres, mêmes détails au toucher). *Bouton +* : menu comme le mockup — plus de panneau, une étiquette + une pastille ronde par type, rappel « appui long : modèles rapides ». |
+| **1.72.0** | minor | **Rapport « récit » et Options « État de l'appli »** — *Rapport › Mois* : le mois raconté en une phrase (gagné, dépensé, mis de côté, comparaisons à la moyenne) et « Il te reste / Il te manque », barre « Où est parti l'argent » par catégorie (toucher = analyse), « Ce qui a bougé » en mots ; comparaison, budgets, à faire et note inchangés. *Rapport › Année* : l'année racontée (moyennes par mois, comparaison à l'an passé) avec la courbe du net cumulé et la projection au 31 déc. en pointillés, calendrier de 12 mois colorés selon le net (mini-barres revenus / dépenses, toucher = ouvre le mois), meilleur / moins bon mois ; bilan de l'année, épargne et fin d'année prévue inchangés. *Rapport › Catégories* : total + barre empilée, une carte par catégorie avec liseré de sa couleur (budgets, sous-catégories, montants à part et tags inchangés). *Options* : carte « État de l'appli » (sauvegarde, verrouillage, notifications, budget courses — x/4, chaque point ouvre son réglage, bouton Sauvegarder si besoin), « Mes données » en 3 boutons, thèmes en vignettes, réglages en tuiles 2 colonnes avec leur petite description et leur état, Réinitialiser à part en bas. |
 | **1.71.0** | minor | **Écrans plus lisibles** — *Bouton +* opaque (bleu plein, bord clair) et, menu ouvert, fond de l'écran légèrement flouté pour faire ressortir les choix (menu sur fond plein). *Historique* : nouvelle vue **Frise** par défaut — une bulle par jour sur une ligne de temps, total du jour, lignes avec icône teintée de la catégorie, badges (chèque, montants à part, tags, « ↩️ X € attendus »), montant coloré par type et rond de pointage à droite ; toucher une ligne ouvre Pointer / Modifier / Dupliquer / Supprimer, le glissement vers la gauche reste. Vues Par type, Liste, Catégories et Calendrier toujours dans ⚙️ › Vue, filtres et sections à confirmer inchangés. *Cagnottes* : carte « Total mis de côté » avec ＋ Cagnotte / 🔄 Transférer, cartes compactes sur 2 colonnes (montant violet, anneau d'objectif, liseré du type, repères 🔁 🪙 projet) ; toucher une cagnotte ouvre sa fiche avec Verser / Retirer / Transférer (pré-réglés sur elle), objectif, historique et ✏️ Modifier. *Fixes* : frise du mois (un point par échéance, trait « aujourd'hui ») et échéancier rangé par jour avec bulle du jour, statut (✓ / à pointer / à venir) et la même barre d'actions (pointer, jour, pause, modifier, supprimer) ; sections En pause et Commencent plus tard ; prévisions ponctuelles en lignes. Accueil et saisies inchangés. |
 | **1.70.0** | minor | **Thèmes « Verre bleu »** — nouveau groupe Options › 🎨 Apparence : *Verre bleu · Abysse* (par défaut), *Verre bleu · Glacier*, ou *Aube (classique)*, le thème d'origine conservé à l'identique. Thèmes verre : fond à halos bleus, cartes et feuilles en verre dépoli, barre d'onglets flottante arrondie, bouton + en dégradé bleu, titres en DM Sans. Code couleur des cartes et pastilles inchangé (violet réservé aux cagnottes). Interrupteur « Effets de verre » pour couper le flou. Choix enregistré dans les données (donc dans les sauvegardes). Copie de l'ancien CSS dans `theme-backup/`. Aucun écran ni fonction modifié. |
 | **1.69.1** | patch | Un « À recevoir » saisi seul (sans dépense liée) est lui aussi compté dans le solde estimé jusqu'à sa réception (retard compté depuis sa date prévue ou sa création). |
