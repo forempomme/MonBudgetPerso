@@ -388,3 +388,89 @@ input.error, select.error { border-color: var(--danger); }
                  background: linear-gradient(var(--tr-fill, rgba(28,42,68,.92)), var(--tr-fill, rgba(28,42,68,.92))) padding-box,
                              var(--tr-metal) border-box !important; }
 .tr-metal-text { background: var(--tr-metal); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+
+/* ══════════════════════════════════════════════════════════════════
+   v1.70.0 — Thèmes « Verre bleu » : Abysse (défaut) et Glacier
+   Le thème d'origine « Aube » = aucune règle ci-dessous (html[data-theme="aube"]) :
+   il reste exactement tel qu'avant. Seule l'apparence change : fond à halos
+   bleus, surfaces translucides (verre dépoli), barre d'onglets flottante,
+   bouton + en dégradé, titres en DM Sans. Le code couleur (courses, reste à
+   vivre, pointé, attente, cagnottes…) est conservé à l'identique.
+   ══════════════════════════════════════════════════════════════════ */
+html[data-theme="abysse"], html[data-theme="glacier"] {
+  --display: 'DM Sans', sans-serif;
+  --radius: 18px;
+  --border: rgba(255,255,255,.14);
+  --border-soft: rgba(255,255,255,.09);
+  --text2: #8fa9bd;
+  --text3: #557189;
+  --tooltip-bg: rgba(10,22,44,.95);
+}
+html[data-theme="abysse"] {
+  --bg: #050b18;
+  --surface:  rgba(14,30,58,.58);
+  --surface2: rgba(22,42,74,.55);
+  --surface3: rgba(32,56,92,.6);
+  --halos:
+    radial-gradient(120% 75% at 0% 0%, #123a6e 0%, transparent 55%),
+    radial-gradient(90% 65% at 100% 40%, #0a5576 0%, transparent 60%),
+    radial-gradient(90% 55% at 30% 100%, #0b2f5a 0%, transparent 65%);
+  --fab-bg: linear-gradient(135deg, #70b8e0, #3d7fd6);
+  --fab-glow: rgba(112,184,224,.45);
+  --hero-solde: linear-gradient(150deg, rgba(112,184,224,.20) 0%, rgba(20,40,74,.55) 60%, rgba(12,26,50,.55) 100%);
+  --hero-proj:  linear-gradient(150deg, rgba(104,212,152,.16) 0%, rgba(16,40,44,.55) 60%, rgba(10,26,34,.55) 100%);
+  --chrome: rgba(8,18,36,.6);
+}
+html[data-theme="glacier"] {
+  --bg: #071321;
+  --surface:  rgba(22,48,78,.52);
+  --surface2: rgba(30,60,94,.5);
+  --surface3: rgba(42,76,112,.55);
+  --halos:
+    radial-gradient(110% 70% at 10% 0%, #1d5a8f 0%, transparent 55%),
+    radial-gradient(80% 60% at 100% 35%, #13788f 0%, transparent 60%),
+    radial-gradient(90% 60% at 0% 100%, #16466e 0%, transparent 65%);
+  --fab-bg: linear-gradient(135deg, #8fd6ee, #4aa3d8);
+  --fab-glow: rgba(143,214,238,.45);
+  --hero-solde: linear-gradient(150deg, rgba(143,214,238,.22) 0%, rgba(26,58,92,.55) 60%, rgba(18,44,74,.55) 100%);
+  --hero-proj:  linear-gradient(150deg, rgba(104,212,152,.18) 0%, rgba(20,54,60,.55) 60%, rgba(14,40,50,.55) 100%);
+  --chrome: rgba(12,30,52,.58);
+}
+/* Fond : halos fixes derrière tout le contenu */
+html[data-theme="abysse"] body, html[data-theme="glacier"] body { background: var(--bg); background-image: none; }
+html[data-theme="abysse"] body::before, html[data-theme="glacier"] body::before {
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: var(--halos), var(--bg);
+}
+/* En-tête et barre d'onglets en verre, barre flottante arrondie */
+html[data-theme="abysse"] .bp-header, html[data-theme="glacier"] .bp-header { background: var(--chrome); }
+html[data-theme="abysse"] .tabs, html[data-theme="glacier"] .tabs {
+  left: 10px; right: 10px; width: auto; bottom: calc(10px + env(safe-area-inset-bottom));
+  border-radius: 22px; background: var(--chrome);
+  border: 1px solid var(--border); padding: 12px 4px 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+html[data-theme="abysse"] .tab-btn.active::after, html[data-theme="glacier"] .tab-btn.active::after {
+  content: ""; width: 16px; height: 3px; border-radius: 2px; background: var(--accent); margin-top: 1px;
+}
+/* Bouton + en dégradé bleu */
+html[data-theme="abysse"] .fab, html[data-theme="glacier"] .fab {
+  background: var(--fab-bg); box-shadow: 0 10px 30px var(--fab-glow), inset 0 1px 0 rgba(255,255,255,.35);
+}
+/* Cartes */
+html[data-theme="abysse"] .hero-card, html[data-theme="glacier"] .hero-card { border: 1px solid var(--border) !important; }
+html[data-theme="abysse"] .modal-content, html[data-theme="glacier"] .modal-content { background: rgba(10,22,44,.82); }
+html[data-theme="abysse"] .bp-header h1, html[data-theme="glacier"] .bp-header h1 { letter-spacing: -.01em; }
+
+/* Effet « verre dépoli » (flou) — réglage Options › Apparence › Effets de verre */
+html[data-glass="on"][data-theme="abysse"] :is(.card, .hero-card, .modal-content, .bp-header, .tabs, [style*="border-radius: 20px 20px 0px 0px"]),
+html[data-glass="on"][data-theme="glacier"] :is(.card, .hero-card, .modal-content, .bp-header, .tabs, [style*="border-radius: 20px 20px 0px 0px"]) {
+  -webkit-backdrop-filter: blur(18px) saturate(140%); backdrop-filter: blur(18px) saturate(140%);
+}
+/* Sans le flou : surfaces plus opaques pour rester lisibles */
+html[data-glass="off"][data-theme="abysse"] {
+  --surface: rgba(14,30,58,.94); --surface2: rgba(22,42,74,.94); --surface3: rgba(32,56,92,.94); --chrome: rgba(8,18,36,.96);
+}
+html[data-glass="off"][data-theme="glacier"] {
+  --surface: rgba(22,48,78,.94); --surface2: rgba(30,60,94,.94); --surface3: rgba(42,76,112,.94); --chrome: rgba(12,30,52,.96);
+}
