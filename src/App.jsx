@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor } from "./utils.js";
+import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES } from "./utils.js";
 import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
@@ -1093,19 +1093,21 @@ export default function App() {
 
       {/* ── FAB + quick menu ── */}
       {fabOpen && (
-        <div onClick={() => setFabOpen(false)}
-          style={{ position:"fixed", inset:0, zIndex:89 }} />
+        <div onClick={() => setFabOpen(false)} data-testid="fab-overlay"
+          style={{ position:"fixed", inset:0, zIndex:101,
+            background:"rgba(2,6,14,.45)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
+            animation:"fabOvIn .15s ease-out both" }} />
       )}
       {quickFanOpen && (
         <>
           <div onClick={() => setQuickFanOpen(false)}
             style={{
-              position:"fixed", inset:0, zIndex:93,
-              background:"rgba(0,0,0,.68)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
+              position:"fixed", inset:0, zIndex:101,
+              background:"rgba(0,0,0,.6)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)",
             }} />
           {/* Halo autour du FAB pour signaler que l'éventail en part */}
           <div style={{
-            position:"fixed", bottom:0, right:0, width:220, height:220, zIndex:94,
+            position:"fixed", bottom:0, right:0, width:220, height:220, zIndex:102,
             borderRadius:"50%", pointerEvents:"none",
             background:"radial-gradient(circle, rgba(112,184,224,.28) 0%, transparent 70%)",
           }} />
@@ -1134,10 +1136,10 @@ export default function App() {
               style={{
                 position: "fixed", bottom: 110 + 26 + dy, right: 18 + 26 + dx,
                 width: 48, height: 48, borderRadius: "50%",
-                background: t.isManage ? "rgba(112,184,224,.15)" : "var(--surface2)",
-                border: `1px solid ${t.isManage ? "var(--accent)" : "var(--border)"}`,
+                background: t.isManage ? "var(--fab-menu-bg, #0e1e36)" : "var(--fab-menu-bg, var(--surface2))",
+                border: `1.5px solid ${t.isManage ? "var(--accent)" : "var(--border)"}`,
                 display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.15rem",
-                boxShadow: "0 4px 16px rgba(0,0,0,.45)", zIndex: 95, cursor: "pointer",
+                boxShadow: "0 4px 16px rgba(0,0,0,.45)", zIndex: 103, cursor: "pointer",
                 animation: `fanItemIn .2s ${i * 0.03}s both cubic-bezier(.34,1.56,.64,1)`,
               }}>
               {t.icon}
@@ -1145,10 +1147,10 @@ export default function App() {
           );
         });
       })()}
-      <div style={{ position:"fixed", bottom:110, right:18, zIndex:96, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
+      <div style={{ position:"fixed", bottom:110, right:18, zIndex:104, display:"flex", flexDirection:"column", alignItems:"flex-end", gap:10 }}>
         {fabOpen && (
-          <div style={{
-            background:"var(--surface)", border:"1px solid var(--border)",
+          <div data-testid="fab-menu" style={{
+            background:"var(--fab-menu-panel, var(--surface))", border:"1px solid var(--border)",
             borderRadius:14, padding:"8px",
             boxShadow:"0 8px 32px rgba(0,0,0,.6)",
             display:"flex", flexDirection:"column", gap:6,
@@ -1174,7 +1176,7 @@ export default function App() {
               style={{
                 display:"flex", alignItems:"center", gap:10, cursor:"pointer",
                 padding:"6px 8px", borderRadius:9,
-                background:"var(--surface2)",
+                background:"var(--fab-menu-bg, var(--surface2))",
                 border:`1px solid var(--border)`,
                 animation:`fabItemIn .2s ${i * 0.04}s both cubic-bezier(.34,1.56,.64,1)`,
               }}>
@@ -1184,7 +1186,7 @@ export default function App() {
               }}>{item.label}</span>
               <div style={{
                 width:34, height:34, borderRadius:"50%",
-                background:`${item.color}18`, border:`1.5px solid ${item.color}44`,
+                background:`color-mix(in srgb, ${item.color} 16%, var(--fab-menu-bg, var(--surface2)))`, border:`1.5px solid color-mix(in srgb, ${item.color} 55%, transparent)`,
                 display:"flex", alignItems:"center", justifyContent:"center", fontSize:".95rem",
               }}>{item.icon}</div>
             </div>
@@ -1200,7 +1202,11 @@ export default function App() {
           onTouchStart={handleFabPressStart}
           onTouchEnd={handleFabPressEnd}
           onClick={handleFabClick}
-          style={{ position:"relative", bottom:"auto", right:"auto", background:"linear-gradient(135deg,#5ab8e0,#3090c0)", boxShadow:"0 6px 24px rgba(80,160,210,.5)", transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1)" }}>
+          style={{ position:"relative", bottom:"auto", right:"auto",
+            background: fabOpen ? "var(--fab-solid-open, linear-gradient(135deg,#5ab8e0,#3090c0))" : "var(--fab-solid, linear-gradient(135deg,#5ab8e0,#3090c0))",
+            border: "var(--fab-border, none)",
+            boxShadow: "var(--fab-shadow, 0 6px 24px rgba(80,160,210,.5))",
+            transform: fabOpen ? "rotate(45deg)" : "none", transition:"transform .2s cubic-bezier(.34,1.56,.64,1), background .2s" }}>
           ＋
         </button>
       </div>
@@ -1209,6 +1215,7 @@ export default function App() {
           from { opacity:0; transform:scale(.7) translateY(10px); }
           to   { opacity:1; transform:scale(1) translateY(0); }
         }
+        @keyframes fabOvIn { from { opacity:0; } to { opacity:1; } }
         @keyframes fanItemIn {
           from { opacity:0; transform:scale(.5); }
           to   { opacity:1; transform:scale(1); }
@@ -1239,6 +1246,7 @@ export default function App() {
           roundingRule={data.roundingRule || "ceil"}
           editingId={transModal.editingId}
           defaultType={transModal.defaultType || "expense"}
+          defaultCagId={transModal.defaultCagId || null}
           reimbursements={data.reimbursements || []}
           categoryThresholds={data.categoryThresholds || {}}
           fixedExpenses={data.fixedExpenses || []}
@@ -1462,6 +1470,17 @@ export default function App() {
           transactions={data.transactions}
           categories={data.categories}
           cagnottes={data.cagnottes}
+          cagTypes={data.cagTypes || DEFAULT_CAG_TYPES}
+          extras={(() => {
+            const plan = (data.autoSavings || []).find(a => a.cagnotteId === cagHistModal && a.enabled);
+            const proj = (data.projects || []).find(p => p.cagId === cagHistModal);
+            const rounding = data.roundingEnabled && data.roundingCagnotteId === cagHistModal;
+            return [plan ? `🔁 ${fmt(plan.amount)} le ${plan.dayOfMonth}` : null, rounding ? "🪙 arrondis" : null, proj ? `${proj.icon} ${proj.name}` : null].filter(Boolean).join(" · ") || null;
+          })()}
+          onDeposit={id  => { setCagHistModal(null); setTransModal({ editingId: null, defaultType: "epargne", defaultCagId: id }); }}
+          onWithdraw={id => { setCagHistModal(null); setTransModal({ editingId: null, defaultType: "decagnottage", defaultCagId: id }); }}
+          onTransfer={() => { setCagHistModal(null); setTransferModal(true); }}
+          onEdit={id     => { setCagHistModal(null); setCagModal({ editingId: id }); }}
           onClose={() => setCagHistModal(null)}
         />
       )}
