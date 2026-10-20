@@ -486,7 +486,7 @@ function DateField({ date, onChange, error, label = "Date", shortcuts, min }) {
 export function TransModal({
   transactions, categories, cagnottes, tags = [], sideAmountTypes = [],
   roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil",
-  editingId, defaultType = "expense",
+  editingId, defaultType = "expense", defaultCagId = null,
   reimbursements = [],
   categoryThresholds = {}, fixedExpenses = [], fixedIncomes = [], onPointIncome,
   onSave, onSaveRecurring, onClose,
@@ -507,7 +507,7 @@ export function TransModal({
     const f = (fixedIncomes || []).find(x => x.categoryId === catId && isActiveForMonth(x, fixedOccurrenceYM(x, ym)));
     return f ? { f, occ: fixedOccurrenceYM(f, ym) } : null;
   })();
-  const [cagId,       setCagId]       = useState(tx?.targetCagId  || cagnottes[0]?.id || "");
+  const [cagId,       setCagId]       = useState(tx?.targetCagId  || (defaultCagId && cagnottes.some(c => c.id === defaultCagId) ? defaultCagId : null) || cagnottes[0]?.id || "");
   const [note,        setNote]        = useState(tx?.note         || (defaultType === "balance_adjustment" ? "Ajustement de solde" : ""));
   const [isRecurring, setIsRecurring] = useState(false);
   const [frequency,   setFrequency]   = useState("monthly");
@@ -2510,7 +2510,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
 // ─────────────────────────────────────────────────────────────────
 //  Cagnotte history modal
 // ─────────────────────────────────────────────────────────────────
-export function CagHistModal({ cagId, transactions, categories, cagnottes, onClose }) {
+export function CagHistModal({ cagId, transactions, categories, cagnottes, cagTypes, extras, onDeposit, onWithdraw, onTransfer, onEdit, onClose }) {
   const c = cagnottes.find(x => x.id === cagId);
   if (!c) return null;
 
@@ -2553,19 +2553,39 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
 
   return (
     <Modal onClose={onClose} title="">
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontFamily: "var(--display)", fontSize: "1.1rem", fontWeight: 800, marginBottom: 4 }}>🎯 {c.name}</div>
-        <div style={{ fontFamily: "var(--mono)", fontSize: "1.3rem", fontWeight: 800, color: "var(--khaki)", fontVariantNumeric: "tabular-nums" }}>{fmt(c.current)}</div>
-        {c.target && <div style={{ fontSize: ".72rem", color: "var(--text2)", marginTop: 2 }}>Objectif : {fmt(c.target)}</div>}
-      </div>
-      {pct != null && <div className="progress-bg" style={{ height: 8, marginBottom: 8 }}><div className="progress-fill" style={{ width: `${pct}%` }} /></div>}
+      {(() => {
+        // v1.71.0 : fiche de la cagnotte — résumé + actions (la carte de la grille est devenue compacte)
+        const ty = (cagTypes || []).find(t => t.id === c.cagType);
+        const act = { display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "10px 6px", borderRadius: 11, background: "var(--surface2)", border: "1px solid var(--border)", fontSize: ".7rem", fontWeight: 800, cursor: "pointer", color: "var(--text)" };
+        return (
+          <div data-testid="cag-sheet" style={{ marginBottom: 12 }}>
+            <div style={{ fontFamily: "var(--display)", fontSize: "1.1rem", fontWeight: 800, marginBottom: 8 }}>{ty?.icon || "🐷"} {c.name}</div>
+            <div style={{ padding: 12, borderRadius: 14, background: "var(--surface2)", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)" }}>
+              <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>{ty ? `${ty.icon} ${ty.label}` : "Sans type"}</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(c.current)}</div>
+              {pct != null ? <>
+                <div style={{ height: 6, borderRadius: 3, background: "var(--surface3)", marginTop: 8, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: pct >= 100 ? "var(--success)" : "var(--purple)" }} /></div>
+                <div style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 4 }}>{Math.round(pct)} % de {fmt(c.target)}</div>
+              </> : onEdit && <div role="button" onClick={() => onEdit(c.id)} style={{ fontSize: ".64rem", color: "var(--accent)", fontWeight: 700, marginTop: 4, cursor: "pointer" }}>＋ Définir un objectif</div>}
+              {extras && <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 4 }}>{extras}</div>}
+            </div>
+            {(onDeposit || onWithdraw || onTransfer) && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginTop: 9 }}>
+                {onDeposit  && <button data-testid="cag-deposit"  onClick={() => onDeposit(c.id)}  style={{ ...act, color: "var(--purple)" }}>🐷 Verser</button>}
+                {onWithdraw && <button data-testid="cag-withdraw" onClick={() => onWithdraw(c.id)} style={act}>↩ Retirer</button>}
+                {onTransfer && <button data-testid="cag-sheet-transfer" onClick={() => onTransfer(c.id)} style={act}>🔄 Transférer</button>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {targetInfo}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-        {[["Versements", totE, "khaki"], ["Retraits", totD, "sapin"]].map(([l, v, k]) => (
-          <div key={l} style={{ background: `var(--${k}-glow)`, border: `1px solid rgba(${k === "khaki" ? "138,173,90" : "46,125,82"},.3)`, borderRadius: 8, padding: 10 }}>
+        {[["Versements", totE, "var(--purple)"], ["Retraits", totD, "var(--coral)"]].map(([l, v, col]) => (
+          <div key={l} style={{ background: `color-mix(in srgb, ${col} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${col} 30%, transparent)`, borderRadius: 10, padding: 10 }}>
             <div className="stat-label">{l}</div>
-            <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: `var(--${k})`, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</div>
+            <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: col, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{fmt(v)}</div>
           </div>
         ))}
       </div>
@@ -2593,7 +2613,10 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, onClo
           ✏️ Ajustements manuels : {adjTotal >= 0 ? "+" : "−"}{fmt(Math.abs(adjTotal))} — modifications de « Déjà épargné » dans la fiche, sans effet sur ton solde bancaire.
         </div>
       )}
-      <button className="btn btn-outline" style={{ width: "100%", marginTop: 16 }} onClick={onClose}>Fermer</button>
+      <div style={{ display: "grid", gridTemplateColumns: onEdit ? "1fr 1fr" : "1fr", gap: 8, marginTop: 16 }}>
+        {onEdit && <button data-testid="cag-edit" className="btn btn-outline" onClick={() => onEdit(c.id)}>✏️ Modifier</button>}
+        <button className="btn btn-outline" onClick={onClose}>Fermer</button>
+      </div>
     </Modal>
   );
 }
