@@ -3,8 +3,8 @@
 // revenus / net, bascule, ＋), avancement du mois, tuiles compactes 3 par ligne
 // rangées par statut (passés non pointés / à venir / pointés / en pause /
 // commencent plus tard), groupes pliables, pointage direct depuis une tuile.
-import { useState, useEffect, Fragment } from "react";
-import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, fixedCashDateISO, DAY_LAST_BD, DAY_PREV_LAST_BD } from "../utils.js";
+import { useState, Fragment } from "react";
+import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, fixedCashDateISO, DAY_LAST_BD, DAY_PREV_LAST_BD, fixedAmountFor } from "../utils.js";
 import { effectiveFixesForMonth, effectiveIncomesForMonth, isActiveForMonth } from "../hooks.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { InsightsList } from "./InsightPanels.jsx";
@@ -68,7 +68,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const advanceItems = fixedIncomes.filter(f => f.advance).map(f => {
     const occ = fixedOccurrenceYM(f, curYM);
     if (!isActiveForMonth(f, occ)) return null;
-    return { f, occ, amt: parseFloat(f.monthlyOverrides?.[occ]?.amount ?? f.amount) || 0, received: !!f.pointedMonths?.[occ], date: fixedCashDateISO(f, occ) };
+    return { f, occ, amt: fixedAmountFor(f, occ), received: !!f.pointedMonths?.[occ], date: fixedCashDateISO(f, occ) };
   }).filter(Boolean);
   const advanceTotal = advanceItems.reduce((s, x) => s + x.amt, 0);
   const advanceAllReceived = advanceItems.length > 0 && advanceItems.every(x => x.received);
@@ -78,22 +78,10 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const mainColor    = isExp ? "var(--danger)" : "var(--success)";
   const sign         = isExp ? "−" : "+";
 
-  // Barre collée sous l'en-tête (même principe que l'Historique, le Rapport et les Cagnottes)
-  const [stickyTop, setStickyTop] = useState(0);
-  useEffect(() => {
-    const h = document.querySelector(".bp-header");
-    const upd = () => setStickyTop(h ? Math.round(h.getBoundingClientRect().height) : 0);
-    upd(); window.addEventListener("resize", upd);
-    const ro = typeof ResizeObserver !== "undefined" && h ? new ResizeObserver(upd) : null;
-    ro?.observe(h);
-    return () => { window.removeEventListener("resize", upd); ro?.disconnect(); };
-  }, []);
-
   // Éléments enrichis + rangés par groupe
   const items = list.map((f, idx) => {
     const occ = fixedOccurrenceYM(f, curYM);   // occurrence versée ce mois-ci
-    const ov  = f.monthlyOverrides?.[occ];
-    const amt = parseFloat(ov?.amount ?? f.amount) || 0;
+    const amt = fixedAmountFor(f, occ);
     return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM), st: fixedStatusForMonth(f, curYM, todayDay), icon: categories.find(c => c.id === f.categoryId)?.icon ?? (isExp ? "📌" : "💰") };
   });
   const byGroup = {};
@@ -116,32 +104,56 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   }
 
   // ── Styles ──
-  const kp = { borderRadius: 9, padding: "5px 8px", background: "var(--surface2)", border: "1px solid var(--border-soft)", minWidth: 0 };
+  const kp = { borderRadius: 12, padding: "7px 9px", background: "var(--surface)", border: "1px solid var(--border)", minWidth: 0 };
   const kpL = { display: "block", fontSize: ".53rem", fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text3)" };
   const kpV = col => ({ display: "block", fontFamily: "var(--mono)", fontSize: ".8rem", fontWeight: 800, color: col, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" });
   const segBtn = (on, col, bg) => ({ flex: 1, textAlign: "center", fontSize: ".69rem", fontWeight: 800, padding: "7px 0", borderRadius: 8, border: "none", cursor: "pointer", whiteSpace: "nowrap", background: on ? bg : "transparent", color: on ? col : "var(--text2)" });
-  const grid = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 };
   const actBtn = col => ({ fontSize: ".66rem", fontWeight: 800, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "var(--surface)", color: col || "var(--text2)", whiteSpace: "nowrap", cursor: "pointer", flexShrink: 0 });
 
-  const tile = ({ key, icon, name, amount, dayLabel, dot, top, late, dim, extra }) => (
-    <div key={key} data-tile={key} onClick={() => { setSelected(selected === key ? null : key); setDayPick(false); }}
-      style={{
-        position: "relative", minWidth: 0, cursor: "pointer", textAlign: "center",
-        background: late ? "rgba(200,184,96,.07)" : "var(--surface)", border: "1px solid var(--border)", borderTop: `3px solid ${top}`,
-        borderRadius: 10, padding: "4px 6px 5px", opacity: dim ? .5 : 1,
-        outline: selected === key ? "2px solid var(--accent)" : "none", outlineOffset: 1,
-      }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", height: 16 }}>
-        <span style={{ fontSize: ".53rem", fontWeight: 800, color: "var(--text3)", minWidth: 28, textAlign: "left", whiteSpace: "nowrap" }}>{dayLabel}</span>
-        <span style={{ fontSize: ".82rem", lineHeight: 1 }}>{icon}</span>
-        <span style={{ minWidth: 28, display: "flex", justifyContent: "flex-end" }}>{dot && <i style={{ width: 7, height: 7, borderRadius: "50%", background: dot, display: "block" }} />}</span>
+  // v1.71.0 : ligne de l'échéancier (frise) — bulle du jour à gauche, statut à droite
+  const ST = {
+    ok:    { txt: "✓",        col: "var(--success)", bub: "color-mix(in srgb, var(--success) 25%, transparent)" },
+    late:  { txt: "à pointer", col: "var(--warning)", bub: "color-mix(in srgb, var(--warning) 30%, transparent)" },
+    next:  { txt: "à venir",   col: "var(--text2)",   bub: "var(--surface3)" },
+    pause: { txt: "en pause",  col: "var(--text3)",   bub: "var(--surface3)" },
+    later: { txt: "plus tard", col: "var(--text3)",   bub: "var(--surface3)" },
+  };
+  const badge = (txt, col, k) => <span key={k} style={{ fontSize: ".5rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, whiteSpace: "nowrap", color: col, background: `color-mix(in srgb, ${col} 15%, transparent)` }}>{txt}</span>;
+  const row = (x, g) => {
+    const { f } = x;
+    const key = `${activeSection}_${f.id ?? x.idx}`;
+    const sel = selected === key;
+    const st = ST[g];
+    const rise = isExp && f.prevAmount != null && f.prevAmount !== f.amount && f.prevAmountYM !== curYM;
+    const bubTxt = g === "pause" ? "⏸" : g === "later" ? "→" : (x.dayNum || "?");
+    const badges = [
+      f.advance && (g === "ok" || g === "late" || g === "next") ? badge(`→ budget ${ymShort(x.occ)}`, "var(--sapin)", "adv") : null,
+      rise ? badge(f.amount > f.prevAmount ? "▲ hausse" : "▼ baisse", f.amount > f.prevAmount ? "var(--danger)" : "var(--success)", "rise") : null,
+      !x.dayNum && g !== "pause" && g !== "later" ? badge("jour ?", "var(--warning)", "day") : null,
+      g === "pause" ? badge(f.pausedUntil ? `reprise ${ymShort(f.pausedUntil)}` : "sans reprise", "var(--text3)", "pz") : null,
+      g === "later" ? badge(`dès ${ymShort(f.startYM)}`, "var(--text3)", "lt") : null,
+      x.amt !== (parseFloat(f.amount) || 0) && g !== "pause" && g !== "later" ? badge("✏️ ce mois", "var(--accent)", "ov") : null,
+    ].filter(Boolean);
+    return (
+      <div key={key} style={{ position: "relative", marginBottom: 5 }}>
+        <span style={{ position: "absolute", left: -35, top: 6, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: ".64rem", fontWeight: 800, background: st.bub, color: g === "next" ? "var(--text2)" : st.col, boxShadow: "0 0 0 2px var(--bg)", fontVariantNumeric: "tabular-nums" }}>{bubTxt}</span>
+        <div data-tile={key} className="card" onClick={() => { setSelected(sel ? null : key); setDayPick(false); }}
+          style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", margin: 0, borderRadius: 12, cursor: "pointer",
+            opacity: g === "ok" ? .78 : (g === "pause" || g === "later") ? .6 : 1,
+            borderColor: sel ? "var(--accent)" : g === "late" ? "color-mix(in srgb, var(--warning) 45%, transparent)" : undefined }}>
+          <span style={{ fontSize: ".95rem", flexShrink: 0 }}>{x.icon}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <b style={{ display: "block", fontSize: ".72rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</b>
+            {badges.length > 0 && <span style={{ display: "flex", gap: 4, marginTop: 2, overflow: "hidden" }}>{badges}</span>}
+          </span>
+          <span style={{ fontFamily: "var(--mono)", fontSize: ".76rem", fontWeight: 800, color: mainColor, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{sign}{fmt(x.amt)}</span>
+          <span style={{ fontSize: ".56rem", fontWeight: 800, width: 44, textAlign: "right", color: st.col, flexShrink: 0 }}>{st.txt}</span>
+        </div>
+        {sel && actionBar(x, g)}
       </div>
-      <div style={{ fontSize: ".66rem", fontWeight: 700, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
-      <div style={{ fontFamily: "var(--mono)", fontSize: ".69rem", fontWeight: 800, color: top, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-        {amount}{extra}
-      </div>
-    </div>
-  );
+    );
+  };
 
   const actionBar = (x, g) => {
     const { f, idx } = x;
@@ -152,7 +164,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
     const canPoint = g === "late" || g === "next" || g === "ok";
     return (
       <div key="abar" data-testid="fix-actions" onClick={e => e.stopPropagation()}
-        style={{ gridColumn: "1 / -1", padding: "7px 8px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--accent)" }}>
+        style={{ padding: "7px 8px", borderRadius: 12, background: "var(--fab-menu-bg, var(--surface2))", border: "1px solid var(--accent)", margin: "4px 0 6px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ flex: 1, minWidth: 0, fontSize: ".69rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.icon} {f.name}</span>
           {canPoint && f.id && (
@@ -215,46 +227,38 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
     );
   };
 
-  const group = ({ g, title, color, noTotal }) => {
-    const L = byGroup[g];
+  // Sections pliables (mémorisées sur le téléphone) : échéancier du mois, en pause, plus tard
+  const section = (gk, title, L, right) => {
     if (!L.length) return null;
-    const fk = `${activeSection}_${g}`;
+    const fk = `${activeSection}_${gk}`;
     const folded = !!fold[fk];
-    const cells = L.map(x => {
-      const key = `${activeSection}_${x.f.id ?? x.idx}`;
-      const rise = isExp && x.f.prevAmount != null && x.f.prevAmount !== x.f.amount && x.f.prevAmountYM !== curYM;
-      return {
-        key, x,
-        el: tile({
-          key, icon: x.icon, name: x.f.name, amount: fmt(x.amt), top: mainColor,
-          dayLabel: g === "pause" ? (x.f.pausedUntil ? `→ ${ymShort(x.f.pausedUntil)}` : "⏸️") : g === "later" ? `dès ${ymShort(x.f.startYM)}` : (x.dayNum ? `le ${x.dayNum}` : <span style={{ color: "var(--warning)" }}>jour ?</span>),
-          dot: g === "ok" ? "var(--success)" : (g === "pause" || g === "later") ? "var(--text3)" : "var(--warning)",
-          late: g === "late", dim: g === "pause" || g === "later",
-          extra: rise ? <span style={{ marginLeft: 3, fontSize: ".53rem", color: x.f.amount > x.f.prevAmount ? "var(--danger)" : "var(--success)" }}>{x.f.amount > x.f.prevAmount ? "▲" : "▼"}</span> : null,
-        }),
-      };
-    });
-    const out = cells.map(c => c.el);
-    const si = cells.findIndex(c => c.key === selected);
-    if (si >= 0) out.splice(Math.min(Math.floor(si / 3) * 3 + 3, out.length), 0, actionBar(cells[si].x, g));
     return (
-      <Fragment key={g}>
-        <div data-group={g} onClick={() => { toggleFold(fk); setSelected(null); }}
+      <Fragment key={gk}>
+        <div data-group={gk} onClick={() => { toggleFold(fk); setSelected(null); }}
           style={{ display: "flex", alignItems: "center", gap: 5, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 2px 6px", cursor: "pointer", userSelect: "none" }}>
           <span style={{ width: 12, color: "var(--text2)", fontSize: ".62rem" }}>{folded ? "▸" : "▾"}</span>
           <span>{title}</span>
           <span style={{ fontSize: ".56rem", letterSpacing: 0, textTransform: "none", fontWeight: 700 }}>({L.length})</span>
-          {!noTotal && <span style={{ marginLeft: "auto", letterSpacing: 0, fontSize: ".69rem", fontFamily: "var(--mono)", color, fontVariantNumeric: "tabular-nums" }}>{sign}{fmt(L.reduce((s, x) => s + x.amt, 0))}</span>}
+          {right && <span style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontSize: ".64rem", fontWeight: 700 }}>{right}</span>}
         </div>
-        {!folded && <div style={grid}>{out}</div>}
+        {!folded && (
+          <div style={{ position: "relative", paddingLeft: 36 }}>
+            <div style={{ position: "absolute", left: 14, top: 4, bottom: 4, width: 2, borderRadius: 1, background: "var(--border)" }} />
+            {L.map(x => row(x, x.st))}
+          </div>
+        )}
       </Fragment>
     );
   };
+  const schedule = [...byGroup.late, ...byGroup.next, ...byGroup.ok].sort((a, b) => (a.dayNum || 99) - (b.dayNum || 99));
+  const [cy, cm] = curYM.split("-").map(Number);
+  const lastDay = new Date(cy, cm, 0).getDate();
+  const dayPct = d => ((Math.min(d, lastDay) - 1) / Math.max(1, lastDay - 1)) * 100;
 
   return (
     <div>
-      {/* ── Barre collée : charges / revenus / net + bascule + ＋ ── */}
-      <div style={{ position: "sticky", top: stickyTop, zIndex: 50, background: "var(--bg)", margin: "-16px -16px 10px", padding: "8px 16px", borderBottom: "1px solid var(--border-soft)" }}>
+      {/* ── Charges / revenus / net + bascule + ＋ (v1.71.0 : plus collé, cartes du thème) ── */}
+      <div style={{ marginBottom: 8 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5, marginBottom: 7 }}>
           <div style={kp}><small style={kpL}>Charges</small><b style={kpV("var(--danger)")}>−{fmt(totalFixes)}</b></div>
           <div style={kp} data-testid="fix-kpi-income"><small style={kpL}>Revenus{advanceItems.length ? ` ${MONTHS_SHORT_FR[parseInt(curYM.slice(5, 7), 10) - 1]}` : ""}</small><b style={kpV("var(--success)")}>+{fmt(totalIncomes)}</b>
@@ -268,7 +272,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
             <button style={segBtn(!isExp, "var(--success)", "rgba(104,212,152,.18)")} onClick={() => { setActiveSection("revenus"); setSelected(null); }}>💰 Revenus ({fixedIncomes.length})</button>
           </div>
           <button aria-label={isExp ? "Ajouter une charge fixe" : "Ajouter un revenu fixe"} onClick={isExp ? onNewFixed : onNewFixedIncome}
-            style={{ height: 36, minWidth: 36, padding: "0 11px", borderRadius: 9, border: "none", background: "var(--accent)", color: "#06121c", fontSize: ".8rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>＋</button>
+            style={{ height: 36, minWidth: 44, padding: "0 13px", borderRadius: 11, border: "1px solid var(--btn-pri-border, var(--accent))", background: "var(--btn-pri-bg, var(--accent))", color: "var(--btn-pri-text, #06121c)", fontSize: ".95rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>＋</button>
         </div>
       </div>
 
@@ -282,11 +286,22 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
           {active.length > 0 && (
             <div className="card" data-testid="fix-progress" style={{ padding: "9px 11px", marginBottom: 9 }}>
               <div style={{ display: "flex", fontSize: ".72rem", gap: 6 }}>
-                <span style={{ flex: 1 }}>{monthName} : <b>{doneCount}/{active.length}</b> {isExp ? "prélevés" : "reçus"}</span>
+                <span style={{ flex: 1 }}>{monthName} : <b>{doneCount}/{active.length}</b> {isExp ? "prélevés" : "reçus"} <span style={{ color: "var(--text3)", fontSize: ".62rem" }}>· {pct} %</span></span>
                 <span style={{ color: "var(--text2)", whiteSpace: "nowrap" }}>{isExp ? "reste à prélever" : "reste à recevoir"} <b style={{ fontFamily: "var(--mono)", color: mainColor, fontVariantNumeric: "tabular-nums" }}>{fmt(remaining)}</b></span>
               </div>
-              <div style={{ height: 6, borderRadius: 4, background: "var(--surface3)", overflow: "hidden", marginTop: 6 }}>
-                <i style={{ display: "block", height: "100%", width: `${pct}%`, background: "linear-gradient(90deg,var(--success),var(--accent))" }} />
+              {/* v1.71.0 : frise du mois — un point par échéance, trait = aujourd'hui */}
+              <div data-testid="fix-frise" style={{ position: "relative", height: 26, marginTop: 7 }}>
+                <div style={{ position: "absolute", left: 0, right: 0, top: 11, height: 3, borderRadius: 2, background: "var(--surface3)" }} />
+                <div style={{ position: "absolute", left: 0, width: `${dayPct(todayDay)}%`, top: 11, height: 3, borderRadius: 2, background: "linear-gradient(90deg,var(--success),var(--accent))" }} />
+                {[...schedule].filter(x => x.dayNum).sort((a, b) => (a.st === "ok") - (b.st === "ok")).reverse().map(x => {
+                  const okd = x.st === "ok", sz = okd ? 11 : 14;
+                  return <span key={x.f.id ?? x.idx} title={`${x.f.name} · le ${x.dayNum}`} style={{ position: "absolute", left: `calc(${dayPct(x.dayNum)}% - ${sz / 2}px)`, top: 12.5 - sz / 2, width: sz, height: sz, borderRadius: "50%",
+                    background: okd ? "var(--success)" : x.st === "late" ? "var(--warning)" : "color-mix(in srgb, var(--warning) 55%, var(--surface3))", border: "2px solid var(--bg)" }} />;
+                })}
+                <span data-testid="fix-today" style={{ position: "absolute", left: `calc(${dayPct(todayDay)}% - 1px)`, top: 0, bottom: 0, width: 2, borderRadius: 1, background: "var(--accent)" }} />
+              </div>
+              <div style={{ position: "relative", height: 12, fontSize: ".54rem", color: "var(--text3)", fontVariantNumeric: "tabular-nums" }}>
+                {[1, 10, 20, lastDay].map(d => <span key={d} style={{ position: "absolute", left: `${dayPct(d)}%`, transform: d === 1 ? "none" : d === lastDay ? "translateX(-100%)" : "translateX(-50%)" }}>{d}</span>)}
               </div>
               {!isExp && advanceItems.map(x => (
                 <div key={x.f.id} data-testid="fix-advance-note" style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 6 }}>
@@ -314,8 +329,10 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
         </>
       )}
 
-      {/* ── Groupes de l'échéancier ── */}
-      {GROUPS.map(group)}
+      {/* ── Échéancier du mois, rangé par jour (v1.71.0) ── */}
+      {section("sched", "📅 Échéancier", schedule, byGroup.late.length > 0 ? <span style={{ color: "var(--warning)" }}>{byGroup.late.length} à pointer</span> : null)}
+      {section("pause", "⏸️ En pause", byGroup.pause)}
+      {section("later", "🗓️ Commencent plus tard", byGroup.later)}
 
       {/* ── 🔮 Prévisions ponctuelles (dépenses seulement) ── */}
       {isExp && (
@@ -328,19 +345,25 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
           {provisionalExpenses.length === 0 && !showProvForm && (
             <div style={{ fontSize: ".64rem", color: "var(--text3)", padding: "0 2px" }}>Dépenses ponctuelles à venir — déduites du solde estimé.</div>
           )}
-          {provisionalExpenses.length > 0 && (() => {
-            const out = provisionalExpenses.map(p => tile({ key: `p_${p.id}`, icon: "📋", name: p.name, amount: fmt(p.amount), top: "var(--warning)", dayLabel: "", dot: null }));
-            const si = provisionalExpenses.findIndex(p => `p_${p.id}` === selected);
-            if (si >= 0) {
-              const p = provisionalExpenses[si];
-              out.splice(Math.min(Math.floor(si / 3) * 3 + 3, out.length), 0,
-                <div key="abar" onClick={e => e.stopPropagation()} style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--accent)" }}>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: ".69rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>📋 {p.name} · déduite du solde estimé</span>
-                  <button style={actBtn("var(--danger)")} onClick={() => { onDeleteProvisional(p.id); setSelected(null); }}>🗑</button>
-                </div>);
-            }
-            return <div style={grid}>{out}</div>;
-          })()}
+          {provisionalExpenses.map(p => {
+            const key = `p_${p.id}`, sel = selected === key;
+            return (
+              <div key={key} style={{ marginBottom: 5 }}>
+                <div className="card" data-prov={p.id} onClick={() => setSelected(sel ? null : key)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", margin: 0, borderRadius: 12, cursor: "pointer", borderColor: sel ? "var(--accent)" : undefined }}>
+                  <span style={{ fontSize: ".95rem" }}>📋</span>
+                  <b style={{ flex: 1, minWidth: 0, fontSize: ".72rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</b>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: ".76rem", fontWeight: 800, color: "var(--warning)", whiteSpace: "nowrap" }}>−{fmt(p.amount)}</span>
+                </div>
+                {sel && (
+                  <div onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: 12, background: "var(--fab-menu-bg, var(--surface2))", border: "1px solid var(--accent)", margin: "4px 0 6px" }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: ".66rem", color: "var(--text2)" }}>Déduite du solde estimé</span>
+                    <button style={actBtn("var(--danger)")} onClick={() => { onDeleteProvisional(p.id); setSelected(null); }}>🗑 Supprimer</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           {showProvForm && (
             <div className="card" style={{ padding: 14, marginTop: 8, borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)" }}>
               <div className="form-group">
