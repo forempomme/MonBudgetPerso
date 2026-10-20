@@ -102,8 +102,17 @@ function GrocerySection({ grocery: g, total, categories, open, onToggle }) {
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text)", padding: "3px 0", fontWeight: 700 }}>
           <span>= Moyenne mensuelle</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(g.average)}</span>
         </div>
+        {g.refunded > 0 && (
+          <div data-testid="grocery-refunded" style={{ fontSize: ".64rem", color: "var(--text2)", padding: "3px 0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>↩️ Remboursé ou à rembourser (non compté)</span>
+              <span style={{ fontWeight: 700, color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>{fmt(g.refunded)}</span>
+            </div>
+            {g.refundItems.map(({ t, amount }) => <div key={t.id} style={{ fontSize: ".58rem", color: "var(--text3)" }}>{ddmm(t.date)} · {t.note || "courses"} · {fmt(amount)}</div>)}
+          </div>
+        )}
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".68rem", color: "var(--text2)", padding: "3px 0" }}>
-          <span>Déjà dépensé en {monthName(g.curYM)} ({g.count} achat{g.count > 1 ? "s" : ""})</span>
+          <span>Déjà dépensé en {monthName(g.curYM)} ({g.count} achat{g.count > 1 ? "s" : ""}{g.refunded > 0 ? ", hors remboursements" : ""})</span>
           <span style={{ fontWeight: 700, color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>−{fmt(g.spent)}</span>
         </div>
         <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", margin: "6px 0 3px" }}>
@@ -129,6 +138,7 @@ export function BalanceBreakdownSheet({ breakdown, grocery = null, categories = 
   const [open, setOpen] = useState({ g: true });
   const tg = k => setOpen(o => ({ ...o, [k]: !o[k] }));
   const { pointed, pending, recurring, scheduled, total } = breakdown;
+  const reimb = breakdown.reimbursements || { total: 0, items: [] };   // v1.69.0
   const today = todayISO();
   const catOf = id => categories.find(c => c.id === id);
   const nPending = pending.cheques.items.length + pending.others.items.length + pending.fixes.items.length + pending.incomes.items.length;
@@ -198,6 +208,17 @@ export function BalanceBreakdownSheet({ breakdown, grocery = null, categories = 
           {scheduled.items.length > 0 && scheduled.items.map(({ s, signed: v }, i) =>
             <DetailRow key={s.id || i} value={v} label={`${ddmm(s.date)} · ${catOf(s.categoryId)?.icon || "📅"} ${s.note || catOf(s.categoryId)?.name || "Programmée"}`} />)}
         </Line>
+
+        {reimb.items.length > 0 && (
+          <Line icon="↩️" title="Remboursements attendus" sub={`Comptés jusqu'à leur réception${reimb.items.some(x => x.late) ? " · ⚠️ en retard" : ""}`}
+            value={reimb.total} color="var(--success)" open={open.rb} onToggle={() => tg("rb")}>
+            {reimb.items.map(({ r, tx, signed: v, late }) =>
+              <DetailRow key={r.id} value={v} warn={late ? `${late} j` : null}
+                label={tx
+                  ? `${r.from ? r.from + " · " : ""}${catOf(tx.categoryId)?.icon || ""} ${txLabel(tx, categories, cagnottes)} du ${ddmm(tx.date)}`
+                  : `${r.from || "À recevoir"}${r.note ? " · " + r.note : ""}${r.expectedDate ? ` (vers le ${ddmm(r.expectedDate)})` : ""}`} />)}
+          </Line>
+        )}
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, marginTop: 4, borderRadius: 12,
           background: "rgba(112,184,224,.08)", border: "1.5px solid rgba(112,184,224,.4)" }}>
