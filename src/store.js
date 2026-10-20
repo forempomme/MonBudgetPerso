@@ -117,6 +117,8 @@ export const A = /** @type {const} */ ({
   CASH_CHEQUE:              "CASH_CHEQUE",
   SAVE_GROCERY_BUDGET:      "SAVE_GROCERY_BUDGET",
   MARK_MONTH_RECAP:         "MARK_MONTH_RECAP",
+  MARK_YEAR_RECAP:          "MARK_YEAR_RECAP",     // v1.68.0
+  SET_APPEARANCE:           "SET_APPEARANCE",      // v1.70.0 : { appTheme?, glassEffects? }
   SAVE_REIMBURSEMENT:       "SAVE_REIMBURSEMENT",
   DELETE_REIMBURSEMENT:     "DELETE_REIMBURSEMENT",
   RECEIVE_REIMBURSEMENT:    "RECEIVE_REIMBURSEMENT",
@@ -214,7 +216,9 @@ export const DEFAULT_DATA = {
   // réécrit ensuite, pour comparer "ce qu'on avait annoncé" vs la réalité
   // une fois le mois passé.
   projectionSnapshots:       {},
-  payRecaps:                 {},   // v1.67.0 : { [ym]: { rest, saved, date } } — récap pris à la paie
+  payRecaps:                 {},
+  appTheme:                  "abysse",   // v1.70.0 : "abysse" (verre bleu, défaut) | "glacier" | "aube" (thème d'origine)
+  glassEffects:              true,       // v1.70.0 : flou derrière les cartes (thèmes en verre)   // v1.67.0 : { [ym]: { rest, saved, date } } — récap pris à la paie
   // Templates de saisie rapide (v1.39.18) — [{ id, icon, name, categoryId, type }]
   // Déclenchés par un appui long sur le bouton +. Le montant et la date
   // restent à saisir à chaque fois (jamais mémorisés).
@@ -822,6 +826,13 @@ export function reducer(state, action) {
     case A.MARK_MONTH_RECAP:
       // v1.47.0 : mois (YYYY-MM) où la clôture a déjà été affichée → une seule fois
       return { ...state, lastMonthRecapShown: action.ym };
+
+    case A.SET_APPEARANCE:
+      return { ...state, ...(action.patch.appTheme ? { appTheme: action.patch.appTheme } : {}), ...(action.patch.glassEffects != null ? { glassEffects: !!action.patch.glassEffects } : {}) };
+
+    case A.MARK_YEAR_RECAP:
+      // v1.68.0 : année dont le bilan a déjà été proposé le 1er janvier
+      return { ...state, lastYearRecapShown: action.year };
 
     case A.SAVE_GROCERY_BUDGET:
       return { ...state, groceryBudget: { ...(state.groceryBudget || DEFAULT_DATA.groceryBudget), ...action.settings } };
