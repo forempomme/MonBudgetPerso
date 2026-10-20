@@ -1,9 +1,10 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT } from "./utils.js";
-import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome } from "./hooks.js";
+import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor } from "./utils.js";
+import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
+import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
@@ -89,7 +90,8 @@ export default function App() {
   // que le solde estimé affiché sur l'accueil (voir hooks.js)
   const currentBalance = useBalanceWithRecurring(
     data.transactions, data.fixedExpenses, data.fixedIncomes || [],
-    data.recurringTemplates || [], data.scheduledTransactions || []
+    data.recurringTemplates || [], data.scheduledTransactions || [],
+    data.reimbursements || [], (parseInt(data.restSettings?.reimbLateDays, 10) || 15)
   );
 
   const [tabHistory, setTabHistory] = useState(["accueil"]);
@@ -333,7 +335,7 @@ export default function App() {
     if (f?.amountMode === "auto" && !f.pointedMonths?.[ym]) { setPointIncome({ id, ym }); return; }
     dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym });
     if (f && !f.pointedMonths?.[ym] && mainPayIncome(data)?.id === id)
-      setPayRecap({ id, ym, amount: parseFloat(f.monthlyOverrides?.[ym]?.amount ?? f.amount) || 0 });
+      setPayRecap({ id, ym, amount: fixedAmountFor(f, ym) });
   }, [data]);
   const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
   const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
@@ -383,6 +385,12 @@ export default function App() {
     document.documentElement.className = theme === "light" ? "light" : "";
     localStorage.setItem("theme", theme);
   }, [theme]);
+  // v1.70.0 : apparence — « Verre bleu » Abysse (défaut), Glacier, ou Aube (thème d'origine, inchangé)
+  useEffect(() => {
+    const t = ["abysse", "glacier", "aube"].includes(data.appTheme) ? data.appTheme : "abysse";
+    document.documentElement.dataset.theme = t;
+    document.documentElement.dataset.glass = data.glassEffects === false ? "off" : "on";
+  }, [data.appTheme, data.glassEffects]);
 
   // ── App title ────────────────────────────────────────────────
   useEffect(() => { document.title = APP_NAME; }, []);
@@ -470,7 +478,8 @@ export default function App() {
     if (detailModal)   { setDetailModal(null);    return; }
     if (deleteCatId)   { setDeleteCatId(null);    return; }
     if (importPreview) { setImportPreview(null);  return; }
-    if (recapYM)       { setRecapYM(null);        return; }
+    if (yearRecap)     { setYearRecap(null);      return; }
+    if (recapYM)       { closeMonthRecap();       return; }
     if (projectModal)  { setProjectModal(null);   return; }
     if (reimbModal)    { setReimbModal(null);     return; }
     if (catModal)      { setCatModal(null);       return; }
@@ -534,6 +543,8 @@ export default function App() {
   const [deleteCatId,   setDeleteCatId]   = useState(null); // v1.47.0
   const [importPreview, setImportPreview] = useState(null); // v1.47.0 : { fileName, data }
   const [recapYM,       setRecapYM]       = useState(null); // v1.47.0 : clôture du mois affichée
+  const [yearRecap,     setYearRecap]     = useState(null); // v1.68.0 : année du bilan annuel affiché
+  const pendingYearRef = useRef(null);                      // v1.68.0 : bilan annuel à ouvrir après celui de décembre
   const [projectModal,  setProjectModal]  = useState(null); // v1.47.0 : {} (nouveau) | projet
   const [reimbModal,    setReimbModal]    = useState(null); // v1.48.0 : {} (nouveau) | remboursement attendu
   const [confirmModal,  setConfirmModal]  = useState(null); // null | { title, msg, onConfirm }
@@ -879,6 +890,7 @@ export default function App() {
   );
   case "rapport": return (
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
+        onOpenYearRecap={y => setYearRecap(y)}
         categoryThresholds={data.categoryThresholds || {}}
         onSaveCategoryThreshold={saveCategoryThreshold}
         tags={data.tags || []}
@@ -919,6 +931,7 @@ export default function App() {
         onDeleteTag={deleteTag}
         onSaveGroceryBudget={settings => dispatch({ type: A.SAVE_GROCERY_BUDGET, settings })}
         onSaveRestSettings={settings => dispatch({ type: A.SAVE_REST_SETTINGS, settings })}
+        onSaveAppearance={patch => dispatch({ type: A.SET_APPEARANCE, patch })}
         alertEnabled={data.alertEnabled}
         alertThreshold={data.alertThreshold}
         onSaveAlertSettings={saveAlertSettings}
@@ -958,6 +971,11 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locked]);
 
+  const closeMonthRecap = () => {
+    setRecapYM(null);
+    if (pendingYearRef.current) { const y = pendingYearRef.current; pendingYearRef.current = null; setTimeout(() => setYearRecap(y), 250); }
+  };
+
   // ── Clôture du mois (v1.47.0) ─────────────────────────────────
   // Le 1er de chaque mois, au premier démarrage de la journée (après
   // déverrouillage), on affiche le bilan du mois écoulé — une seule fois :
@@ -971,6 +989,9 @@ export default function App() {
     const prev = getPrevMonth(cur);
     if (!(data.transactions || []).some(t => (t.date || "") < `${cur}-01`)) return; // pas d'historique
     dispatch({ type: A.MARK_MONTH_RECAP, ym: cur });
+    // v1.68.0 : le 1er janvier, le bilan de l'année suit celui de décembre
+    const year = now.getFullYear() - 1;
+    if (now.getMonth() === 0 && data.lastYearRecapShown !== year) { dispatch({ type: A.MARK_YEAR_RECAP, year }); pendingYearRef.current = year; }
     const id = setTimeout(() => setRecapYM(prev), 600);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1276,6 +1297,14 @@ export default function App() {
           fixedIncomes={data.fixedIncomes || []}
           fixedExpenses={data.fixedExpenses}
           transactions={data.transactions}
+          previewLow={draft => {
+            // v1.68.0 : projection 3 mois avec le revenu modifié (changements prévus) → point bas
+            const d2 = { ...data, fixedIncomes: (data.fixedIncomes || []).map(x => x.id === draft.id ? draft : x) };
+            const bd = computeBalanceBreakdown(d2.transactions, d2.fixedExpenses, d2.fixedIncomes, d2.recurringTemplates, d2.scheduledTransactions, new Date(), d2.reimbursements || [], (parseInt(data.restSettings?.reimbLateDays, 10) || 15));
+            const P = computeProjection(d2, bd, { monthsAhead: 3 });
+            const pays = [...(P.current.events || []), ...P.months.flatMap(m => m.lines)].filter(e => e.isPay || (e.kind === "inc" && e.id === draft.id)).map(e => e.date);
+            return { days: P.days, pays };
+          }}
           editingIdx={fixedIncomeModal.editingIdx}
           onSave={payload => { saveFixedIncome(payload); setFixedIncomeModal(null); }}
           onSaveExpense={payload => { saveFixed(payload); setFixedIncomeModal(null); }}
@@ -1359,9 +1388,14 @@ export default function App() {
       )}
       {recapYM && (
         <MonthRecapSheet recap={computeMonthRecap(data, recapYM)} categories={data.categories}
-          onClose={() => setRecapYM(null)}
-          onOpenRapport={() => { setRecapYM(null); navigateTo("rapport"); }}
-          onGoUnpointed={() => { setRecapYM(null); goToHistoriqueWithFilter("unpointed"); }} />
+          onClose={closeMonthRecap}
+          onOpenRapport={() => { closeMonthRecap(); navigateTo("rapport"); }}
+          onGoUnpointed={() => { closeMonthRecap(); goToHistoriqueWithFilter("unpointed"); }} />
+      )}
+      {yearRecap && (
+        <YearRecapSheet recap={computeYearRecap(data, yearRecap)} categories={data.categories}
+          onClose={() => setYearRecap(null)}
+          onOpenRapport={() => { setYearRecap(null); navigateTo("rapport"); }} />
       )}
       {importPreview && (
         <ImportPreviewModal fileName={importPreview.fileName} fileData={importPreview.data} currentData={data} appVersion={APP_VERSION}
