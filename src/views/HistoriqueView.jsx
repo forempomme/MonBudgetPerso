@@ -5,6 +5,18 @@ import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recur
 import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
+// v1.74.0 : bouton d'action rond (glissement d'une ligne, feuille d'actions) — même famille que le menu du +
+export function RoundAct({ icon, label, color, size = 32, onClick, testid }) {
+  return (
+    <div role="button" data-testid={testid} onClick={onClick}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, cursor: "pointer", minWidth: size + 8, touchAction: "manipulation" }}>
+      <span style={{ width: size, height: size, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: size > 36 ? "1.05rem" : ".85rem",
+        background: "var(--fab-menu-bg, var(--surface2))", border: `2px solid ${color}`, boxShadow: "0 3px 10px rgba(0,0,0,.35)" }}>{icon}</span>
+      <span style={{ fontSize: size > 36 ? ".58rem" : ".48rem", fontWeight: 800, color, whiteSpace: "nowrap" }}>{label}</span>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────
 //  HISTORIQUE — ligne pointable (transactions + frais fixes)
 // ─────────────────────────────────────────────────────────────────
@@ -19,7 +31,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
   const swipeStart = useRef({ x:0, y:0 });
   const isHSwipe   = useRef(false);
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const REVEAL_W = onEdit || onDelete ? 120 : 0;
+  const REVEAL_W = onEdit || onDelete ? 112 : 0;
 
   function onSwipeStart(e) {
     swipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -67,21 +79,9 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
           restaient dessous en permanence et se voyaient à travers le fond
           semi-transparent des lignes pointées (filtre « Pointées »). */}
       {REVEAL_W > 0 && swipeOffset < 0 && (
-        <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL_W, display:"flex" }}>
-          {onEdit && (
-            <button onClick={() => { closeSwipe(); onEdit(item.id); }} style={{
-              flex:1, background:"var(--accent)", border:"none",
-              color:"var(--bg)", fontSize:".65rem", fontWeight:800, cursor:"pointer",
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
-            }}>✏️<span>Modifier</span></button>
-          )}
-          {onDelete && (
-            <button onClick={() => { closeSwipe(); onDelete(item.id); }} style={{
-              flex:1, background:"var(--danger)", border:"none",
-              color:"#fff", fontSize:".65rem", fontWeight:800, cursor:"pointer",
-              display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2,
-            }}>🗑<span>Supprimer</span></button>
-          )}
+        <div style={{ position:"absolute", top:0, right:0, bottom:0, width:REVEAL_W, display:"flex", alignItems:"center", justifyContent:"center", gap:10 }}>
+          {onEdit && <RoundAct icon="✏️" label="Modifier" color="var(--accent)" onClick={() => { closeSwipe(); onEdit(item.id); }} />}
+          {onDelete && <RoundAct icon="🗑" label="Supprimer" color="var(--danger)" onClick={() => { closeSwipe(); onDelete(item.id); }} />}
         </div>
       )}
 
@@ -470,21 +470,25 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
     try { localStorage.setItem(HFOLD_KEY, JSON.stringify(n)); } catch { /* stockage indisponible : gardé en mémoire */ }
     return n;
   });
-  const foldSec = (k, title, count, right, body) => {
+  const foldSec = (k, title, count, right, body, opts = {}) => {
     const folded = !!hFold[k];
+    const dim = !!opts.dim;   // partie vide (ex. « rien à confirmer ») : visible mais grisée, rien à déplier
     return (
-      <div key={k} data-hsec={k} style={{ marginBottom: 8 }}>
-        <div role="button" data-hsec-head={k} onClick={() => toggleHFold(k)}
-          style={{ display: "flex", alignItems: "center", gap: 5, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 2px 6px", cursor: "pointer", userSelect: "none" }}>
-          <span style={{ width: 12, color: "var(--text2)", fontSize: ".62rem" }}>{folded ? "▸" : "▾"}</span>
+      <div key={k} data-hsec={k} style={{ marginBottom: dim ? 0 : 8 }}>
+        <div role="button" data-hsec-head={k} onClick={() => { if (!dim) toggleHFold(k); }}
+          style={{ display: "flex", alignItems: "center", gap: 5, fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: opts.color || "var(--text3)", margin: "12px 2px 6px", cursor: dim ? "default" : "pointer", userSelect: "none", opacity: dim ? .5 : 1 }}>
+          <span style={{ width: 12, color: "var(--text2)", fontSize: ".62rem" }}>{dim ? "·" : folded ? "▸" : "▾"}</span>
           <span>{title}</span>
           {count != null && <span style={{ fontSize: ".56rem", letterSpacing: 0, textTransform: "none", fontWeight: 700 }}>({count})</span>}
           {right && <span style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontSize: ".66rem", fontWeight: 800, fontFamily: "var(--mono)" }}>{right}</span>}
         </div>
-        {!folded && body}
+        {!folded && !dim && body}
       </div>
     );
   };
+  const groupTitle = t => <div style={{ fontSize: ".6rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text2)", margin: "18px 2px 0" }}>{t}</div>;
+  const FRISE_KEYS = ["exp", "inc", "cag", "adj", "off", "recur", "sched", "auto", "fixes", "incomes"];
+  const setAllFold = v => setHFold(() => { const n = Object.fromEntries(FRISE_KEYS.map(k => [k, v])); try { localStorage.setItem(HFOLD_KEY, JSON.stringify(n)); } catch { /* mémoire seulement */ } return n; });
   // Petite ligne « à confirmer » (épargnes auto, programmées, récurrentes) au style de la frise
   const pendRow = ({ key, icon, tint, name, sub, amount, amtCol, okLabel, okCol, onOk, onNo }) => (
     <div key={key} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
@@ -499,7 +503,29 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
       <button onTouchStart={e => e.stopPropagation()} onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); onNo(); }} onClick={() => { if (!("ontouchstart" in window)) onNo(); }}
         style={{ width: 28, height: 28, borderRadius: 14, border: "1px solid var(--border)", background: "transparent", color: "var(--text3)", fontSize: ".7rem", cursor: "pointer", touchAction: "manipulation", flexShrink: 0 }}>✕</button>
     </div>
-  );
+  );  const autoRow = plan => {
+    const cag = cagnottes.find(c => c.id === plan.cagnotteId);
+    return pendRow({ key: plan.id, icon: cag?.icon || "🐷", tint: "var(--purple)", name: cag?.name || "—", sub: "versement mensuel",
+      amount: fmt(plan.amount), amtCol: "var(--purple)", okLabel: "＋", okCol: "var(--purple)",
+      onOk: () => onApplyAutoSaving?.(plan.id), onNo: () => onSkipAutoSaving?.(plan.id) });
+  };
+  const schedRow = sc => {
+    const cat = categories.find(c => c.id === sc.categoryId);
+    return pendRow({ key: sc.id, icon: cat?.icon ?? "📅", tint: cat?.color || "var(--warning)", name: sc.note || cat?.name || "Dépense programmée", sub: `prévu le ${dayLabel(sc.date)}`,
+      amount: `−${fmt(sc.amount)}`, amtCol: "var(--danger)", okLabel: "✓", okCol: "var(--warning)",
+      onOk: () => onConfirmScheduled?.(sc.id), onNo: () => onDeleteScheduled?.(sc.id) });
+  };
+  const recurRow = tpl => {
+    const cat = categories.find(c => c.id === tpl.categoryId);
+    const isInc = isIncome(tpl.type);
+    const done = transactions.filter(t => t.templateId === tpl.id).length;
+    const left = tpl.occurrences != null ? tpl.occurrences - done : null;
+    return pendRow({ key: tpl.id, icon: cat?.icon ?? (isInc ? "💰" : "💸"), tint: cat?.color || (isInc ? "var(--success)" : "var(--accent)"), name: tpl.label,
+      sub: `${cat?.name ?? "—"} · ${tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle"}${left != null ? ` · ${done}/${tpl.occurrences} (${left} restant${left > 1 ? "s" : ""})` : ""}`,
+      amount: `${isInc ? "+" : "−"}${fmt(tpl.amount)}`, amtCol: isInc ? "var(--success)" : "var(--danger)", okLabel: "＋", okCol: "var(--success)",
+      onOk: () => onConfirmRecurring?.(tpl, month), onNo: () => onDeleteRecurring?.(tpl.id) });
+  };
+
 
   // Ligne « hors compte » (v1.42.0) — partagée par les vues Liste et Par type
   const renderOffRow = e => {
@@ -988,71 +1014,97 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
         );
       })()}
 
-      {/* ── v1.71.0 : vue « Frise » — une bulle par jour sur une ligne de temps ── */}
+      {/* ── v1.74.0 : vue « Frise » — une partie repliable par type d'opération, chacune avec sa frise
+           par jour et sa couleur (dépenses, revenus, cagnottes, équilibres, hors compte) ── */}
       {viewMode === "frise" && (() => {
-        const offByDate = {};
-        filteredOff.forEach(e => (offByDate[e.date] = offByDate[e.date] || []).push(e));
-        const bankDates = new Set(grouped.map(([d]) => d));
-        const days = [...grouped, ...Object.keys(offByDate).filter(d => !bankDates.has(d)).map(d => [d, []])]
-          .sort((a, b) => b[0].localeCompare(a[0]));
         const today = todayISO();
-        const opsNet = filtered.reduce((s, t) => s + (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
-        return foldSec("ops", "💸 Opérations", filtered.length + filteredOff.length,
-          filtered.length > 0 ? <span style={{ color: opsNet >= 0 ? "var(--success)" : "var(--danger)" }}>{opsNet >= 0 ? "+" : "−"}{fmt(Math.abs(opsNet))}</span> : null,
-          days.length === 0 ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" /> : (
-          <div data-testid="hist-frise" style={{ position: "relative", paddingLeft: 36, marginBottom: 4 }}>
-            <div style={{ position: "absolute", left: 14, top: 6, bottom: 6, width: 2, borderRadius: 1, background: "var(--border)" }} />
-            {days.map(([date, dayTxs]) => {
-              const dayOff = offByDate[date] || [];
-              const dayNet = dayTxs.reduce((s, t) => s + (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0), 0);
-              const d = new Date(date + "T12:00:00");
-              const isToday = date === today;
-              const allPointed = dayTxs.length > 0 && dayTxs.filter(t => isPointable(t.type)).every(t => t.pointed);
-              const lbl = d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", ...(date.slice(0, 4) !== String(year) ? { year: "numeric" } : {}) });
-              return (
-                <div key={date} data-day={date} style={{ position: "relative", marginBottom: 10 }}>
-                  <span style={{ position: "absolute", left: -35, top: 0, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: ".66rem", fontWeight: 800, fontVariantNumeric: "tabular-nums",
-                    background: isToday ? "var(--accent)" : "var(--surface3)", color: isToday ? "#04121c" : "var(--text2)",
-                    boxShadow: "0 0 0 2px var(--bg)" }}>{d.getDate()}</span>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".6rem", fontWeight: 800, color: "var(--text2)", margin: "6px 2px 5px", minHeight: 16 }}>
-                    <span>{isToday ? `Aujourd'hui · ${lbl}` : lbl}</span>
-                    <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      {allPointed && <span style={{ color: "var(--success)" }}>✓</span>}
-                      {dayTxs.length > 0 && <span style={{ fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums", color: dayNet >= 0 ? "var(--success)" : "var(--text2)" }}>{dayNet >= 0 ? "+" : "−"}{fmt(Math.abs(dayNet))}</span>}
-                    </span>
-                  </div>
-                  <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0, borderRadius: 14 }}>
-                    {dayTxs.map(t => (
-                      <SwipeRow key={t.id} t={t} variant="frise" categories={categories} cagnottes={cagnottes}
-                        onEdit={onEditTrans} onDelete={onDeleteTrans} onTogglePoint={onTogglePointTx} onDuplicate={onDuplicateTrans}
-                        onOpen={tx => setTxSheet(tx.id)} reimbAmt={reimbPending[t.id] || 0}
-                        allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []} />
-                    ))}
-                    {dayOff.map(e => {
-                      const cat = categories.find(c => c.id === e.categoryId);
-                      const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
-                      return (
-                        <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,.06)", background: "color-mix(in srgb, var(--tr) 6%, transparent)" }}>
-                          <div style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", background: "color-mix(in srgb, var(--tr) 16%, transparent)", border: "1px dashed var(--tr-border)" }}>{cat?.icon || st?.icon || "🎫"}</div>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: ".74rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
-                            <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 2 }}>
-                              {e.note && cat && <span style={{ fontSize: ".58rem", color: "var(--text2)" }}>{cat.name}</span>}
-                              <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 7, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)" }}>{st?.icon || "🎫"} Hors compte</span>
-                            </div>
-                          </div>
-                          <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</span>
-                          <div style={{ width: 26, flexShrink: 0 }} />
-                        </div>
-                      );
-                    })}
-                  </div>
+        const TYPES = [
+          { k: "exp", icon: "💸", label: "Dépenses",    color: "var(--danger)",  test: t => t.type === "expense" },
+          { k: "inc", icon: "💰", label: "Revenus",     color: "var(--success)", test: t => t.type === "income" || t.type === "dissolution_cagnotte" },
+          { k: "cag", icon: "🐷", label: "Cagnottes",   color: "var(--purple)",  test: t => ["epargne", "decagnottage", "transfer"].includes(t.type) },
+          { k: "adj", icon: "⚖️", label: "Équilibres",  color: "var(--sapin)",   test: t => t.type === "balance_adjustment" },
+          { k: "off", icon: "🎫", label: "Hors compte", color: "var(--tr)",      off: true },
+        ];
+        const signedOf = t => (isIncomeDirection(t) ? 1 : -1) * (parseFloat(t.amount) || 0);
+        const offRow = e => {
+          const cat = categories.find(c => c.id === e.categoryId);
+          const st  = (data.sideAmountTypes || []).find(x => x.id === e.satId);
+          return (
+            <div key={e.id} onClick={() => onEditOffAccount?.(e)} style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,.06)" }}>
+              <div style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", background: "color-mix(in srgb, var(--tr) 16%, transparent)", border: "1px dashed var(--tr-border)" }}>{cat?.icon || st?.icon || "🎫"}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: ".74rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.note || cat?.name || "Dépense hors compte"}</div>
+                <div style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 2 }}>
+                  {e.note && cat && <span style={{ fontSize: ".58rem", color: "var(--text2)" }}>{cat.name}</span>}
+                  <span style={{ fontSize: ".5rem", padding: "1px 6px", borderRadius: 7, fontWeight: 800, color: "var(--tr)", background: "var(--tr-glow)" }}>{st?.icon || "🎫"} Hors compte</span>
                 </div>
-              );
-            })}
-          </div>
-        ));
+              </div>
+              <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".8rem", color: "var(--tr)", flexShrink: 0 }}>{fmt(e.amount)}</span>
+              <div style={{ width: 26, flexShrink: 0 }} />
+            </div>
+          );
+        };
+        // Une frise par jour, teintée de la couleur du type
+        const frise = (items, isOff, col) => {
+          const byDay = {};
+          items.forEach(x => (byDay[x.date] = byDay[x.date] || []).push(x));
+          const days = Object.keys(byDay).sort((a, b) => sort === "date" ? b.localeCompare(a) : b.localeCompare(a));
+          return (
+            <div data-testid="hist-frise" style={{ position: "relative", paddingLeft: 36, marginBottom: 4 }}>
+              <div style={{ position: "absolute", left: 14, top: 6, bottom: 6, width: 2, borderRadius: 1, background: `color-mix(in srgb, ${col} 45%, transparent)` }} />
+              {days.map(date => {
+                const list = byDay[date];
+                const d = new Date(date + "T12:00:00");
+                const isToday = date === today;
+                const net = isOff ? -list.reduce((a, e) => a + (parseFloat(e.amount) || 0), 0) : list.reduce((a, t) => a + signedOf(t), 0);
+                const allPointed = !isOff && list.filter(t => isPointable(t.type)).length > 0 && list.filter(t => isPointable(t.type)).every(t => t.pointed);
+                const lbl = d.toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "long", ...(date.slice(0, 4) !== String(year) ? { year: "numeric" } : {}) });
+                return (
+                  <div key={date} data-day={date} style={{ position: "relative", marginBottom: 10 }}>
+                    <span style={{ position: "absolute", left: -35, top: 0, width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: ".66rem", fontWeight: 800, fontVariantNumeric: "tabular-nums",
+                      background: isToday ? "var(--accent)" : `color-mix(in srgb, ${col} 22%, var(--bg))`, color: isToday ? "#04121c" : col,
+                      boxShadow: "0 0 0 2px var(--bg)" }}>{d.getDate()}</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: ".6rem", fontWeight: 800, color: `color-mix(in srgb, ${col} 65%, var(--text2))`, margin: "6px 2px 5px", minHeight: 16 }}>
+                      <span>{isToday ? `Aujourd'hui · ${lbl}` : lbl}</span>
+                      <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {allPointed && <span style={{ color: "var(--success)" }}>✓</span>}
+                        <span style={{ fontFamily: "var(--mono)", fontVariantNumeric: "tabular-nums", color: "var(--text2)" }}>{net >= 0 ? "+" : "−"}{fmt(Math.abs(net))}</span>
+                      </span>
+                    </div>
+                    <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0, borderRadius: 14,
+                      background: `color-mix(in srgb, ${col} 7%, var(--surface))`, border: `1px solid color-mix(in srgb, ${col} 30%, transparent)`, borderLeft: `3px solid ${col}` }}>
+                      {isOff ? list.map(offRow) : list.map(t => (
+                        <SwipeRow key={t.id} t={t} variant="frise" categories={categories} cagnottes={cagnottes}
+                          onEdit={onEditTrans} onDelete={onDeleteTrans} onTogglePoint={onTogglePointTx} onDuplicate={onDuplicateTrans}
+                          onOpen={tx => setTxSheet(tx.id)} reimbAmt={reimbPending[t.id] || 0}
+                          allTags={allTags} allSideAmountTypes={data.sideAmountTypes || []} />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        };
+        const parts = TYPES.map(T => {
+          const items = T.off ? filteredOff : filtered.filter(T.test);
+          const total = T.off ? -items.reduce((a, e) => a + (parseFloat(e.amount) || 0), 0) : items.reduce((a, t) => a + signedOf(t), 0);
+          return { ...T, items, total };
+        }).filter(P => P.items.length > 0);
+        return (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, margin: "-2px 0 0" }}>
+              <span role="button" data-testid="fold-all" onClick={() => setAllFold(true)} style={{ fontSize: ".6rem", fontWeight: 800, padding: "4px 9px", borderRadius: 10, border: "1px solid var(--border)", color: "var(--text2)", cursor: "pointer" }}>⊟ Tout replier</span>
+              <span role="button" data-testid="unfold-all" onClick={() => setAllFold(false)} style={{ fontSize: ".6rem", fontWeight: 800, padding: "4px 9px", borderRadius: 10, border: "1px solid var(--border)", color: "var(--text2)", cursor: "pointer" }}>⊞ Tout déplier</span>
+            </div>
+            {parts.length === 0
+              ? <EmptyIllustration type="historique" title="Aucun mouvement" sub="Aucune transaction ne correspond à ces filtres" />
+              : parts.map(P => foldSec(P.k, `${P.icon} ${P.label}`, P.items.length,
+                  <span style={{ color: P.color }}>{P.total >= 0 ? "+" : "−"}{fmt(Math.abs(P.total))}</span>,
+                  frise(P.items, !!P.off, P.color), { color: P.color }))}
+          </>
+        );
       })()}
 
       {/* ── Liste avec pointage ── */}
@@ -1111,44 +1163,40 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
       )}
 
       {/* ── v1.73.0 : sections repliables « à confirmer » + fixes du mois, au style de la frise ── */}
-      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && !globalSearch && autoSavingsPending.length > 0 &&
+      {viewMode === "frise" && !globalSearch && groupTitle("⏳ À confirmer")}
+      {viewMode === "frise" && !globalSearch && foldSec("recur", "🔄 Récurrentes à confirmer", recurringPending.length,
+        recurringPending.length === 0 ? <span style={{ color: "var(--text3)", fontWeight: 600, fontFamily: "inherit" }}>rien à confirmer</span> : null,
+        <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>
+          <div style={{ padding: "7px 12px", fontSize: ".56rem", color: "var(--text3)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>Opérations habituelles pas encore saisies ce mois</div>
+          {recurringPending.map(tpl => recurRow(tpl))}
+        </div>, { dim: recurringPending.length === 0 })}
+      {viewMode === "frise" && !globalSearch && foldSec("sched", "📅 Programmées ce mois", scheduledPending.length,
+        scheduledPending.length === 0 ? <span style={{ color: "var(--text3)", fontWeight: 600, fontFamily: "inherit" }}>rien à confirmer</span> : null,
+        <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>{scheduledPending.map(sc => schedRow(sc))}</div>, { dim: scheduledPending.length === 0 })}
+      {viewMode === "frise" && !globalSearch && foldSec("auto", "🎯 Épargnes à confirmer", autoSavingsPending.length,
+        autoSavingsPending.length === 0 ? <span style={{ color: "var(--text3)", fontWeight: 600, fontFamily: "inherit" }}>rien à confirmer</span> : null,
+        <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>{autoSavingsPending.map(plan => autoRow(plan))}</div>, { dim: autoSavingsPending.length === 0 })}
+      {viewMode === "frise" && (monthFixes.length > 0 || monthIncomes.length > 0) && pointFilter !== "pointed" && groupTitle("📌 Fixes du mois")}
+
+      {(viewMode === "list" || viewMode === "type") && !globalSearch && autoSavingsPending.length > 0 &&
         foldSec("auto", "🎯 Épargnes à confirmer", autoSavingsPending.length, null, (
           <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>
-            {autoSavingsPending.map(plan => {
-              const cag = cagnottes.find(c => c.id === plan.cagnotteId);
-              return pendRow({ key: plan.id, icon: cag?.icon || "🐷", tint: "var(--purple)", name: cag?.name || "—", sub: "versement mensuel",
-                amount: fmt(plan.amount), amtCol: "var(--purple)", okLabel: "＋", okCol: "var(--purple)",
-                onOk: () => onApplyAutoSaving?.(plan.id), onNo: () => onSkipAutoSaving?.(plan.id) });
-            })}
+            {autoSavingsPending.map(autoRow)}
           </div>
         ))}
 
-      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && !globalSearch && scheduledPending.length > 0 &&
+      {(viewMode === "list" || viewMode === "type") && !globalSearch && scheduledPending.length > 0 &&
         foldSec("sched", "📅 Programmées ce mois", scheduledPending.length, null, (
           <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>
-            {scheduledPending.map(sc => {
-              const cat = categories.find(c => c.id === sc.categoryId);
-              return pendRow({ key: sc.id, icon: cat?.icon ?? "📅", tint: cat?.color || "var(--warning)", name: sc.note || cat?.name || "Dépense programmée", sub: `prévu le ${dayLabel(sc.date)}`,
-                amount: `−${fmt(sc.amount)}`, amtCol: "var(--danger)", okLabel: "✓", okCol: "var(--warning)",
-                onOk: () => onConfirmScheduled?.(sc.id), onNo: () => onDeleteScheduled?.(sc.id) });
-            })}
+            {scheduledPending.map(schedRow)}
           </div>
         ))}
 
-      {(viewMode === "list" || viewMode === "type" || viewMode === "frise") && recurringPending.length > 0 &&
+      {(viewMode === "list" || viewMode === "type") && recurringPending.length > 0 &&
         foldSec("recur", "🔄 Récurrentes à confirmer", recurringPending.length, null, (
           <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0 }}>
             <div style={{ padding: "7px 12px", fontSize: ".56rem", color: "var(--text3)", borderBottom: "1px solid rgba(255,255,255,.06)" }}>Opérations habituelles pas encore saisies ce mois</div>
-            {recurringPending.map(tpl => {
-              const cat = categories.find(c => c.id === tpl.categoryId);
-              const isInc = isIncome(tpl.type);
-              const done = transactions.filter(t => t.templateId === tpl.id).length;
-              const left = tpl.occurrences != null ? tpl.occurrences - done : null;
-              return pendRow({ key: tpl.id, icon: cat?.icon ?? (isInc ? "💰" : "💸"), tint: cat?.color || (isInc ? "var(--success)" : "var(--accent)"), name: tpl.label,
-                sub: `${cat?.name ?? "—"} · ${tpl.frequency === "yearly" ? "Annuelle" : "Mensuelle"}${left != null ? ` · ${done}/${tpl.occurrences} (${left} restant${left > 1 ? "s" : ""})` : ""}`,
-                amount: `${isInc ? "+" : "−"}${fmt(tpl.amount)}`, amtCol: isInc ? "var(--success)" : "var(--danger)", okLabel: "＋", okCol: "var(--success)",
-                onOk: () => onConfirmRecurring?.(tpl, month), onNo: () => onDeleteRecurring?.(tpl.id) });
-            })}
+            {recurringPending.map(recurRow)}
           </div>
         ))}
 
@@ -1212,21 +1260,15 @@ function SwipeRow({ t, categories, cagnottes, onEdit, onDelete, onTogglePoint, o
   })();
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
 
-  const PANEL = 165; // 3 × 55px
+  const PANEL = 150; // v1.74.0 : 3 boutons ronds
 
   return (
     <div style={{ position: "relative", overflow: "hidden", borderBottom: variant === "frise" ? "1px solid rgba(255,255,255,.06)" : "1px solid var(--border-soft)" }}>
       {/* Actions cachées — ✏️ 📋 🗑️ */}
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex", visibility: offset === 0 ? "hidden" : "visible" }}>
-        <div onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }}
-          style={{ width: 55, height: "100%", background: "rgba(112,184,224,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>✏️</div>
-        <div onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }}
-          style={{ width: 55, height: "100%", background: "rgba(104,212,152,.2)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer" }}>
-          <span style={{ fontSize: "1rem" }}>📋</span>
-          <span style={{ fontSize: ".44rem", color: "var(--success)", fontWeight: 700 }}>Dupliquer</span>
-        </div>
-        <div onClick={() => { setOffset(0); setRevealed(false); onDelete?.(t.id); }}
-          style={{ width: 55, height: "100%", background: "rgba(200,112,112,.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.1rem", cursor: "pointer" }}>🗑️</div>
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: PANEL, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, visibility: offset === 0 ? "hidden" : "visible" }}>
+        <RoundAct icon="✏️" label="Modifier"  color="var(--accent)"  testid="swipe-edit" onClick={() => { setOffset(0); setRevealed(false); onEdit?.(t.id); }} />
+        <RoundAct icon="⧉"  label="Dupliquer" color="var(--success)" testid="swipe-dup"  onClick={() => { setOffset(0); setRevealed(false); onDuplicate?.(t); }} />
+        <RoundAct icon="🗑" label="Supprimer" color="var(--danger)"  testid="swipe-del"  onClick={() => { setOffset(0); setRevealed(false); onDelete?.(t.id); }} />
       </div>
       {/* Ligne */}
       <div
@@ -1467,8 +1509,6 @@ function TxActionSheet({ t, categories, cagnottes, allTags, allSideAmountTypes, 
   const icon = cat?.icon ?? (t.type === "dissolution_cagnotte" ? "🏦" : t.type === "epargne" ? "🐷" : t.type === "decagnottage" ? "↩️" : "💸");
   const sign = t.type === "balance_adjustment" ? (t.adjSign === "+" ? "+" : "−") : txSign(t.type);
   const longDate = new Date(t.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
-  const btn = (color, extra = {}) => ({ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 8px", borderRadius: 12,
-    background: "var(--surface2)", border: "1px solid var(--border)", color, fontSize: ".74rem", fontWeight: 800, cursor: "pointer", touchAction: "manipulation", ...extra });
   const act = fn => () => { onClose(); fn(); };
   return createPortal(
     <div data-testid="tx-sheet" style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
@@ -1492,13 +1532,13 @@ function TxActionSheet({ t, categories, cagnottes, allTags, allSideAmountTypes, 
           </div>
           <b style={{ fontFamily: "var(--mono)", fontSize: "1.1rem", color: friseAmountColor(t), whiteSpace: "nowrap" }}>{sign}{fmt(t.amount)}</b>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-around", gap: 6, marginTop: 14 }}>
           {onTogglePoint && isPointable(t.type) && (
-            <button data-testid="sheet-point" onClick={act(() => onTogglePoint(t.id))} style={btn("var(--success)")}>{t.pointed ? "↩ Dépointer" : "✓ Pointer"}</button>
+            <RoundAct size={44} testid="sheet-point" icon={t.pointed ? "↩" : "✓"} label={t.pointed ? "Dépointer" : "Pointer"} color="var(--success)" onClick={act(() => onTogglePoint(t.id))} />
           )}
-          <button data-testid="sheet-edit" onClick={act(() => onEdit?.(t.id))} style={btn("var(--text)")}>✏️ Modifier</button>
-          <button data-testid="sheet-dup" onClick={act(() => onDuplicate?.(t))} style={btn("var(--text)")}>⧉ Dupliquer</button>
-          <button data-testid="sheet-del" onClick={act(() => onDelete?.(t.id))} style={btn("var(--danger)")}>🗑 Supprimer</button>
+          <RoundAct size={44} testid="sheet-edit" icon="✏️" label="Modifier"  color="var(--accent)"  onClick={act(() => onEdit?.(t.id))} />
+          <RoundAct size={44} testid="sheet-dup"  icon="⧉"  label="Dupliquer" color="var(--success)" onClick={act(() => onDuplicate?.(t))} />
+          <RoundAct size={44} testid="sheet-del"  icon="🗑" label="Supprimer" color="var(--danger)"  onClick={act(() => onDelete?.(t.id))} />
         </div>
         <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 10 }}>Glisser une ligne vers la gauche donne aussi Modifier / Dupliquer / Supprimer.</div>
       </div>

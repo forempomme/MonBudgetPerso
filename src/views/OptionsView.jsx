@@ -117,14 +117,19 @@ function Sheet({ open, onClose, title, children }) {
     if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [open]);
   if (!open) return null;
+  // v1.74.0 : feuille qui monte du bas (poignée, titre + ✕), comme les autres fenêtres
   return createPortal(
-    <div ref={scrollRef}
-      style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.65)", zIndex:600, overflowY:"auto", WebkitOverflowScrolling:"touch" }}
+    <div data-testid="opt-sheet"
+      style={{ position:"fixed", inset:0, background:"rgba(2,6,14,.6)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)", zIndex:600, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background:"var(--bg)", width:"100%", maxWidth:560, margin:"0 auto", minHeight:"100%", padding:"20px 16px 48px" }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
-          <div style={{ fontSize:".9rem", fontWeight:800 }}>{title}</div>
-          <button onClick={onClose} style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"7px 12px", color:"var(--text2)", cursor:"pointer", fontSize:".78rem", touchAction:"manipulation" }}>✕</button>
+      <div ref={scrollRef} className="app-sheet"
+        style={{ width:"100%", maxWidth:560, margin:"0 auto", maxHeight:"92vh", overflowY:"auto", WebkitOverflowScrolling:"touch",
+          background:"var(--sheet-bg, var(--bg))", borderTop:"1px solid var(--border)", borderRadius:"24px 24px 0 0",
+          padding:"10px 14px calc(24px + env(safe-area-inset-bottom))", boxShadow:"0 -20px 50px rgba(0,0,0,.6)", animation:"slideUp .22s ease" }}>
+        <div style={{ width:40, height:4, borderRadius:3, background:"var(--border)", margin:"0 auto 10px" }} />
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, marginBottom:12 }}>
+          <div style={{ fontSize:"1rem", fontWeight:800 }}>{title}</div>
+          <button onClick={onClose} aria-label="Fermer" style={{ width:32, height:32, flexShrink:0, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, color:"var(--text2)", cursor:"pointer", fontSize:".78rem", touchAction:"manipulation" }}>✕</button>
         </div>
         {children}
       </div>
@@ -175,6 +180,8 @@ function LinkForm({ categories, onLink }) {
 
 export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance }) {
   const [catFilter,     setCatFilter]     = useState("all");
+  const [catSearch,     setCatSearch]     = useState("");      // v1.74.0
+  const [catSel,        setCatSel]        = useState(null);
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
   const [alertOn,       setAlertOn]       = useState(alertEnabled);
@@ -926,54 +933,90 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
       {/* 🏷️ Gestion catégories */}
       <Sheet open={openSheet==="categories"} onClose={close} title="🏷️ Catégories">
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginBottom:10 }}>
-          {[["all","Toutes"],["expense","Dépenses"],["income","Revenus"]].map(([k,l])=>(
-            <div key={k} className={`filter-chip${catFilter===k?" active":""}`} onClick={()=>setCatFilter(k)}>{l}</div>
-          ))}
-          <button onClick={() => onNewCat()} style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:4, background:"var(--accent)", border:"none", borderRadius:20, padding:"6px 14px", color:"var(--bg)", fontWeight:800, fontSize:".7rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation" }}>
+        {/* v1.74.0 : recherche, tri A → Z, groupes Dépenses / Revenus, actions au toucher d'une ligne */}
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <div style={{ flex:1, display:"flex", alignItems:"center", gap:7, borderRadius:12, padding:"8px 11px", background:"var(--surface2)", border:"1px solid var(--border)" }}>
+            <span>🔍</span>
+            <input data-testid="cat-search" value={catSearch} onChange={e => setCatSearch(e.target.value)} placeholder="Rechercher une catégorie…"
+              style={{ flex:1, minWidth:0, background:"none", border:"none", outline:"none", color:"var(--text)", fontSize:".78rem", fontFamily:"inherit" }} />
+            {catSearch && <span onClick={() => setCatSearch("")} style={{ color:"var(--text3)", cursor:"pointer" }}>✕</span>}
+          </div>
+          <button data-testid="cat-create" onClick={() => onNewCat()} style={{ display:"flex", alignItems:"center", gap:4, background:"var(--btn-pri-bg, var(--accent))", border:"1px solid var(--btn-pri-border, var(--accent))", borderRadius:12, padding:"9px 12px", color:"var(--btn-pri-text, var(--bg))", fontWeight:800, fontSize:".72rem", cursor:"pointer", flexShrink:0, touchAction:"manipulation" }}>
             ＋ Créer
           </button>
         </div>
-        {/* v1.47.0 : arbre catégories principales → sous-catégories */}
+        <div style={{ display:"flex", gap:5, margin:"8px 0 2px" }}>
+          {[["all","Toutes"],["expense","💸 Dépenses"],["income","💰 Revenus"]].map(([k,l])=>(
+            <span key={k} role="button" onClick={()=>setCatFilter(k)} style={{ fontSize:".64rem", fontWeight:800, padding:"5px 10px", borderRadius:12, cursor:"pointer",
+              color: catFilter===k ? "var(--accent)" : "var(--text2)", border:`1px solid ${catFilter===k ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
+              background: catFilter===k ? "color-mix(in srgb, var(--accent) 13%, transparent)" : "transparent" }}>{l}</span>
+          ))}
+        </div>
         {filtered.length === 0
           ? <EmptyIllustration type="transactions" title="Aucune catégorie" sub="Crée des catégories pour organiser tes dépenses" ctaColor="var(--accent)" />
           : (() => {
+              const AZ = (a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" });
+              const q = catSearch.trim().toLowerCase();
+              const hit = c => !q || (c.name || "").toLowerCase().includes(q);
               const isTop = c => !c.parentId || !data.categories.some(p => p.id === c.parentId);
-              const kids  = id => filtered.filter(c => c.parentId === id);
-              const btn = { background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:8, padding:"6px 9px", color:"var(--text2)", fontSize:".66rem", cursor:"pointer", touchAction:"manipulation", flexShrink:0 };
+              const kids  = id => filtered.filter(c => c.parentId === id).sort(AZ);
+              const actBtn = (color) => ({ background:"var(--surface2)", border:`1px solid ${color ? `color-mix(in srgb, ${color} 40%, transparent)` : "var(--border)"}`, borderRadius:10, padding:"7px 10px", color: color || "var(--text)", fontSize:".66rem", fontWeight:800, cursor:"pointer", touchAction:"manipulation", whiteSpace:"nowrap" });
               const row = (c, child) => {
                 const own = catUsage[c.id] || 0;
                 const total = own + (child ? 0 : kids(c.id).reduce((s, k) => s + (catUsage[k.id] || 0), 0));
                 const nk = child ? 0 : kids(c.id).length;
                 const linkedTo = data.categories.find(x => x.id === c.linkedToId);
+                const tint = c.color || (c.type === "income" ? "var(--success)" : "var(--danger)");
+                const sel = catSel === c.id;
                 return (
-                  <div key={c.id} style={{ display:"flex", alignItems:"center", gap:9, padding: child ? "9px 12px 9px 30px" : "11px 12px",
-                    borderTop:"1px solid var(--border-soft)", background: child ? "rgba(176,144,224,.03)" : "transparent" }}>
-                    {child && <span style={{ color:"var(--text3)", fontSize:".7rem", marginLeft:-14 }}>└</span>}
-                    <span style={{ width:7, height:7, borderRadius:"50%", background:c.type==="expense"?"var(--danger)":"var(--success)", flexShrink:0 }} />
-                    <span style={{ fontSize: child ? ".95rem" : "1.1rem" }}>{c.icon}</span>
-                    <span style={{ flex:1, minWidth:0 }}>
-                      <span style={{ display:"block", fontSize: child ? ".72rem" : ".78rem", fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                        {c.name}{linkedTo && <span style={{ fontSize:".55rem", color:"var(--success)", marginLeft:5 }}>🔗</span>}
+                  <div key={c.id} data-cat={c.id}>
+                    <div role="button" onClick={() => setCatSel(sel ? null : c.id)}
+                      style={{ position:"relative", display:"flex", alignItems:"center", gap:9, padding: child ? "8px 12px 8px 34px" : "9px 12px", cursor:"pointer",
+                        borderTop:"1px solid rgba(255,255,255,.06)", background: sel ? "rgba(112,184,224,.08)" : "transparent" }}>
+                      {child && <span style={{ position:"absolute", left:18, top:0, bottom:"50%", width:9, borderLeft:"2px solid var(--border)", borderBottom:"2px solid var(--border)", borderRadius:"0 0 0 6px" }} />}
+                      <span style={{ width:30, height:30, borderRadius:9, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", fontSize:".95rem", background:`color-mix(in srgb, ${tint} 18%, transparent)` }}>{c.icon}</span>
+                      <span style={{ flex:1, minWidth:0 }}>
+                        <span style={{ display:"block", fontSize:".76rem", fontWeight:700, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.name}</span>
+                        <span style={{ display:"flex", gap:4, alignItems:"center", marginTop:1, flexWrap:"wrap" }}>
+                          {total === 0
+                            ? <span style={{ fontSize:".52rem", fontWeight:800, padding:"1px 6px", borderRadius:7, color:"var(--warning)", background:"color-mix(in srgb, var(--warning) 15%, transparent)" }}>jamais utilisée</span>
+                            : <span style={{ fontSize:".58rem", color:"var(--text2)" }}>{total} opération{total > 1 ? "s" : ""}{nk ? ` · ${nk} sous-cat.` : ""}</span>}
+                          {linkedTo && <span style={{ fontSize:".52rem", fontWeight:800, padding:"1px 6px", borderRadius:7, color:"var(--accent)", background:"color-mix(in srgb, var(--accent) 15%, transparent)" }}>🔗 {linkedTo.name}</span>}
+                        </span>
                       </span>
-                      <span style={{ display:"block", fontSize:".58rem", color: total === 0 ? "var(--danger)" : "var(--text3)" }}>
-                        {total === 0 ? "Jamais utilisée" : `${total} opération${total > 1 ? "s" : ""}`}{nk ? ` · ${nk} sous-catégorie${nk > 1 ? "s" : ""}` : ""}
-                      </span>
-                    </span>
-                    {!child && <button style={btn} onClick={() => onNewCat(c.id)}>＋ sous</button>}
-                    <button style={btn} onClick={() => onEditCat(c.id)}>✏️</button>
-                    <button style={{ ...btn, color:"var(--danger)" }}
-                      onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteCat(c.id);}}
-                      onClick={()=>{ if (!("ontouchstart" in window)) onDeleteCat(c.id); }}>🗑</button>
+                      <span style={{ color:"var(--text3)" }}>›</span>
+                    </div>
+                    {sel && (
+                      <div data-testid="cat-actions" style={{ display:"flex", gap:5, flexWrap:"wrap", padding:"7px 9px", margin:"0 8px 8px", borderRadius:12, background:"var(--fab-menu-bg, var(--surface2))", border:"1px solid var(--accent)" }}>
+                        {!child && <button style={actBtn()} onClick={() => onNewCat(c.id)}>＋ Sous-cat.</button>}
+                        <button style={actBtn()} onClick={() => onEditCat(c.id)}>✏️ Modifier</button>
+                        <button style={actBtn()} onClick={() => setOpenSheet("links")}>🔗 Lier</button>
+                        <button style={actBtn("var(--danger)")}
+                          onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteCat(c.id);}}
+                          onClick={()=>{ if (!("ontouchstart" in window)) onDeleteCat(c.id); }}>🗑 Supprimer</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+              const group = (type, title, color) => {
+                const tops = filtered.filter(c => c.type === type && isTop(c)).filter(c => hit(c) || kids(c.id).some(hit)).sort(AZ);
+                if (!tops.length) return null;
+                return (
+                  <div key={type}>
+                    <div style={{ fontSize:".58rem", fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", color, margin:"14px 2px 6px" }}>{title} <span style={{ color:"var(--text3)", letterSpacing:0, textTransform:"none" }}>({tops.length})</span></div>
+                    <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:16, overflow:"hidden" }}>
+                      {tops.map(c => <div key={c.id} style={{ marginTop:-1 }}>{row(c, false)}{kids(c.id).filter(k => !q || hit(k) || hit(c)).map(k => row(k, true))}</div>)}
+                    </div>
                   </div>
                 );
               };
               return (
-                <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:12, overflow:"hidden" }}>
-                  {filtered.filter(isTop).map(c => (
-                    <div key={c.id}>{row(c, false)}{kids(c.id).map(k => row(k, true))}</div>
-                  ))}
-                </div>
+                <>
+                  {group("expense", "💸 Dépenses", "var(--danger)")}
+                  {group("income", "💰 Revenus", "var(--success)")}
+                  <div style={{ fontSize:".58rem", color:"var(--text3)", margin:"8px 4px 0" }}>Rangées de A à Z. Toucher une catégorie : sous-catégorie, modifier, lier, supprimer.</div>
+                </>
               );
             })()
         }

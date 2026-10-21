@@ -75,11 +75,11 @@ export function ToastContainer({ toasts }) {
 //  Base modal wrapper
 // ─────────────────────────────────────────────────────────────────
 /** @param {{ onClose: () => void, title: string, children: React.ReactNode }} */
-export function Modal({ onClose, title, children }) {
+export function Modal({ onClose, title, children, center = false }) {
   // v1.53.1 : rendu directement dans <body> — la fenêtre reste centrée à l'écran
   // quel que soit l'écran qui l'ouvre (plus besoin de défiler pour la voir).
   return createPortal(
-    <div className="modal"
+    <div className={center ? "modal modal-center" : "modal"}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content">
         {title && <div className="modal-title">{title}</div>}

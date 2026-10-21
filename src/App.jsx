@@ -340,25 +340,6 @@ export default function App() {
   const saveQuickTemplate   = useCallback(tpl => dispatch({ type: A.SAVE_QUICK_TEMPLATE, tpl }), []);
   const deleteQuickTemplate = useCallback(id  => dispatch({ type: A.DELETE_QUICK_TEMPLATE, id }), []);
 
-  // Appui long sur le FAB (450ms) : ouvre l'éventail de templates au lieu
-  // du menu habituel. Un tap court garde le comportement existant.
-  const fabPressTimer   = useRef(null);
-  const fabLongPressed  = useRef(false);
-  const handleFabPressStart = useCallback((e) => {
-    e?.preventDefault?.(); // évite la sélection de texte / le menu contextuel natif sur l'appui long
-    fabLongPressed.current = false;
-    fabPressTimer.current = setTimeout(() => {
-      fabLongPressed.current = true;
-      setQuickFanOpen(true);
-    }, 450);
-  }, []);
-  const handleFabPressEnd = useCallback(() => {
-    clearTimeout(fabPressTimer.current);
-  }, []);
-  const handleFabClick = useCallback(() => {
-    if (fabLongPressed.current) { fabLongPressed.current = false; return; }
-    setFabOpen(o => !o);
-  }, []);
   const overrideFixMonth  = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_FIX_MONTH, id, ym, override }), []);
   const overrideIncomeMonth = useCallback((id, ym, override) => dispatch({ type: A.OVERRIDE_INCOME_MONTH, id, ym, override }), []);
 
@@ -529,6 +510,29 @@ export default function App() {
   const [scheduledModal,setScheduledModal]= useState(false); // null | { editingId: string|null, defaultType?: string }
   const [fabOpen,       setFabOpen]       = useState(false);
   const [quickFanOpen,   setQuickFanOpen]   = useState(false);   // éventail de templates (appui long sur +)
+  // Appui long sur le FAB (450ms) : ouvre l'éventail de templates au lieu
+  // du menu habituel. Un tap court garde le comportement existant.
+  const fabPressTimer   = useRef(null);
+  const fabLongPressed  = useRef(false);
+  const handleFabPressStart = useCallback((e) => {
+    e?.preventDefault?.(); // évite la sélection de texte / le menu contextuel natif sur l'appui long
+    fabLongPressed.current = false;
+    // v1.74.0 : si un menu (éventail ou opérations) est déjà ouvert, le prochain appui sert à le fermer
+    if (quickFanOpen || fabOpen) return;
+    fabPressTimer.current = setTimeout(() => {
+      fabLongPressed.current = true;
+      setQuickFanOpen(true);
+    }, 450);
+  }, [quickFanOpen, fabOpen]);
+  const handleFabPressEnd = useCallback(() => {
+    clearTimeout(fabPressTimer.current);
+  }, []);
+  const handleFabClick = useCallback(() => {
+    if (fabLongPressed.current) { fabLongPressed.current = false; return; }
+    // v1.74.0 : appui sur + avec l'éventail des modèles ouvert → on le ferme (avant : le menu s'ouvrait par-dessus)
+    if (quickFanOpen) { setQuickFanOpen(false); return; }
+    setFabOpen(o => !o);
+  }, [quickFanOpen]);
   // Dépenses hors compte / rechargements (v1.42.0) : null | { mode, entry?, satId? }
   const [offModal,       setOffModal]       = useState(null);
   const [quickEditTpl,   setQuickEditTpl]   = useState(null);    // template en cours de saisie (sheet montant/date)

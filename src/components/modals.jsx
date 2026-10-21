@@ -55,8 +55,8 @@ function FieldError({ msg }) {
 function SectionLabel({ children, color }) {
   return (
     <div style={{
-      fontSize: ".6rem", fontWeight: 700, color: color || "var(--text3)",
-      letterSpacing: ".1em", textTransform: "uppercase", marginBottom: 5,
+      fontSize: ".56rem", fontWeight: 800, color: color || "var(--text3)",
+      letterSpacing: ".12em", textTransform: "uppercase", marginBottom: 5,
     }}>
       {children}
     </div>
@@ -142,7 +142,7 @@ function NumPad({ value, onChange, type, onTypeChange, variant, hideDisplay }) {
       {!hideDisplay && <div style={{
         background: isTr ? "var(--tr-glow)" : isCagV ? "var(--purple-glow)" : isExpense ? "rgba(200,112,112,.06)" : "rgba(104,212,152,.06)",
         border: `1px solid ${isTr ? "var(--tr-border)" : isCagV ? "rgba(176,144,224,.3)" : isExpense ? "rgba(200,112,112,.2)" : "rgba(104,212,152,.2)"}`,
-        borderRadius: 12, padding: "8px 12px", marginBottom: 8,
+        borderRadius: 14, padding: "10px 12px", marginBottom: 8,
         display: "flex", alignItems: "center", gap: 10,
       }}>
         <div style={{ flex: 1 }}>
@@ -163,9 +163,9 @@ function NumPad({ value, onChange, type, onTypeChange, variant, hideDisplay }) {
         {isSimpleType && onTypeChange && !variant && (
           <button onClick={() => onTypeChange(isExpense ? "income" : "expense")} style={{
             display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-            background: isExpense ? "rgba(104,212,152,.1)" : "rgba(200,112,112,.1)",
-            border: `1px solid ${isExpense ? "rgba(104,212,152,.25)" : "rgba(200,112,112,.25)"}`,
-            borderRadius: 9, padding: "6px 10px", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: 13, padding: "5px 10px", cursor: "pointer", flexShrink: 0, touchAction: "manipulation",
           }}>
             <span style={{ fontSize: ".5rem", color: "var(--text3)" }}>Passer en</span>
             <span style={{ fontSize: ".65rem", fontWeight: 800, color: isExpense ? "var(--success)" : "var(--danger)" }}>
@@ -191,12 +191,9 @@ function NumPad({ value, onChange, type, onTypeChange, variant, hideDisplay }) {
                   onClick={() => press(k)}
                   style={{
                     height: 43,                          // ← 50→43px
-                    background: isOp  ? "rgba(112,184,224,.1)"
-                               : isEq  ? "rgba(104,212,152,.15)"
-                               : isDel ? "rgba(200,112,112,.1)"
-                               : "var(--surface2)",
-                    border: `1px solid ${isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "rgba(200,112,112,.3)" : "var(--border)"}`,
-                    borderRadius: 9,
+                    background: "var(--surface2)",       // v1.74.0 : touches en verre, opérateurs en couleur
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
                     color: isOp ? "var(--accent)" : isEq ? "var(--success)" : isDel ? "var(--danger)" : "var(--text)",
                     fontSize: "1.05rem", fontWeight: 700, cursor: "pointer", touchAction: "manipulation",
                   }}>{k}</button>
@@ -264,9 +261,9 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
             onClick={() => { if (!('ontouchstart' in window)) { setDrill(null); setCatOpen(o => !o); } }}
             style={{
               width: "100%", padding: "9px 12px", boxSizing: "border-box",
-              background: catId ? "rgba(176,144,224,.1)" : "rgba(176,144,224,.05)",
-              border: "1px solid rgba(176,144,224,.3)", borderLeft: "3px solid var(--purple)",
-              borderRadius: 10,
+              background: catId ? "color-mix(in srgb, var(--purple) 10%, var(--surface2))" : "var(--surface2)",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
               color: catId ? "var(--text)" : "var(--text3)",
               fontSize: ".78rem", fontFamily: "inherit",
               display: "flex", alignItems: "center", gap: 8,
@@ -446,8 +443,8 @@ function DateField({ date, onChange, error, label = "Date", shortcuts, min }) {
       <div style={{ marginBottom: 10 }}>
         <SectionLabel color="var(--accent)">{label}</SectionLabel>
         {errors.date && <FieldError msg={errors.date} />}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
-          background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, 
+          background: "transparent", border: "none", padding: 0 }}>
           {[...SC, ["Autre…", null]].map(([label, d]) => {
             const custom = customDate || !dateIsShortcut;
             const sel = d !== null ? date === d && !custom : custom;
@@ -643,6 +640,8 @@ export function TransModal({
     : type === "decagnottage" ? "Retirer de la cagnotte"
     : "Enregistrer la dépense";
   const saveEmoji = isAdj ? "⚖️" : isInc ? "💰" : type === "epargne" ? "🐷" : "💸";
+  // v1.74.0 : bouton principal de la couleur du type (comme le mockup)
+  const saveColor = isAdj ? "#3f9c74" : isInc ? "#3f9c6a" : (type === "epargne" || type === "decagnottage") ? "#8a64c8" : "#c25b5b";
 
   return (
     <Modal onClose={onClose} title={editingId ? "Modifier l'opération" : "Nouvelle opération"}>
@@ -819,7 +818,7 @@ export function TransModal({
       <div style={{ marginBottom: 10 }}>
         <input type="text" placeholder={isAdj ? "Ex: Écart bancaire, arrondi…" : "Note (optionnel)…"} value={note}
           onChange={e => setNote(e.target.value)}
-          style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }}
+          style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", borderRadius: 12 }}
         />
 
         {/* Preview arrondi automatique */}
@@ -878,8 +877,8 @@ export function TransModal({
               onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setOptOpen(true); }}
               onClick={() => { if (!('ontouchstart' in window)) setOptOpen(true); }}
               style={{
-                width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", borderRadius: 10,
-                background: "rgba(217,160,102,.05)", border: "1px solid rgba(217,160,102,.3)", borderLeft: "3px solid var(--tr)",
+                width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", 
+                background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12,
                 display: "flex", alignItems: "center", gap: 8, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit",
               }}>
               <span style={{ flex: 1, display: "flex", gap: 5, overflow: "hidden", whiteSpace: "nowrap", textAlign: "left" }}>
@@ -1056,7 +1055,7 @@ export function TransModal({
       {!dupWarning && (
         <div className="grid-2" style={{ marginBottom: 0 }}>
           <button className="btn btn-outline" style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          <button className="btn btn-primary" data-testid="trans-save" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: saveColor, color: "#fff" }}
             onClick={() => handleSave()}>
             <span>{saveEmoji}</span>
             <span>{fixedDup ? "Enregistrer quand même" : saveLabel}</span>
@@ -1108,8 +1107,8 @@ function TypeButtons({ options, value, onChange, locked }) {
         return (
           <button key={k} type="button" {...tap(() => { if (!locked) onChange(k); })}
             style={{
-              padding: "7px 2px 6px", borderRadius: "var(--radius)",
-              border: `1.5px solid ${sel ? color : "var(--border)"}`,
+              padding: "7px 2px 6px", borderRadius: 13,
+              border: `1px solid ${sel ? color : "var(--border)"}`,
               background: sel ? `color-mix(in srgb, ${color} 14%, var(--surface2))` : "var(--surface2)",
               display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
               cursor: locked ? "default" : "pointer", touchAction: "manipulation", opacity: dim ? .35 : 1,
@@ -1132,7 +1131,7 @@ function TextField({ label, value, onChange, placeholder, error, maxLength, inpu
       <input type="text" value={value} placeholder={placeholder} maxLength={maxLength}
         className={error ? "error" : ""}
         onChange={e => onChange(e.target.value)}
-        style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)", ...inputStyle }} />
+        style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", borderRadius: 12, ...inputStyle }} />
     </div>
   );
 }
@@ -1147,10 +1146,10 @@ function IconNameField({ icon, onIcon, name, onName, namePlaceholder, iconPlaceh
         <input type="text" maxLength={4} value={icon} placeholder={iconPlaceholder || "🙂"} onChange={e => onIcon(e.target.value)}
           className={errors.icon ? "error" : ""}
           style={{ width: 54, height: 54, flexShrink: 0, padding: 0, textAlign: "center", fontSize: "1.6rem", borderRadius: 12,
-            borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
+            background: "var(--surface2)" }} />
         <input type="text" value={name} placeholder={namePlaceholder} onChange={e => onName(e.target.value)}
           className={errors.name ? "error" : ""}
-          style={{ flex: 1, minWidth: 0, height: 54, boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
+          style={{ flex: 1, minWidth: 0, height: 54, boxSizing: "border-box", background: "var(--surface2)", borderRadius: 12 }} />
       </div>
     </div>
   );
@@ -1169,8 +1168,8 @@ function MonthField({ label, value, onChange, shortcuts }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <SectionLabel color="var(--accent)">{label}</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
-        background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 6, 
+        background: "transparent", border: "none", padding: 0 }}>
         {[...shortcuts, ["Autre…", undefined]].map(([lbl, v]) => {
           const sel = v === undefined ? showCustom : (!showCustom && value === v);
           const shown = v === undefined && !isShortcut && value ? `📅 ${ymLabel(value)}` : lbl;
@@ -1202,8 +1201,8 @@ function OptionsField({ hint, chips = [], children }) {
       <SectionLabel color="var(--tr)">Options</SectionLabel>
       <button type="button" {...tap(() => setOpen(true))}
         style={{
-          width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", borderRadius: 10,
-          background: "rgba(217,160,102,.05)", border: "1px solid rgba(217,160,102,.3)", borderLeft: "3px solid var(--tr)",
+          width: "100%", minHeight: 40, padding: "7px 12px", boxSizing: "border-box", 
+          background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 12,
           display: "flex", alignItems: "center", gap: 8, cursor: "pointer", touchAction: "manipulation", fontFamily: "inherit",
         }}>
         <span style={{ flex: 1, display: "flex", gap: 5, overflow: "hidden", whiteSpace: "nowrap", textAlign: "left" }}>
@@ -1296,8 +1295,8 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <SectionLabel color="var(--accent)">{label}</SectionLabel>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, padding: 5, borderRadius: 12,
-        background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 6, 
+        background: "transparent", border: "none", padding: 0 }}>
         {[...quick, ["__other", isQuick ? "Autre…" : `Le ${value}`]].map(([v, l]) => {
           const sel = v === "__other" ? (!isQuick || grid) : (value === v && !grid);
           return (
@@ -1416,8 +1415,8 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       {isInc && (
         <div style={{ marginBottom: 8 }}>
           <SectionLabel color="var(--accent)">Montant prévu</SectionLabel>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, padding: 5, borderRadius: 12,
-            background: "rgba(112,184,224,.05)", border: "1px solid rgba(112,184,224,.22)", borderLeft: "3px solid var(--accent)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, 
+            background: "transparent", border: "none", padding: 0 }}>
             {[["fixed", "Fixe"], ["auto", "Automatique"]].map(([k, l]) => {
               const on = amountMode === k;
               return <button key={k} type="button" data-testid={`amount-mode-${k}`} {...tap(() => setAmountMode(k))}
@@ -1632,7 +1631,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
           )}
         </div>
       </OptionsField>
-      <FormActions onCancel={onClose} onSave={handleSave} emoji={isInc ? "💰" : "💸"} />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={isInc ? "💰" : "💸"} color={isInc ? "#3f9c6a" : "#c25b5b"} />
     </Modal>
   );
 }
@@ -1795,7 +1794,7 @@ export function CagModal({ cagnottes, cagTypes = DEFAULT_CAG_TYPES, editingId, o
       <DateField label="Date objectif (optionnel)" date={targetDate} onChange={setTargetDate}
         shortcuts={[["Aucune", ""], ["Dans 6 mois", endOfMonthIn(6)], ["Dans 1 an", endOfMonthIn(12)]]} />
       {calcInfo && <InfoNote color="var(--purple)">{calcInfo}</InfoNote>}
-      <FormActions onCancel={onClose} onSave={handleSave} emoji="🐷" />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="🐷" color="#8a64c8" />
       {/* v1.53.0 : la suppression se fait ici (plus de ✕ sur les cartes de l'écran Cagnottes) */}
       {editingId && onDelete && (
         <button type="button" onClick={() => onDelete(editingId)} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, background: "transparent", border: "1px solid rgba(200,112,112,.35)", color: "var(--danger)", fontWeight: 700, cursor: "pointer" }}>🗑 Supprimer la cagnotte</button>
@@ -1851,7 +1850,7 @@ export function TransferModal({ cagnottes, cagTypes = DEFAULT_CAG_TYPES, onSave,
         : <CategoryField label="Vers" cats={cagItems} catId={toId} allowNone={false} emptyLabel="Choisir une cagnotte"
             onChange={id => { setTo(id); setErrors(x => ({ ...x, from: "" })); }} />}
       <TextField value={reason} onChange={setReason} placeholder="Raison (optionnel)… ex : billet d'avion" />
-      <FormActions onCancel={onClose} onSave={handleSave} emoji={isWithdraw ? "🏦" : "↔️"} label={isWithdraw ? "Retirer" : "Transférer"} />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={isWithdraw ? "🏦" : "↔️"} label={isWithdraw ? "Retirer" : "Transférer"} color="#8a64c8" />
     </Modal>
   );
 }
@@ -1897,7 +1896,7 @@ export function ScheduledModal({ categories, onSave, onClose }) {
         shortcuts={[["Demain", plusDaysISO(1)], ["Dans 1 sem.", plusDaysISO(7)], ["Le 1er", firstNext]]} />
       <TextField value={note} onChange={setNote} placeholder="Note (optionnel)… ex : Précommande Switch 2" />
       <InfoNote>📅 Confirmée automatiquement à la date prévue, puis déduite de ton solde.</InfoNote>
-      <FormActions onCancel={onClose} onSave={handleSave} emoji="📅" label="Programmer" />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="📅" label="Programmer" color="#a8962e" />
     </Modal>
   );
 }
@@ -1905,16 +1904,15 @@ export function ScheduledModal({ categories, onSave, onClose }) {
 // ─────────────────────────────────────────────────────────────────
 //  Aperçu d'une case catégorie (comme dans le menu des catégories)
 // ─────────────────────────────────────────────────────────────────
-function CategoryPreview({ icon, name, color }) {
+function CategoryPreview({ icon, name, color, tint }) {
   return (
     <div style={{ marginBottom: 10 }}>
       <SectionLabel>Aperçu</SectionLabel>
-      <div style={{ display: "flex", justifyContent: "center", padding: 10, borderRadius: 12, background: "var(--surface2)", border: "1px dashed var(--border)" }}>
-        <div style={{ width: 76, padding: "8px 4px", borderRadius: 10, border: `1.5px solid ${color}`, background: `color-mix(in srgb, ${color} 14%, var(--surface2))`,
-          display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <span style={{ fontSize: "1.2rem" }}>{icon || "❔"}</span>
-          <span style={{ fontSize: ".55rem", fontWeight: 700, color, maxWidth: 68, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name || "Nom"}</span>
-        </div>
+      {/* v1.74.0 : aperçu tel qu'affiché dans l'historique (icône teintée de la couleur de la catégorie) */}
+      <div data-testid="cat-preview" style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)" }}>
+        <span style={{ width: 30, height: 30, borderRadius: 9, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", background: `color-mix(in srgb, ${tint || color} 18%, transparent)` }}>{icon || "❔"}</span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: ".76rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name || "Nom"}</span>
+        <span style={{ fontFamily: "var(--mono)", fontWeight: 800, fontSize: ".78rem", color }}>{color === "var(--success)" ? "+" : "−"}24,90 €</span>
       </div>
     </div>
   );
@@ -1923,6 +1921,8 @@ function CategoryPreview({ icon, name, color }) {
 // ─────────────────────────────────────────────────────────────────
 //  Category modal — v1.45.0
 // ─────────────────────────────────────────────────────────────────
+// v1.74.0 : palette des couleurs de catégorie (mêmes teintes que le reste de l'appli)
+const CAT_COLORS = ["#e08870", "#d9a066", "#c8b860", "#68d498", "#58c090", "#5cc8c0", "#70b8e0", "#9fb4e6", "#b090e0", "#c87070"];
 export function CatModal({ editingCat, categories = [], defaultParentId = null, onSave, onClose }) {
   const toast  = useToast();
   const presetParent = categories.find(c => c.id === (editingCat?.parentId || defaultParentId));
@@ -1930,6 +1930,7 @@ export function CatModal({ editingCat, categories = [], defaultParentId = null, 
   const [icon,   setIcon]   = useState(editingCat?.icon || "");
   const [type,   setType]   = useState(editingCat?.type || presetParent?.type || "expense");
   const [parentId, setParentId] = useState(presetParent?.id || "");
+  const [catColor, setCatColor] = useState(editingCat?.color || "");   // v1.74.0 : couleur de la catégorie (optionnelle)
   const [errors, setErrors] = useState({});
   const color = type === "income" ? "var(--success)" : "var(--danger)";
   // v1.47.0 : sous-catégorie — un seul niveau ; une catégorie qui a déjà des
@@ -1944,7 +1945,7 @@ export function CatModal({ editingCat, categories = [], defaultParentId = null, 
     if (!name.trim()) e.name = "Nom requis";
     setErrors(e);
     if (Object.keys(e).length) return;
-    onSave({ id: editingCat?.id || null, name: name.trim(), icon: icon.trim(), type, parentId: hasChildren ? null : (parentId || null) });
+    onSave({ id: editingCat?.id || null, name: name.trim(), icon: icon.trim(), type, parentId: hasChildren ? null : (parentId || null), color: catColor || undefined });
     toast(editingCat ? "Catégorie modifiée" : parentId ? "Sous-catégorie créée" : "Catégorie créée");
   }
 
@@ -1961,7 +1962,16 @@ export function CatModal({ editingCat, categories = [], defaultParentId = null, 
         ? <InfoNote>🗂️ Cette catégorie a des sous-catégories : elle reste une catégorie principale.</InfoNote>
         : <CategoryField label="Rattacher à (optionnel)" cats={parentChoices} catId={parentId} onChange={setParentId}
             emptyLabel="Aucune — catégorie principale" />}
-      <CategoryPreview icon={icon} name={parent ? `${parent.name} › ${name}` : name} color={color} />
+      <SectionLabel color="var(--accent)">Couleur</SectionLabel>
+      <div data-testid="cat-colors" style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 10, alignItems: "center" }}>
+        {CAT_COLORS.map(c => (
+          <span key={c} role="button" data-color={c} onClick={() => setCatColor(c)}
+            style={{ width: 28, height: 28, borderRadius: "50%", background: c, cursor: "pointer", border: catColor === c ? "3px solid #fff" : "2px solid transparent", boxShadow: catColor === c ? `0 0 0 2px ${c}` : "none" }} />
+        ))}
+        <span role="button" onClick={() => setCatColor("")}
+          style={{ fontSize: ".62rem", fontWeight: 800, padding: "5px 9px", borderRadius: 12, cursor: "pointer", color: !catColor ? "var(--accent)" : "var(--text2)", border: `1px solid ${!catColor ? "var(--accent)" : "var(--border)"}` }}>Aucune</span>
+      </div>
+      <CategoryPreview icon={icon} name={parent ? `${parent.name} › ${name}` : name} color={color} tint={catColor || null} />
       <FormActions onCancel={onClose} onSave={handleSave} emoji="✓" />
     </Modal>
   );
@@ -2236,7 +2246,7 @@ export function ReimbursementModal({ reimbursement = null, onSave, onDelete, onR
           <button className="btn" style={{ width: "100%", background: "#5cc8c0", color: "#06201e", fontWeight: 800 }} onClick={() => onReceive(r)}>✓ Reçu</button>
         </div>
       )}
-      <FormActions onCancel={onClose} onSave={handleSave} emoji="↩️" />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji="↩️" color="#3aa89f" />
     </Modal>
   );
 }
@@ -2333,14 +2343,15 @@ export function CagTypesModal({ cagTypes = DEFAULT_CAG_TYPES, cagnottes = [], on
 
 export function ConfirmModal({ title, msg, onConfirm, onClose }) {
   return (
-    <Modal onClose={onClose} title="">
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: "1.8rem", marginBottom: 12 }}>⚠️</div>
+    <Modal onClose={onClose} title="" center>
+      <div style={{ textAlign: "center" }} data-testid="confirm-dialog">
+        <div style={{ width: 48, height: 48, borderRadius: "50%", margin: "0 auto 10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.3rem",
+          background: "color-mix(in srgb, var(--danger) 16%, transparent)", border: "1px solid color-mix(in srgb, var(--danger) 45%, transparent)" }}>⚠️</div>
         <div className="modal-title" style={{ marginBottom: 8 }}>{title}</div>
-        <p style={{ color: "var(--text2)", fontSize: ".82rem", marginBottom: 22, lineHeight: 1.5 }}>{msg}</p>
+        <p style={{ color: "var(--text2)", fontSize: ".78rem", marginBottom: 18, lineHeight: 1.5 }}>{msg}</p>
         <div className="grid-2" style={{ marginBottom: 0 }}>
           <button className="btn btn-outline"        style={{ width: "100%" }} onClick={onClose}>Annuler</button>
-          <button className="btn btn-danger-outline" style={{ width: "100%" }}
+          <button className="btn btn-danger-solid" style={{ width: "100%" }}
             onClick={() => { onConfirm(); onClose(); }}>Confirmer</button>
         </div>
       </div>
@@ -2687,7 +2698,7 @@ export function QuickTemplateSheet({ template, categories, sideAmountTypes = [],
         </OptionsField>
       )}
 
-      <FormActions onCancel={onClose} onSave={handleSave} emoji={type === "expense" ? "💸" : "💰"} />
+      <FormActions onCancel={onClose} onSave={handleSave} emoji={type === "expense" ? "💸" : "💰"} color={type === "expense" ? "#c25b5b" : "#3f9c6a"} />
     </Modal>
   );
 }
@@ -2910,7 +2921,7 @@ export function OffAccountModal({ mode = "expense", entry = null, defaultSatId, 
       <div style={{ marginBottom: 10 }}>
         <input type="text" value={note} onChange={e => setNote(e.target.value)}
           placeholder={isRecharge ? (neg ? "Ex : écart avec la carte…" : "Ex : septembre — 23 jours × 8 €") : "Note (optionnel)…"}
-          style={{ width: "100%", boxSizing: "border-box", borderLeft: "3px solid #8a98a8", background: "rgba(255,255,255,.03)" }} />
+          style={{ width: "100%", boxSizing: "border-box", background: "var(--surface2)", borderRadius: 12 }} />
       </div>
 
       {isRecharge && neg && <div style={{ fontSize: ".6rem", color: "var(--text3)", margin: "-4px 0 10px", lineHeight: 1.5 }}>La correction retire ce montant du solde, sans compter comme une dépense.</div>}
