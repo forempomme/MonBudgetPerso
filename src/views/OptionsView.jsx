@@ -138,6 +138,54 @@ function Sheet({ open, onClose, title, children }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────
+//  v1.74.1 : diagnostic des notifications — dit précisément ce qui bloque
+// ─────────────────────────────────────────────────────────────────
+export function NotifDiagnostic({ onRun, enabled }) {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const run = async action => { if (!onRun) return; setBusy(true); try { setRes(await onRun(action)); } finally { setBusy(false); } };
+  const line = (ok, label, value, fix) => (
+    <div style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 0", borderTop:"1px solid rgba(255,255,255,.06)", fontSize:".7rem" }}>
+      <span style={{ width:18, textAlign:"center" }}>{ok === null ? "·" : ok ? "✅" : "❌"}</span>
+      <span style={{ flex:1, minWidth:0 }}>{label}<span style={{ display:"block", fontSize:".58rem", color:"var(--text3)", whiteSpace:"pre-line" }}>{value}</span></span>
+      {fix}
+    </div>
+  );
+  const fixBtn = (label, action) => <button onClick={() => run(action)} style={{ flexShrink:0, fontSize:".62rem", fontWeight:800, padding:"6px 9px", borderRadius:10, border:"1px solid var(--accent)", background:"color-mix(in srgb, var(--accent) 12%, transparent)", color:"var(--accent)", cursor:"pointer" }}>{label}</button>;
+  const fmtAt = at => { if (!at) return "—"; const d = new Date(at); return isNaN(d) ? String(at) : d.toLocaleString("fr-FR", { weekday:"short", day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }); };
+  return (
+    <div data-testid="notif-diag" style={{ marginTop:12, padding:"10px 12px", borderRadius:14, background:"var(--surface2)", border:"1px solid var(--border)" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ flex:1, fontSize:".74rem", fontWeight:800 }}>🩺 Diagnostic</span>
+        <button data-testid="notif-diag-run" disabled={busy} onClick={() => run()} style={{ fontSize:".64rem", fontWeight:800, padding:"6px 11px", borderRadius:10, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer" }}>{busy ? "…" : res ? "Relancer" : "Lancer"}</button>
+      </div>
+      {!res && <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:5 }}>Vérifie la permission Android, les alarmes exactes, le canal et la liste des rappels réellement programmés.</div>}
+      {res && (
+        <div style={{ marginTop:6 }}>
+          {line(res.native, "Appli Android", res.native ? "oui" : "non — les notifications ne marchent que dans l'APK")}
+          {res.native && line(res.plugin, "Module notifications", res.plugin ? "présent" : "absent de l'APK")}
+          {res.native && line(res.perm === "granted", "Permission d'afficher", res.perm === "granted" ? "autorisée" : res.perm === "denied" ? "refusée — Réglages Android › Applis › Gestion du budget › Notifications" : (res.perm || "inconnue"),
+            res.perm !== "granted" ? fixBtn("Demander", "request") : null)}
+          {res.native && line(res.exact === "granted" ? true : res.exact === "n/a" ? null : false, "Alarmes exactes",
+            res.exact === "granted" ? "autorisées : les rappels partent à l'heure" : res.exact === "n/a" ? "non concerné (Android < 12)" : "non autorisées : Android peut retarder les rappels de plusieurs minutes, voire heures",
+            res.exact && res.exact !== "granted" && res.exact !== "n/a" ? fixBtn("Autoriser", "exact") : null)}
+          {res.native && line(res.channel && res.channel !== "absent" && res.channel !== "n/a" ? res.channel.importance >= 3 : res.channel === "n/a" ? null : false, "Canal « Gestion du Budget »",
+            res.channel === "absent" ? "pas encore créé — utilise le bouton de test ci-dessus" : res.channel === "n/a" ? "non concerné" : `importance ${res.channel?.importance}${res.channel?.importance < 3 ? " (silencieux : à relever dans les réglages Android)" : ""}`)}
+          {line(enabled, "Notifications activées dans l'appli", enabled ? "oui" : "non — active l'interrupteur en haut")}
+          {res.native && line(res.pending.length > 0, `Rappels programmés : ${res.pending.length}`,
+            res.pending.length ? res.pending.slice(0, 4).map(n => `${fmtAt(n.at)} · ${n.title}`).join("\n") : "aucun — rien n'est prévu pour l'instant")}
+          {res.error && <div style={{ fontSize:".6rem", color:"var(--danger)", marginTop:4 }}>Erreur : {res.error}</div>}
+          {res.native && res.perm === "granted" && (
+            <button data-testid="notif-diag-now" onClick={() => run("now")} style={{ width:"100%", marginTop:8, fontSize:".66rem", fontWeight:800, padding:"8px", borderRadius:10, border:"1px solid var(--border)", background:"var(--surface)", color:"var(--text)", cursor:"pointer" }}>📨 Afficher une notification tout de suite</button>
+          )}
+          <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.5 }}>Si tout est ✅ mais que rien n'arrive : Réglages Android › Applis › Gestion du budget › Batterie › « Sans restriction ».</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LinkForm({ categories, onLink }) {
   const [srcId, setSrcId] = useState("");
   const [dstId, setDstId] = useState("");
@@ -178,7 +226,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance, onNotifDiagnostic }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [catSearch,     setCatSearch]     = useState("");      // v1.74.0
   const [catSel,        setCatSel]        = useState(null);
@@ -207,6 +255,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   function saveNotif(field, val) {
     const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay, [field]:val };
     onSaveNotifSettings?.(next);
+    // v1.74.1 : chaque réglage replanifie aussitôt les rappels (avant : seulement à la prochaine ouverture)
+    if (notifOn) onScheduleNotifications?.(next, { silent: true });
   }
   function toggleNotifMain(val) {
     const next = { enabled:val, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay };
@@ -1177,6 +1227,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             onClick={() => onScheduleNotifications?.({ enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay }, { test: true })}>
             🔔 Planifier + envoyer une notification de test
           </button>
+          <NotifDiagnostic onRun={onNotifDiagnostic} enabled={notifOn} />
         </div>
       </Sheet>
 
