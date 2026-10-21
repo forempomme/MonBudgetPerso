@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.74.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.74.2`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -194,7 +194,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.74.1
+└── package.json         — version: 1.74.2
 ```
 
 ---
@@ -342,6 +342,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.74.2** | patch | **Icône de la barre de notifications** — remplace le rond blanc « ! » par défaut d'Android par une silhouette monochrome de l'icône de l'appli (sac, pièces, camembert ; détails en creux). Fichier `assets/android-icons/ic_stat_notify.png` (96 px, blanc sur transparent), copié par le workflow dans `res/drawable-xxxhdpi` ; chaque notification la désigne via `smallIcon`. Si le fichier manque, Android reprend l'icône par défaut. |
 | **1.74.1** | patch | **Notifications : vérification complète** — *Build* : le workflow ajoute la permission des **alarmes exactes** (`USE_EXACT_ALARM`, + `SCHEDULE_EXACT_ALARM` jusqu'à Android 12L) au manifeste recréé à chaque build ; sans elle, Android 14+ traitait les rappels comme « non exacts » et pouvait les retarder de plusieurs minutes à plusieurs heures (le test à +5 s semblait ne jamais arriver). *Test* : 2 étapes — une notification **immédiate** (vérifie l'affichage, sans alarme) puis un rappel programmé **dans 1 minute** (vérifie les alarmes). *Diagnostic* (Options › Notifications) : appli Android, module, permission (bouton « Demander »), alarmes exactes (bouton « Autoriser »), canal, liste des rappels réellement programmés avec leur date, notification immédiate à la demande, conseil batterie. Chaque réglage de notification replanifie aussitôt les rappels (avant : à la prochaine ouverture). Message d'erreur détaillé si Android refuse. Couleur d'accent posée sur chaque notification (le réglage du fichier de config n'était pas lu au build). |
 | **1.74.0** | minor | **Fenêtres, catégories et Historique par type** — *Historique (Frise)* : une partie repliable par type d'opération (Dépenses, Revenus, Cagnottes, Équilibres, Hors compte), chacune avec sa frise par jour et un code couleur léger (titre, liseré, fond, bulles et trait de la frise) ; bloc « À confirmer » (récurrentes, programmées, épargnes) toujours visible, grisé quand il n'y a rien ; boutons « Tout replier / Tout déplier ». *Glisser une ligne* et *feuille d'actions* : boutons ronds à contour coloré (Modifier, Dupliquer, Supprimer, Pointer), comme le menu du +. *Bouton +* : après un appui long (modèles rapides), un nouvel appui sur + referme l'éventail au lieu d'ouvrir le menu des opérations par-dessus. *Catégories* : recherche, rangées de A à Z (sous-catégories aussi, accents ignorés), groupes Dépenses / Revenus, icône teintée, badges « jamais utilisée » et 🔗 liaison ; toucher une ligne = barre ＋ Sous-catégorie / ✏️ / 🔗 / 🗑. Nouveau : **couleur de catégorie** (10 teintes ou aucune) avec aperçu, utilisée par la frise et le Rapport. *Toutes les fenêtres* : feuilles qui montent du bas (poignée, coins arrondis), champs en verre sans liseré, clavier aux touches en verre, bouton principal de la couleur du type ; les réglages d'Options aussi ; confirmations en petite fenêtre centrée avec icône. Le thème Aube garde ses fenêtres centrées. |
 | **1.73.0** | minor | **Cohérence visuelle + sections repliables** — *Historique* : les parties Opérations, Épargnes à confirmer, Programmées, Récurrentes à confirmer, Frais fixes et Revenus fixes du mois se replient / déplient d'un toucher sur leur titre (choix mémorisé). Les lignes des frais et revenus fixes (et le mode « pointage ») ont le même style que la frise : icône teintée, badge « FIXE · le 5 », montant, rond de pointage à droite ; toucher la ligne = corriger ce mois-ci (remplace le bouton ✏️), rangées par jour. Récurrentes, programmées et épargnes à confirmer en lignes du même style ; « Récurrentes à confirmer » n'apparaît plus quand il n'y a rien à confirmer. Total des fixes calculé avec les changements prévus. *Accueil* : aligné sur le mockup — titres de section sans trait, cartes en verre à liseré teinté sans pastille d'icône, Bilan en 4 tuiles teintées (mêmes chiffres, mêmes détails au toucher). *Bouton +* : menu comme le mockup — plus de panneau, une étiquette + une pastille ronde par type, rappel « appui long : modèles rapides ». |
