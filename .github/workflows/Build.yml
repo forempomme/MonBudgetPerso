@@ -123,6 +123,18 @@ jobs:
           echo "=== Après injection ==="
           find "$DEST" -name "ic_launcher*" | sort
 
+      # ── 7d. Icône de la barre de notifications (v1.74.2) ─────────
+      # Android n'affiche que la FORME de cette icône (blanc sur
+      # transparent). Sans elle, il met le rond blanc « ! » par défaut.
+      # Une seule taille (96 px, xxxhdpi) : Android la réduit pour les
+      # autres écrans. Le code JS l'appelle via smallIcon: "ic_stat_notify".
+      - name: Inject notification icon
+        run: |
+          DEST="android/app/src/main/res/drawable-xxxhdpi"
+          mkdir -p "$DEST"
+          cp assets/android-icons/ic_stat_notify.png "$DEST/ic_stat_notify.png"
+          ls -la "$DEST/ic_stat_notify.png"
+
       # ── 8. Keystore ──────────────────────────────────────────────
       - name: Decode keystore
         run: |
