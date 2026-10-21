@@ -75,7 +75,7 @@ function eveningReminders(ns, data, now) {
     if (used.has(iso(at))) continue;
     const jour = at.toLocaleDateString("fr-FR", { weekday: "long" });
     out.push({ id: 900 + i, title: "🌙 Une dépense aujourd'hui ?", body: `Rien n'a été saisi ce ${jour}. Un petit tap pour garder ton solde juste.`,
-      schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING", iconColor: "#70b8e0" });
+      schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" });
   }
   return out;
 }
@@ -186,7 +186,7 @@ export default function App() {
       const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
       const at9 = (y, m, d) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()), 9, 0, 0);
       const tomorrowAt = h => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d; };
-      const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget", iconColor: "#70b8e0" });
+      const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" });
 
       // v1.46.2 : ne compte que les récurrentes qui tomberont vraiment le mois
       // prochain (avant : le nombre total de modèles, même terminés)
@@ -269,7 +269,7 @@ export default function App() {
       // et la programmation (alarme dans 1 minute) — avant, un seul test à +5 s via une
       // alarme « non exacte » pouvait arriver plusieurs minutes plus tard, ou pas du tout.
       if (test) {
-        await LN.schedule({ notifications: [{ id: 8, title: "✅ Notifications actives", body: "L'affichage fonctionne. Un 2ᵉ test (rappel programmé) arrive dans 1 minute.", channelId: "budget", iconColor: "#70b8e0" }] });
+        await LN.schedule({ notifications: [{ id: 8, title: "✅ Notifications actives", body: "L'affichage fonctionne. Un 2ᵉ test (rappel programmé) arrive dans 1 minute.", channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" }] });
         push(9, "⏰ Rappel programmé reçu", "Les rappels programmés fonctionnent aussi.", new Date(Date.now() + 60000));
       }
 
@@ -349,7 +349,7 @@ export default function App() {
       if (action === "now" && out.perm === "granted") {
         try {
           await LN.createChannel({ id: "budget", name: "Gestion du Budget", description: "Rappels", importance: 4, visibility: 1, vibration: true });
-          await LN.schedule({ notifications: [{ id: 7, title: "🩺 Test immédiat", body: "Si tu lis ceci, l'affichage des notifications fonctionne.", channelId: "budget", iconColor: "#70b8e0" }] });
+          await LN.schedule({ notifications: [{ id: 7, title: "🩺 Test immédiat", body: "Si tu lis ceci, l'affichage des notifications fonctionne.", channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" }] });
         } catch (e) { out.error = e?.message || String(e); }
       }
       const { notifications = [] } = await LN.getPending();
