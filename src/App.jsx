@@ -75,7 +75,7 @@ function eveningReminders(ns, data, now) {
     if (used.has(iso(at))) continue;
     const jour = at.toLocaleDateString("fr-FR", { weekday: "long" });
     out.push({ id: 900 + i, title: "🌙 Une dépense aujourd'hui ?", body: `Rien n'a été saisi ce ${jour}. Un petit tap pour garder ton solde juste.`,
-      schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING" });
+      schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING", iconColor: "#70b8e0" });
   }
   return out;
 }
@@ -186,7 +186,7 @@ export default function App() {
       const fmtAmt = n => new Intl.NumberFormat("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2}).format(Math.abs(n))+" €";
       const at9 = (y, m, d) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()), 9, 0, 0);
       const tomorrowAt = h => { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d; };
-      const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget" });
+      const push = (id, title, body, at) => pending.push({ id, title, body, schedule: { at, allowWhileIdle: true }, channelId: "budget", iconColor: "#70b8e0" });
 
       // v1.46.2 : ne compte que les récurrentes qui tomberont vraiment le mois
       // prochain (avant : le nombre total de modèles, même terminés)
@@ -265,13 +265,24 @@ export default function App() {
       }
       // v1.48.0 : rappel du soir (7 prochains soirs, sauf ceux où une opération existe déjà)
       eveningReminders(ns, data, now).forEach(n => pending.push(n));
-      if (test) push(9, "✅ Notifications actives", "Tes rappels Gestion du Budget fonctionnent.", new Date(Date.now() + 5000));
+      // v1.74.1 : le test vérifie séparément l'affichage (notification immédiate, sans alarme)
+      // et la programmation (alarme dans 1 minute) — avant, un seul test à +5 s via une
+      // alarme « non exacte » pouvait arriver plusieurs minutes plus tard, ou pas du tout.
+      if (test) {
+        await LN.schedule({ notifications: [{ id: 8, title: "✅ Notifications actives", body: "L'affichage fonctionne. Un 2ᵉ test (rappel programmé) arrive dans 1 minute.", channelId: "budget", iconColor: "#70b8e0" }] });
+        push(9, "⏰ Rappel programmé reçu", "Les rappels programmés fonctionnent aussi.", new Date(Date.now() + 60000));
+      }
 
       if (pending.length > 0) await LN.schedule({ notifications: pending });
-      say(test ? `Notification de test dans 5 s · ${pending.length - 1} rappel(s) programmé(s)` : `${pending.length} rappel(s) programmé(s)`, "success");
+      // Alarmes exactes (Android 12+) : sans elles, Android peut retarder les rappels
+      let exactOk = true;
+      try { const ex = await LN.checkExactNotificationSetting?.(); if (ex && ex.exact_alarm && ex.exact_alarm !== "granted") exactOk = false; } catch { /* Android < 12 */ }
+      const n = pending.length - (test ? 1 : 0);
+      say(test ? `Test envoyé · 2ᵉ test dans 1 min · ${n} rappel(s) programmé(s)` : `${n} rappel(s) programmé(s)`, "success");
+      if (!exactOk) say("⚠️ Alarmes exactes non autorisées : les rappels peuvent arriver en retard (voir Diagnostic)", "error");
     } catch (e) {
       console.warn("LocalNotifications:", e);
-      say("Erreur lors de la programmation des notifications", "error");
+      say(`Erreur lors de la programmation des notifications${e?.message ? " : " + e.message : ""}`, "error");
     }
   // addToast est défini plus bas mais stable (useCallback sans dépendance) :
   // il est lu au moment de l'appel, jamais au rendu — pas dans les deps.
@@ -316,6 +327,36 @@ export default function App() {
       } catch (e) { console.warn("notification actions:", e); }
     })();
     return () => { handle?.remove?.(); };
+  }, []);
+  // ── v1.74.1 : diagnostic des notifications (Options › Notifications) ──
+  //   action : undefined (lecture seule) | "request" (redemande la permission)
+  //            | "exact" (ouvre le réglage Android des alarmes exactes) | "now" (notification immédiate)
+  const notifDiagnostic = useCallback(async (action) => {
+    const out = { native: !!window?.Capacitor?.isNativePlatform?.(), plugin: false, perm: null, exact: null, channel: null, pending: [], error: null };
+    if (!out.native) return out;
+    try {
+      const { LocalNotifications: LN } = await import("@capacitor/local-notifications");
+      out.plugin = !!LN;
+      if (action === "request") await LN.requestPermissions();
+      if (action === "exact") { try { await LN.changeExactNotificationSetting(); } catch (e) { out.error = e?.message || String(e); } }
+      out.perm = (await LN.checkPermissions())?.display || null;
+      try { out.exact = (await LN.checkExactNotificationSetting())?.exact_alarm || null; } catch { out.exact = "n/a"; }
+      try {
+        const { channels = [] } = await LN.listChannels();
+        const ch = channels.find(c => c.id === "budget");
+        out.channel = ch ? { importance: ch.importance } : "absent";
+      } catch { out.channel = "n/a"; }
+      if (action === "now" && out.perm === "granted") {
+        try {
+          await LN.createChannel({ id: "budget", name: "Gestion du Budget", description: "Rappels", importance: 4, visibility: 1, vibration: true });
+          await LN.schedule({ notifications: [{ id: 7, title: "🩺 Test immédiat", body: "Si tu lis ceci, l'affichage des notifications fonctionne.", channelId: "budget", iconColor: "#70b8e0" }] });
+        } catch (e) { out.error = e?.message || String(e); }
+      }
+      const { notifications = [] } = await LN.getPending();
+      out.pending = notifications.map(n => ({ id: n.id, title: n.title, at: n.schedule?.at || null }))
+        .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+    } catch (e) { out.error = e?.message || String(e); }
+    return out;
   }, []);
   const markRoundingTransferred   = useCallback(() =>
     dispatch({ type: A.MARK_ROUNDING_TRANSFERRED, date: (() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })() }), []);
@@ -953,6 +994,7 @@ export default function App() {
         notifSettings={data.notifSettings || {}}
         onSaveNotifSettings={saveNotifSettings}
         onScheduleNotifications={scheduleNotifications}
+        onNotifDiagnostic={notifDiagnostic}
         onPushBack={pushBack}
         onPopBack={popBack}
       />
