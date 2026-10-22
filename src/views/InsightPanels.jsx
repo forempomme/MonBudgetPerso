@@ -8,7 +8,7 @@
 //    (computeSurplus).
 // ─────────────────────────────────────────────────────────────────
 import { useState } from "react";
-import { fmt, MONTHS_SHORT, cagIconOf } from "../utils.js";
+import { fmt, MONTHS_SHORT, cagIconOf, pv } from "../utils.js";
 import { simulateProjection } from "../hooks.js";
 import { Sheet } from "./ForecastPanels.jsx";
 
@@ -104,7 +104,7 @@ function Curve({ months }) {
   const X = i => 14 + i * (W - 28) / (base.length - 1), Y = v => H - 8 - (v - lo) / (hi - lo) * (H - 16);
   const path = a => a.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
   return (
-    <svg viewBox={`0 0 ${W} ${H + 14}`} width="100%" style={{ display: "block", marginTop: 8 }}>
+    <svg data-pv="" viewBox={`0 0 ${W} ${H + 14}`} width="100%" style={{ display: "block", marginTop: 8 }}>
       {lo < 0 && <><line x1="6" x2={W - 6} y1={Y(0)} y2={Y(0)} stroke="#c87070" strokeDasharray="3 3" strokeWidth="1" />
         <text x={W - 8} y={Y(0) - 3} fill="#c87070" fontSize="9" textAnchor="end">0 €</text></>}
       <path d={path(base)} fill="none" stroke="#70b8e0" strokeWidth="2.2" />
@@ -168,7 +168,7 @@ export function InsightsList({ items, categories = [], onDismiss, onUpdateRecurr
           const name = it.tpl.label || it.tpl.note || categories.find(c => c.id === it.tpl.categoryId)?.name || "Récurrente";
           return (
             <div key={it.key} style={{ borderRadius: 13, padding: "11px 12px", marginBottom: 8, border: "1px solid rgba(232,148,74,.45)", background: "rgba(232,148,74,.06)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".74rem" }}><span>📈</span><b style={{ flex: 1 }}>{name} a augmenté</b><b style={{ color: "#e8944a" }}>+{it.pct} %</b></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".74rem" }}><span>📈</span><b style={{ flex: 1 }}>{name} a augmenté</b><b style={{ color: "#e8944a" }}>+{pv(it.pct)} %</b></div>
               <div style={{ fontSize: ".64rem", color: "var(--text2)", margin: "5px 0 8px", lineHeight: 1.45 }}>
                 Récurrente confirmée à <b style={{ color: "var(--text)" }}>{fmt(it.last)}</b> en {ymLong(it.lastYM)}, contre <b style={{ color: "var(--text)" }}>{fmt(it.prev)}</b> en moyenne avant (+{fmt(it.last - it.prev)}/mois, soit +{fmt((it.last - it.prev) * 12)}/an).
               </div>
