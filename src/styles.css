@@ -508,3 +508,9 @@ html[data-theme="abysse"] .modal-center .modal-content::before, html[data-theme=
 html[data-theme="abysse"] .modal-content .btn, html[data-theme="glacier"] .modal-content .btn { border-radius: 12px; font-weight: 800; }
 html[data-theme="abysse"] .modal-content .btn-primary, html[data-theme="glacier"] .modal-content .btn-primary { color: #fff; background: var(--btn-pri-bg); border: 1px solid var(--btn-pri-border); }
 html[data-theme="abysse"] .modal-title, html[data-theme="glacier"] .modal-title { font-size: 1rem; font-weight: 800; }
+
+/* ── v1.75.0 : mode discret ───────────────────────────────────────
+   Les montants et pourcentages sont masqués dans le texte (fmt/pv) ;
+   ici on cache les barres de proportion et on floute les graphiques. */
+html[data-privacy] svg[data-pv] { filter: blur(7px); opacity: .45; }
+html[data-privacy] div[data-pv], html[data-privacy] i[data-pv] { visibility: hidden; }
