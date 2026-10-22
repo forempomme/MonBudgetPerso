@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect } from "react";
-import { fmt, currentYM, isIncome, fixedAmountFor } from "../utils.js";
+import { fmt, currentYM, isIncome, fixedAmountFor, pv, fmtInt } from "../utils.js";
 import { useYearMonths, computeMonthTotals, computePeriodTotals, isActiveForMonth, isIncomeDirection, computeSidePaidByCategory, catFamilyIds, computeMonthRecap, categorySpentForMonth, firstDataYM, livedMonths, computeCategoryBreakdown, computeSavingsRates } from "../hooks.js";
 import { TagsModal, MONTHS_FR } from "./shared.jsx";
 
@@ -182,10 +182,10 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses,
                 <div style={{ flex: 1, position: "relative", height: 12 }}>
                   {/* Barre dépense */}
                   <div style={{ position: "absolute", inset: 0, background: "var(--surface3)", borderRadius: 99 }} />
-                  <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(m.exp / maxNet * 100)}%`, background: "var(--danger)", borderRadius: 99, opacity: .7 }} />
+                  <div data-pv="" style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${(m.exp / maxNet * 100)}%`, background: "var(--danger)", borderRadius: 99, opacity: .7 }} />
                   {/* Barre net (par dessus) */}
                   {m.inc > 0 && (
-                    <div style={{ position: "absolute", top: 2, left: 0, height: "calc(100% - 4px)", width: `${(m.net / maxNet * 100)}%`, background: "var(--accent)", borderRadius: 99 }} />
+                    <div data-pv="" style={{ position: "absolute", top: 2, left: 0, height: "calc(100% - 4px)", width: `${(m.net / maxNet * 100)}%`, background: "var(--accent)", borderRadius: 99 }} />
                   )}
                 </div>
                 <div style={{ width: 72, textAlign: "right", flexShrink: 0 }}>
@@ -235,7 +235,7 @@ function CategoryDetailModal({ onClose, categories, transactions, fixedExpenses,
 const MINI = ["J","F","M","A","M","J","J","A","S","O","N","D"];
 export function SavingsRateChart({ data, endYM, sel, onSel }) {
   const { months, avg } = useMemo(() => computeSavingsRates(data, endYM, 12), [data, endYM]);
-  const pct = r => `${Math.round(r * 100)} %`;
+  const pct = r => `${pv(Math.round(r * 100))} %`;
   const lived = months.filter(m => m.rate != null);
   const top = Math.max(0.1, avg || 0, ...lived.map(m => m.rate));
   const cur = months.find(m => m.ym === sel) || [...lived].pop();
@@ -367,13 +367,13 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   const rowColor = r => r.id === "__fixes__" ? "#e8944a" : r.id === "__other__" ? "#8fa9bd" : (categories.find(c => c.id === r.id)?.color || CAT_PALETTE[Math.max(0, categories.findIndex(c => c.id === r.id)) % CAT_PALETTE.length]);
   const rowName = r => r.id === "__fixes__" ? "Frais fixes" : r.id === "__other__" ? "Sans catégorie" : categories.find(c => c.id === r.id)?.name || "Catégorie supprimée";
   const rowIcon = r => r.id === "__fixes__" ? "📌" : categories.find(c => c.id === r.id)?.icon || "❔";
-  const fmt0 = v => `${Math.round(v).toLocaleString("fr-FR")} €`;
+  const fmt0 = v => fmtInt(v);
   const MONTH_ABBR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
   // Barre empilée par catégorie + légende (Mois : « Où est parti l'argent », Catégories : en-tête)
   const stackBar = (rows, total, h = 14) => (
     <div data-testid="cat-stack" style={{ display: "flex", height: h, borderRadius: 6, overflow: "hidden", gap: 2, background: "var(--surface3)" }}>
       {rows.filter(r => r.net > 0).map((r, i) => (
-        <i key={r.id} title={rowName(r)} onClick={() => !r.id.startsWith("__") && setCatModal(r.id)}
+        <i data-pv="" key={r.id} title={rowName(r)} onClick={() => !r.id.startsWith("__") && setCatModal(r.id)}
           style={{ display: "block", width: `${r.net / total * 100}%`, background: rowColor(r), cursor: r.id.startsWith("__") ? "default" : "pointer" }} />
       ))}
     </div>
@@ -394,7 +394,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   const rowSt = first => ({ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderTop: first ? "none" : "1px solid var(--border-soft)", fontSize: ".72rem" });
   const bar = (pct, col, h = 5) => (
     <div style={{ height: h, borderRadius: 3, background: "var(--surface3)", overflow: "hidden", marginTop: 4 }}>
-      <div style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: "100%", borderRadius: 3, background: col }} />
+      <div data-pv="" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: "100%", borderRadius: 3, background: col }} />
     </div>
   );
   const budCol = (spent, limit) => spent > limit + 0.004 ? "var(--danger)" : spent / limit >= .8 ? "var(--warning)" : "var(--success)";
@@ -403,7 +403,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
     if (Math.abs(v - avg) < Math.max(1, Math.abs(avg) * .03)) return { t: "= moyenne", c: "var(--text3)" };
     const up = v > avg, good = higherIsGood ? up : !up;
     const p = avg !== 0 ? Math.round(Math.abs((v - avg) / avg) * 100) : null;
-    return { t: `${up ? "▲" : "▼"} ${p != null && Math.abs(avg) > 50 ? `${p} %` : fmt(Math.abs(v - avg))} vs moy. ${mAvg?.n} mois`, c: good ? "var(--success)" : "var(--danger)" };
+    return { t: `${up ? "▲" : "▼"} ${p != null && Math.abs(avg) > 50 ? `${pv(p)} %` : fmt(Math.abs(v - avg))} vs moy. ${mAvg?.n} mois`, c: good ? "var(--success)" : "var(--danger)" };
   };
   const signed = v => `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`;
   const catOf = id => categories.find(c => c.id === id);
@@ -451,7 +451,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 {mT.sav > 0 ? <>et mis <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(mT.sav)}</b> de côté</>
                   : mT.sav < 0 ? <>et repris <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(-mT.sav)}</b> des cagnottes</>
                   : <>et rien mis de côté</>}
-                {pctInc != null && mT.sav !== 0 && <span style={{ fontSize: ".66rem", color: "var(--text2)" }}> ({pctInc} % des revenus)</span>}.
+                {pctInc != null && mT.sav !== 0 && <span style={{ fontSize: ".66rem", color: "var(--text2)" }}> ({pv(pctInc)} % des revenus)</span>}.
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9, paddingTop: 8, borderTop: "1px solid var(--border-soft)" }}>
                 <span style={{ flex: 1, fontSize: ".68rem", color: "var(--text2)" }}>{mT.net >= 0 ? "Il te reste" : "Il te manque"}{vN.t && <span style={{ display: "block", fontSize: ".58rem", fontWeight: 700, color: vN.c }}>{vN.t}</span>}</span>
@@ -515,7 +515,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 <div key={x.catId} style={{ ...rowSt(i === 0), cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
                   <span>{c?.icon || "❔"}</span>
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"} <small style={{ color: "var(--text3)" }}>{x.pct == null ? "" : x.diff > 0 ? "plus que d'habitude" : "moins que d'habitude"}</small></span>
-                  <span style={{ fontSize: ".62rem", fontWeight: 800, color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "▲ +" : "▼ −"}${Math.abs(x.pct)} %`}</span>
+                  <span style={{ fontSize: ".62rem", fontWeight: 800, color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "▲ +" : "▼ −"}${pv(Math.abs(x.pct))} %`}</span>
                   <b style={{ width: 82, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(x.amount)}</b>
                 </div>
               );
@@ -586,7 +586,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
         const vsY = (v, p, hi) => {
           if (!hasPrev || !p) return { t: "", c: "var(--text3)" };
           const d = (v - p) / Math.abs(p) * 100, good = hi ? d > 0 : d < 0;
-          return { t: `${d > 0 ? "▲" : "▼"} ${Math.abs(Math.round(d))} % vs ${currentYear - 1}`, c: Math.abs(d) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
+          return { t: `${d > 0 ? "▲" : "▼"} ${pv(Math.abs(Math.round(d)))} % vs ${currentYear - 1}`, c: Math.abs(d) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
         };
         const rate = yearly.inc > 0 ? (yearly.sav - (yearly.decag || 0)) / yearly.inc * 100 : 0;   // v1.68.0 : net des retraits
         const best = ranked[0], worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
@@ -612,7 +612,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 <div style={{ fontSize: ".84rem", lineHeight: 1.6, marginTop: 5 }}>
                   En {nM} mois : <b style={{ color: "var(--success)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.inc)}</b> gagnés{small(vI)},{" "}
                   <b style={{ color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.exp)}</b> dépensés{small(vE)},{" "}
-                  <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.sav)}</b> épargnés <span style={{ fontSize: ".66rem", color: "var(--text2)" }}>(taux : {rate.toFixed(1).replace(".", ",")} %)</span>.
+                  <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(yearly.sav)}</b> épargnés <span style={{ fontSize: ".66rem", color: "var(--text2)" }}>(taux : {pv(rate.toFixed(1).replace(".", ","))} %)</span>.
                 </div>
                 <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
                   Soit {fmt(yearly.inc / nM)}/mois de revenus et {fmt(yearly.exp / nM)}/mois de dépenses · net <b style={{ color: yearly.net >= 0 ? "var(--success)" : "var(--danger)" }}>{signed(yearly.net)}</b>{small(vN)}
@@ -620,7 +620,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 {!hasPrev && <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 2 }}>{currentYear - 1} : pas de données à comparer pour l'instant.</div>}
                 {pts.length > 0 && (
                   <>
-                    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, marginTop: 6, display: "block" }}>
+                    <svg data-pv="" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, marginTop: 6, display: "block" }}>
                       <line x1="8" x2={W - 8} y1={Y(0)} y2={Y(0)} stroke="rgba(255,255,255,.12)" />
                       <polyline fill="none" stroke="var(--success)" strokeWidth="2.5" strokeLinejoin="round" points={pts.map(p => `${X(p.i)},${Y(p.v)}`).join(" ")} />
                       {pts.map(p => <circle key={p.i} cx={X(p.i)} cy={Y(p.v)} r="2.2" fill="var(--success)" />)}
@@ -661,8 +661,8 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                       <div style={{ fontFamily: "var(--mono)", fontSize: ".7rem", fontWeight: 800, color: col, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontVariantNumeric: "tabular-nums" }}>{m.hasData ? `${m.net >= 0 ? "+" : "−"}${fmt0(Math.abs(m.net))}` : "—"}</div>
                       {m.hasData && (
                         <div style={{ display: "grid", gap: 2, marginTop: 4 }} title={`Revenus ${fmt(m.inc)} · Dépenses ${fmt(m.exp)}`}>
-                          <i style={{ display: "block", height: 3, borderRadius: 2, width: `${m.inc / mxF * 100}%`, background: "rgba(104,212,152,.75)" }} />
-                          <i style={{ display: "block", height: 3, borderRadius: 2, width: `${m.exp / mxF * 100}%`, background: "rgba(200,112,112,.75)" }} />
+                          <i data-pv="" style={{ display: "block", height: 3, borderRadius: 2, width: `${m.inc / mxF * 100}%`, background: "rgba(104,212,152,.75)" }} />
+                          <i data-pv="" style={{ display: "block", height: 3, borderRadius: 2, width: `${m.exp / mxF * 100}%`, background: "rgba(200,112,112,.75)" }} />
                         </div>
                       )}
                     </div>
@@ -758,7 +758,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                     <span>{icon}</span>
                     <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}
                       {r.id === "__fixes__" && <span style={{ marginLeft: 5, fontSize: ".52rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, background: "var(--surface3)", color: "var(--text3)" }}>fixes</span>}</span>
-                    <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{Math.round(pct)} %</span>
+                    <span style={{ fontSize: ".58rem", color: "var(--text3)" }}>{pv(Math.round(pct))} %</span>
                     <b style={{ width: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(r.net)}</b>
                     <span style={{ color: "var(--text3)", width: 8 }}>{c ? "›" : ""}</span>
                   </div>
@@ -816,7 +816,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 return (
                   <div key={r.categoryId || i} style={rowSt(i === 0 && Object.keys(byType).length === 0)}>
                     <span>{c?.icon || "❔"}</span><span style={{ flex: 1 }}>{c?.name || "Sans catégorie"}</span>
-                    <span style={{ fontSize: ".56rem", color: "var(--text3)" }}>{Math.round(r.pct)} % du total</span>
+                    <span style={{ fontSize: ".56rem", color: "var(--text3)" }}>{pv(Math.round(r.pct))} % du total</span>
                     <b style={{ color: "var(--tr)", fontVariantNumeric: "tabular-nums" }}>{fmt(r.side)}</b>
                   </div>
                 );
