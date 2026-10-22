@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.74.2`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.75.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -112,7 +112,11 @@ Menu à 5 options (tap court) :
 | 🔔 Notifications | Notifications locales Android |
 | 💾 Données | Sauvegarde |
 
-**🔒 Sécurité** — PIN SHA-256 + biométrie via `@aparajita/capacitor-biometric-auth`
+**🔒 Sécurité** — PIN SHA-256 + biométrie via `@aparajita/capacitor-biometric-auth` ; reverrouillage après un délai hors de l'appli (Immédiat / 1 / **5** / 15 min / Jamais) ; attente imposée après N erreurs de PIN (3 / **5** / 10 / illimité : 30 s, 1 min, 5 min, 15 min) ; aperçu masqué dans les applis récentes (Android 13+) ; option « ouvrir en mode discret » (v1.75.0)
+
+**🙈 Mode discret** (v1.75.0) — bouton 👁 en haut à droite de chaque écran : montants et pourcentages remplacés par « •••• », barres de proportion cachées, graphiques floutés ; les montants tapés en saisie restent visibles
+
+**💾 Sauvegardes chiffrées** (v1.75.0) — toutes les sauvegardes sont chiffrées (AES-256-GCM, clé tirée du mot de passe de sauvegarde par PBKDF2-SHA256 600 000 itérations) ; mot de passe choisi une fois, redemandé et vérifié à chaque sauvegarde, jamais stocké ; les anciens fichiers non chiffrés restent importables
 
 **⚡ Templates rapides** — gestion des templates de saisie rapide (voir FAB ci-dessus), badge du nombre de templates créés
 
@@ -184,6 +188,7 @@ gestion-du-budget/
 │   ├── App.jsx          — state, FAB (+ éventail templates rapides), modals, callbacks
 │   ├── store.js         — reducer, actions A.*, DEFAULT_DATA
 │   ├── releve.js        — lecture du relevé PDF + comparaison (lecture seule)
+│   ├── backupCrypto.js  — chiffrement des sauvegardes (AES-256-GCM + PBKDF2, WebCrypto)
 │   ├── hooks.js         — useBalance, useReconciliation, useBalanceWithRecurring, computeProjection…
 │   ├── utils.js         — fmt, isIncome, txLabel, txTypeClass, txSign, APP_VERSION
 │   ├── views.jsx        — toutes les vues + LockScreen + SwipeRow
@@ -194,7 +199,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.74.2
+└── package.json         — version: 1.75.0
 ```
 
 ---
@@ -342,6 +347,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.75.0** | minor | **Sécurité et mode discret** — *Reverrouillage* : le PIN/l'empreinte est redemandé après un délai hors de l'appli (Options › Sécurité : Immédiat · 1 · 5 · 15 min · Jamais, 5 min par défaut ; avant : seulement au démarrage). *Essais du PIN* : après 3/5/10 erreurs (5 par défaut, ou illimité), attente de 30 s, puis 1 min, 5 min, 15 min ; compteur gardé hors des données (survit à la fermeture, absent des sauvegardes) ; l'empreinte reste utilisable. *Applis récentes* : aperçu remplacé par un fond uni (Android 13+, `setRecentsScreenshotEnabled(false)` injecté par le build), captures d'écran toujours possibles. *Sauvegardes chiffrées obligatoires* : AES-256-GCM + PBKDF2-SHA256 600 000 itérations, mot de passe choisi une fois (8 car. min., tapé 2 fois), vérifié à chaque sauvegarde, jamais stocké ; import : mot de passe demandé pour un fichier chiffré, anciens fichiers en clair toujours acceptés (sans effacer le mot de passe actuel) ; « mot de passe oublié » → nouveau mot de passe pour les sauvegardes suivantes. Avant, le fichier sur Drive était lisible en clair, PIN compris (4 chiffres = retrouvable en < 1 s). *Corrections* : nom du fichier de sauvegarde et heures de l'historique des sauvegardes en heure locale (avant : UTC), anciens fichiers de sauvegarde supprimés du cache de l'appli. *Mode discret* : bouton 👁 dans l'en-tête, montants et pourcentages masqués partout, barres de proportion cachées, graphiques floutés ; option « ouvrir l'appli en mode discret ». |
 | **1.74.2** | patch | **Icône de la barre de notifications** — remplace le rond blanc « ! » par défaut d'Android par une silhouette monochrome de l'icône de l'appli (sac, pièces, camembert ; détails en creux). Fichier `assets/android-icons/ic_stat_notify.png` (96 px, blanc sur transparent), copié par le workflow dans `res/drawable-xxxhdpi` ; chaque notification la désigne via `smallIcon`. Si le fichier manque, Android reprend l'icône par défaut. |
 | **1.74.1** | patch | **Notifications : vérification complète** — *Build* : le workflow ajoute la permission des **alarmes exactes** (`USE_EXACT_ALARM`, + `SCHEDULE_EXACT_ALARM` jusqu'à Android 12L) au manifeste recréé à chaque build ; sans elle, Android 14+ traitait les rappels comme « non exacts » et pouvait les retarder de plusieurs minutes à plusieurs heures (le test à +5 s semblait ne jamais arriver). *Test* : 2 étapes — une notification **immédiate** (vérifie l'affichage, sans alarme) puis un rappel programmé **dans 1 minute** (vérifie les alarmes). *Diagnostic* (Options › Notifications) : appli Android, module, permission (bouton « Demander »), alarmes exactes (bouton « Autoriser »), canal, liste des rappels réellement programmés avec leur date, notification immédiate à la demande, conseil batterie. Chaque réglage de notification replanifie aussitôt les rappels (avant : à la prochaine ouverture). Message d'erreur détaillé si Android refuse. Couleur d'accent posée sur chaque notification (le réglage du fichier de config n'était pas lu au build). |
 | **1.74.0** | minor | **Fenêtres, catégories et Historique par type** — *Historique (Frise)* : une partie repliable par type d'opération (Dépenses, Revenus, Cagnottes, Équilibres, Hors compte), chacune avec sa frise par jour et un code couleur léger (titre, liseré, fond, bulles et trait de la frise) ; bloc « À confirmer » (récurrentes, programmées, épargnes) toujours visible, grisé quand il n'y a rien ; boutons « Tout replier / Tout déplier ». *Glisser une ligne* et *feuille d'actions* : boutons ronds à contour coloré (Modifier, Dupliquer, Supprimer, Pointer), comme le menu du +. *Bouton +* : après un appui long (modèles rapides), un nouvel appui sur + referme l'éventail au lieu d'ouvrir le menu des opérations par-dessus. *Catégories* : recherche, rangées de A à Z (sous-catégories aussi, accents ignorés), groupes Dépenses / Revenus, icône teintée, badges « jamais utilisée » et 🔗 liaison ; toucher une ligne = barre ＋ Sous-catégorie / ✏️ / 🔗 / 🗑. Nouveau : **couleur de catégorie** (10 teintes ou aucune) avec aperçu, utilisée par la frise et le Rapport. *Toutes les fenêtres* : feuilles qui montent du bas (poignée, coins arrondis), champs en verre sans liseré, clavier aux touches en verre, bouton principal de la couleur du type ; les réglages d'Options aussi ; confirmations en petite fenêtre centrée avec icône. Le thème Aube garde ses fenêtres centrées. |
