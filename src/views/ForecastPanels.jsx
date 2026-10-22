@@ -112,7 +112,7 @@ export function ForecastPanel({ forecast: fc }) {
 
       {fc.days.length > 1 && <>
         <div style={{ fontSize: ".58rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 0 6px" }}>Solde prévu jour par jour</div>
-        <svg width="100%" viewBox={`0 -6 ${W} ${H + 22}`} style={{ display: "block", overflow: "visible" }}>
+        <svg data-pv="" width="100%" viewBox={`0 -6 ${W} ${H + 22}`} style={{ display: "block", overflow: "visible" }}>
           {min < 0 && <line x1="0" x2={W} y1={yv(0)} y2={yv(0)} stroke="var(--danger)" strokeDasharray="3 3" opacity=".5" />}
           <polyline fill="none" stroke="var(--accent)" strokeWidth="2.2" strokeLinejoin="round" points={pts.map(p => `${x(p[0]).toFixed(1)},${yv(p[1]).toFixed(1)}`).join(" ")} />
           {lowIdx >= 0 && <>
