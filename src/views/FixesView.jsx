@@ -4,7 +4,7 @@
 // rangées par statut (passés non pointés / à venir / pointés / en pause /
 // commencent plus tard), groupes pliables, pointage direct depuis une tuile.
 import { useState, Fragment } from "react";
-import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, fixedCashDateISO, DAY_LAST_BD, DAY_PREV_LAST_BD, fixedAmountFor } from "../utils.js";
+import { fmt, currentYM, todayISO, resolveFixedDay, fixedDayLabel, fixedOccurrenceYM, fixedCashDateISO, DAY_LAST_BD, DAY_PREV_LAST_BD, fixedAmountFor, pv } from "../utils.js";
 import { effectiveFixesForMonth, effectiveIncomesForMonth, isActiveForMonth } from "../hooks.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { InsightsList } from "./InsightPanels.jsx";
@@ -286,7 +286,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
           {active.length > 0 && (
             <div className="card" data-testid="fix-progress" style={{ padding: "9px 11px", marginBottom: 9 }}>
               <div style={{ display: "flex", fontSize: ".72rem", gap: 6 }}>
-                <span style={{ flex: 1 }}>{monthName} : <b>{doneCount}/{active.length}</b> {isExp ? "prélevés" : "reçus"} <span style={{ color: "var(--text3)", fontSize: ".62rem" }}>· {pct} %</span></span>
+                <span style={{ flex: 1 }}>{monthName} : <b>{doneCount}/{active.length}</b> {isExp ? "prélevés" : "reçus"} <span style={{ color: "var(--text3)", fontSize: ".62rem" }}>· {pv(pct)} %</span></span>
                 <span style={{ color: "var(--text2)", whiteSpace: "nowrap" }}>{isExp ? "reste à prélever" : "reste à recevoir"} <b style={{ fontFamily: "var(--mono)", color: mainColor, fontVariantNumeric: "tabular-nums" }}>{fmt(remaining)}</b></span>
               </div>
               {/* v1.71.0 : frise du mois — un point par échéance, trait = aujourd'hui */}
