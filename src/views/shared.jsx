@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState } from "react";
-import { fmt, isIncome, touchMoved } from "../utils.js";
+import { fmt, isIncome, touchMoved, pv } from "../utils.js";
 import { isIncomeDirection } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
@@ -383,10 +383,10 @@ export function TagBudgetBars({ items, monthLabel }) {
             <span><b style={{ color: col[level] }}>{fmt(spent)}</b> <span style={{ color: "var(--text3)" }}>/ {fmt(budget)}</span></span>
           </div>
           <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${Math.min(100, pct)}%`, background: col[level], borderRadius: 5 }} />
+            <div data-pv="" style={{ height: "100%", width: `${Math.min(100, pct)}%`, background: col[level], borderRadius: 5 }} />
           </div>
           <div style={{ fontSize: ".6rem", marginTop: 5, color: level === "over" ? "var(--danger)" : "var(--text2)" }}>
-            {level === "over" ? `Dépassé de ${fmt(-remaining)}` : `Reste ${fmt(remaining)} · ${Math.round(pct)} % utilisé`}
+            {level === "over" ? `Dépassé de ${fmt(-remaining)}` : `Reste ${fmt(remaining)} · ${pv(Math.round(pct))} % utilisé`}
           </div>
         </div>
       ))}
