@@ -7,10 +7,10 @@
 // ─────────────────────────────────────────────────────────────────
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { fmt, cagIconOf } from "../utils.js";
+import { fmt, cagIconOf, pv } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
 
-const pctTxt = r => `${Math.round(r * 100)} %`;
+const pctTxt = r => `${pv(Math.round(r * 100))} %`;
 const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
 const shortDate = iso => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); };
 
