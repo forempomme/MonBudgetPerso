@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES } from "./utils.js";
+import { LS_KEY, uid, fmt, setPrivacy, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES } from "./utils.js";
 import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
@@ -9,6 +9,8 @@ import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
 import { ToastCtx } from "./context.js";
 import { ToastContainer } from "./components/index.jsx";
 import { ReleveCompare } from "./views/ReleveCompare.jsx";
+import { BackupPasswordModal, ImportPasswordModal } from "./views/SecuritySheets.jsx";
+import { createBackupKey, verifyBackupPassword, encryptBackup, decryptBackup, isEncryptedBackup } from "./backupCrypto.js";
 import {
   TransModal, FixedModal, FixedIncomeModal, CagModal, TransferModal, CatModal,
   ScheduledModal, DeleteCategoryModal, ImportPreviewModal, ProjectModal, ReimbursementModal,
@@ -80,6 +82,24 @@ function eveningReminders(ns, data, now) {
   return out;
 }
 
+// v1.75.0 : supprime les anciens fichiers de sauvegarde laissés dans le cache
+// de l'appli après un partage (Drive lit le fichier après coup : on ne le
+// supprime donc pas tout de suite, mais au partage suivant / au démarrage).
+async function cleanBackupCache(minAgeMs = 0) {
+  try {
+    if (!window.Capacitor?.isNativePlatform?.()) return;
+    const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    const { files = [] } = await Filesystem.readdir({ path: "", directory: Directory.Cache });
+    for (const f of files) {
+      const name = typeof f === "string" ? f : f?.name;
+      const age = Date.now() - (Number(f?.mtime) || 0);
+      if (name && /^budget_backup_.*\.json$/.test(name) && age >= minAgeMs) {
+        try { await Filesystem.deleteFile({ path: name, directory: Directory.Cache }); } catch { /* déjà absent */ }
+      }
+    }
+  } catch { /* readdir indisponible : sans gravité */ }
+}
+
 export default function App() {
   const [data, dispatch] = useReducer(reducer, undefined, loadState);
   const [year, setYear]  = useState(new Date().getFullYear());
@@ -126,11 +146,53 @@ export default function App() {
   const deleteRecurring    = useCallback(id  => dispatch({ type: A.DEL_RECURRING,  id  }), []);
   const saveAutoSaving        = useCallback(plan => dispatch({ type: A.SAVE_AUTO_SAVING, plan }), []);
   const deleteAutoSaving      = useCallback(id   => dispatch({ type: A.DELETE_AUTO_SAVING, id }), []);
-  const saveSecuritySettings  = useCallback((pinEnabled, pinHash, bioEnabled) =>
-    dispatch({ type: A.SAVE_SECURITY_SETTINGS, pinEnabled, pinHash, bioEnabled }), []);
+  const saveSecuritySettings  = useCallback((pinEnabled, pinHash, bioEnabled) => {
+    // v1.75.0 : nouveau PIN (ou PIN coupé) → compteur d'essais remis à zéro
+    if (pinHash !== data.pinHash) { try { localStorage.removeItem("budget_pin_guard_v1"); } catch { /* ignore */ } }
+    dispatch({ type: A.SAVE_SECURITY_SETTINGS, pinEnabled, pinHash, bioEnabled });
+  }, [data.pinHash]);
 
   // ── Verrou PIN ────────────────────────────────────────────────
   const [locked, setLocked] = useState(() => !!(data.pinEnabled && data.pinHash));
+
+  // ── v1.75.0 : reverrouillage après un délai hors de l'appli ──
+  //   relockDelay (min) : 0 = immédiat, -1 = jamais. Le départ n'est noté
+  //   que si l'appli est déverrouillée : l'invite d'empreinte (qui met
+  //   l'appli en pause) ne peut donc pas relancer un verrou en boucle.
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
+  const relockRef = useRef({ pin: false, delay: 5 });
+  relockRef.current = { pin: !!(data.pinEnabled && data.pinHash), delay: data.relockDelay ?? 5 };
+  useEffect(() => {
+    let leftAt = null, handle = null;
+    const leave = () => { if (!lockedRef.current && leftAt === null) leftAt = Date.now(); };
+    const back = () => {
+      const { pin, delay } = relockRef.current;
+      if (leftAt !== null && pin && delay >= 0 && Date.now() - leftAt >= delay * 60000) setLocked(true);
+      leftAt = null;
+    };
+    const onVis = () => (document.visibilityState === "hidden" ? leave() : back());
+    document.addEventListener("visibilitychange", onVis);
+    if (window.Capacitor?.isNativePlatform?.()) {
+      import("@capacitor/app").then(({ App: CapApp }) =>
+        CapApp.addListener("appStateChange", st => (st?.isActive ? back() : leave()))
+      ).then(h => { handle = h; }).catch(() => {});
+    }
+    return () => { document.removeEventListener("visibilitychange", onVis); handle?.remove?.(); };
+  }, []);
+
+  // ── v1.75.0 : mode discret (montants, pourcentages et graphiques masqués) ──
+  const [hidden, setHidden] = useState(() => !!data.openHidden);
+  setPrivacy(hidden); // lu par fmt()/pct() pendant ce rendu
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-privacy", hidden);
+  }, [hidden]);
+  // « Ouvrir l'appli en mode discret » vaut aussi après un reverrouillage
+  useEffect(() => { if (locked && data.openHidden) setHidden(true); }, [locked, data.openHidden]);
+  const saveSecurityExtra = useCallback(patch => dispatch({ type: A.SAVE_SECURITY_EXTRA, patch }), []);
+
+  // v1.75.0 : ménage des fichiers de sauvegarde restés dans le cache (> 10 min)
+  useEffect(() => { cleanBackupCache(10 * 60000); }, []);
 
   const saveAlertSettings      = useCallback((enabled, threshold) =>
     dispatch({ type: A.SAVE_ALERT_SETTINGS, enabled, threshold }), []);
@@ -651,7 +713,7 @@ export default function App() {
     setConfirmModal({
       title: "Supprimer la cagnotte ?",
       msg: c.current > 0
-        ? `La cagnotte "${c.name}" sera supprimée et ${(c.current).toLocaleString("fr-FR",{minimumFractionDigits:2})} € seront recrédités dans votre solde.`
+        ? `La cagnotte "${c.name}" sera supprimée et ${fmt(c.current)} seront recrédités dans votre solde.`
         : `La cagnotte "${c.name}" sera supprimée (solde à 0).`,
       onConfirm: () => {
         dispatch({ type: A.DELETE_CAGNOTTE, id });
@@ -738,27 +800,62 @@ export default function App() {
   }
 
   // ── Export / Import ──────────────────────────────────────────
-  async function handleExport() {
+  // v1.75.0 : toutes les sauvegardes sont chiffrées (AES-256-GCM, clé dérivée
+  // du mot de passe de sauvegarde — voir backupCrypto.js). handleExport ouvre
+  // la fenêtre du mot de passe et renvoie une promesse (true = exportée).
+  const [backupAsk, setBackupAsk] = useState(null); // { resolve }
+  const [importAsk, setImportAsk] = useState(null); // { fileName, obj }
+  function handleExport() {
+    return new Promise(resolve => setBackupAsk({ resolve }));
+  }
+  function closeBackupAsk(ok) {
+    setBackupAsk(cur => { cur?.resolve?.(ok); return null; });
+  }
+  async function submitBackupPassword(password, isNew) {
+    let key = data.backupKey, bits;
+    try {
+      if (isNew) {
+        ({ key, bits } = await createBackupKey(password));
+      } else {
+        bits = await verifyBackupPassword(password, key);
+        if (!bits) return "Ce n'est pas ton mot de passe de sauvegarde.";
+      }
+      if (isNew) dispatch({ type: A.SAVE_SECURITY_EXTRA, patch: { backupKey: key } });
+      const payload = await buildEncryptedBackup(bits, key);
+      const resolve = backupAsk?.resolve;
+      setBackupAsk(null);
+      const ok = await deliverBackup(payload);
+      resolve?.(ok);
+      return null;
+    } catch (err) {
+      return `Erreur de chiffrement : ${err?.message ?? err}`;
+    }
+  }
+  async function buildEncryptedBackup(bits, key) {
     const newDate  = new Date().toISOString();
     // v1.47.0 : la version de l'app est notée dans le fichier (affichée à l'import)
-    const snapshot = { ...data, lastBackupDate: newDate, appVersion: APP_VERSION };
-    const json     = JSON.stringify(snapshot, null, 2);
-    const fileName = `budget_backup_${newDate.slice(0, 10)}.json`;
-    const sizeKo   = Math.round(json.length / 1024 * 10) / 10;
-    const entry    = { id: `bk_${Date.now()}`, date: newDate, txCount: data.transactions.length, sizeKo };
-
+    const snapshot = { ...data, backupKey: key, lastBackupDate: newDate, appVersion: APP_VERSION };
+    const text     = await encryptBackup(JSON.stringify(snapshot), bits, key);
+    // v1.75.0 : date locale (avant : UTC → la veille entre minuit et 2 h)
+    const fileName = `budget_backup_${todayISO()}.json`;
+    const sizeKo   = Math.round(text.length / 1024 * 10) / 10;
+    const entry    = { id: `bk_${Date.now()}`, date: newDate, txCount: data.transactions.length, sizeKo, encrypted: true };
+    return { text, fileName, entry };
+  }
+  async function deliverBackup({ text, fileName, entry }) {
     // ── APK Capacitor ────────────────────────────────────────────
     if (window.Capacitor?.isNativePlatform?.()) {
       try {
         const { Filesystem, Directory, Encoding } = await import("@capacitor/filesystem");
         const { Share } = await import("@capacitor/share");
+        await cleanBackupCache();
         const { uri } = await Filesystem.writeFile({
-          path: fileName, data: json,
+          path: fileName, data: text,
           directory: Directory.Cache, encoding: Encoding.UTF8,
         });
-        await Share.share({ title: "Budget Pro — Sauvegarde", url: uri, dialogTitle: "Enregistrer la sauvegarde" });
+        await Share.share({ title: "Gestion du budget — Sauvegarde chiffrée", url: uri, dialogTitle: "Enregistrer la sauvegarde" });
         dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
-        addToast("✓ Sauvegarde exportée");
+        addToast("✓ Sauvegarde chiffrée exportée");
         return true;
       } catch (err) {
         if (!err?.message?.includes("canceled") && err?.name !== "AbortError") {
@@ -770,19 +867,41 @@ export default function App() {
 
     // ── Web / desktop ────────────────────────────────────────────
     try {
-      const blob = new Blob([json], { type: "application/json" });
+      const blob = new Blob([text], { type: "application/json" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href = url; a.download = fileName; a.style.display = "none";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       dispatch({ type: A.ADD_BACKUP_ENTRY, entry });
-      addToast(`✓ Export : ${fileName}`);
+      addToast(`✓ Sauvegarde chiffrée : ${fileName}`);
       return true;
     } catch {
       addToast("Erreur lors de l'export", "error");
       return false;
     }
+  }
+
+  function acceptImported(imported, fileName) {
+    if (!imported || !imported.transactions || !imported.categories) {
+      addToast("Fichier invalide — structure incorrecte", "error");
+      return false;
+    }
+    // v1.47.0 : aperçu + comparaison avant de remplacer quoi que ce soit
+    setImportPreview({ fileName, data: imported });
+    return true;
+  }
+  async function submitImportPassword(password) {
+    if (!importAsk) return null;
+    let text;
+    try { text = await decryptBackup(importAsk.obj, password); }
+    catch (err) { return err?.message || "Mot de passe incorrect."; }
+    let imported;
+    try { imported = JSON.parse(text); } catch { return "Contenu déchiffré illisible."; }
+    const { fileName } = importAsk;
+    setImportAsk(null);
+    acceptImported(imported, fileName);
+    return null;
   }
 
   function handleImportFile(e) {
@@ -792,12 +911,9 @@ export default function App() {
     reader.onload = ev => {
       try {
         const imported = JSON.parse(ev.target.result);
-        if (!imported.transactions || !imported.categories) {
-          addToast("Fichier invalide — structure incorrecte", "error");
-          return;
-        }
-        // v1.47.0 : aperçu + comparaison avant de remplacer quoi que ce soit
-        setImportPreview({ fileName: file.name, data: imported });
+        // v1.75.0 : sauvegarde chiffrée → demande du mot de passe d'abord
+        if (isEncryptedBackup(imported)) { setImportAsk({ fileName: file.name, obj: imported }); return; }
+        acceptImported(imported, file.name);
       } catch {
         addToast("Fichier invalide — JSON malformé", "error");
       }
@@ -870,7 +986,7 @@ export default function App() {
         })}
         onProjectAutoSaving={(p, amount, plan) => {
           dispatch({ type: A.SAVE_AUTO_SAVING, plan: plan ? { ...plan, amount } : { cagnotteId: p.cagId, amount, dayOfMonth: 1, enabled: true } });
-          addToast(plan ? `Versement auto ajusté à ${amount.toFixed(2).replace(".", ",")} €` : `Versement auto créé : ${amount.toFixed(2).replace(".", ",")} € le 1ᵉʳ du mois (modifiable dans Options)`);
+          addToast(plan ? `Versement auto ajusté à ${fmt(amount)}` : `Versement auto créé : ${fmt(amount)} le 1ᵉʳ du mois (modifiable dans Options)`);
         }}
       />
   );
@@ -964,6 +1080,7 @@ export default function App() {
         onDeleteCat={deleteCat}
         onNewCat={parentId => setCatModal(typeof parentId === "string" ? { parentId } : {})}
         onExport={handleExport}
+        onSaveSecurityExtra={saveSecurityExtra}
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
@@ -1053,6 +1170,7 @@ export default function App() {
       <LockScreen
         pinHash={data.pinHash}
         bioEnabled={data.bioEnabled}
+        maxTries={data.pinMaxTries ?? 5}
         onUnlock={() => setLocked(false)}
       />
     );
@@ -1103,6 +1221,13 @@ export default function App() {
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          {/* v1.75.0 : mode discret */}
+          <button data-testid="privacy-toggle" aria-label={hidden ? "Afficher les montants" : "Masquer les montants"}
+            onClick={() => { setHidden(h => !h); addToast(hidden ? "👁 Montants affichés" : "🙈 Mode discret : montants masqués"); }}
+            style={{ width: 32, height: 32, borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", cursor: "pointer", touchAction: "manipulation", padding: 0,
+              border: `1px solid ${hidden ? "var(--accent)" : "var(--border)"}`, background: hidden ? "color-mix(in srgb, var(--accent) 18%, transparent)" : "var(--surface2)" }}>
+            {hidden ? "🙈" : "👁"}
+          </button>
           <div style={{
             display:"flex", alignItems:"center", gap:6,
             background:"var(--surface2)", border:"1px solid var(--border)",
@@ -1427,7 +1552,7 @@ export default function App() {
             onConfirm: () => { dispatch({ type: A.DELETE_REIMBURSEMENT, id: r.id }); setReimbModal(null); addToast("Remboursement supprimé", "error"); },
           })}
           onReceive={r => { dispatch({ type: A.RECEIVE_REIMBURSEMENT, id: r.id }); setReimbModal(null);
-            addToast(`↩️ Reçu : revenu de ${(parseFloat(r.amount) || 0).toFixed(2).replace(".", ",")} € ajouté (à pointer)`); }}
+            addToast(`↩️ Reçu : revenu de ${fmt(parseFloat(r.amount) || 0)} ajouté (à pointer)`); }}
           onClose={() => setReimbModal(null)} />
       )}
       {projectModal && (
@@ -1446,6 +1571,12 @@ export default function App() {
           onClose={() => setYearRecap(null)}
           onOpenRapport={() => { setYearRecap(null); navigateTo("rapport"); }} />
       )}
+      {backupAsk && (
+        <BackupPasswordModal hasKey={!!data.backupKey} onSubmit={submitBackupPassword} onClose={() => closeBackupAsk(false)} />
+      )}
+      {importAsk && (
+        <ImportPasswordModal fileName={importAsk.fileName} onSubmit={submitImportPassword} onClose={() => setImportAsk(null)} />
+      )}
       {importPreview && (
         <ImportPreviewModal fileName={importPreview.fileName} fileData={importPreview.data} currentData={data} appVersion={APP_VERSION}
           onConfirm={async backupFirst => {
@@ -1453,7 +1584,8 @@ export default function App() {
               const ok = await handleExport();
               if (!ok) { addToast("Import annulé : la sauvegarde de tes données actuelles n'a pas été faite", "error"); return; }
             }
-            dispatch({ type: A.IMPORT_DATA, data: importPreview.data });
+            // v1.75.0 : une ancienne sauvegarde sans mot de passe ne fait pas oublier le mot de passe actuel
+            dispatch({ type: A.IMPORT_DATA, data: { ...importPreview.data, backupKey: importPreview.data.backupKey || data.backupKey || null } });
             addToast(`✓ Import réussi — ${importPreview.data.transactions.length} opération(s) chargée(s)`);
             setImportPreview(null);
           }}
