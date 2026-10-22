@@ -1,7 +1,8 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
+import { SecurityExtraSettings } from "./SecuritySheets.jsx";
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved } from "../utils.js";
+import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved, fmtInt } from "../utils.js";
 import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
 import { useGroceryBudget, groceryCategoryIds } from "../hooks.js";
 
@@ -226,7 +227,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance, onNotifDiagnostic }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance, onNotifDiagnostic, onSaveSecurityExtra }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [catSearch,     setCatSearch]     = useState("");      // v1.74.0
   const [catSel,        setCatSel]        = useState(null);
@@ -360,12 +361,12 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       title:"💶 Budget & prévisions",
       items:[
         { id:"grocery", icon:"🛒", label:"Budget courses",
-          badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${Math.round(grocery.average)} €/mois` : "Actif",
+          badge: groceryCfg.enabled === false ? "Désactivé" : groceryCats.length === 0 ? "Aucune catégorie" : grocery ? `${fmtInt(grocery.average)}/mois` : "Actif",
           configured: groceryCfg.enabled !== false && groceryCats.length > 0,
           hint: "Choisis la catégorie de tes courses",
           desc: "Reste à dépenser en courses ce mois" },
         { id:"rest", icon:"💶", label:"Reste à vivre",
-          badge: restCfg.enabled === false ? "Masqué" : `Marge ${Math.round(parseFloat(restCfg.margin) || 0)} €`,
+          badge: restCfg.enabled === false ? "Masqué" : `Marge ${fmtInt(parseFloat(restCfg.margin) || 0)}`,
           configured: restCfg.enabled !== false,
           hint: "Reste à vivre masqué",
           desc: "Par jour jusqu'à la paie" },
@@ -374,7 +375,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           configured: true, hint: "",
           desc: "Comptés dans le solde jusqu'à leur réception" },
         { id:"alert", icon:"🔔", label:"Alerte solde bas",
-          badge: alertOn ? `${thresh} €` : "Désactivé",
+          badge: alertOn ? fmtInt(thresh) : "Désactivé",
           configured: alertOn,
           hint: "Aucune alerte de solde définie",
           desc: "Avertit quand le solde estimé passe sous un seuil" },
@@ -726,6 +727,9 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             ✏️ Modifier le code PIN
           </button>
         )}
+        {/* v1.75.0 : reverrouillage, essais, mode discret, applis récentes */}
+        <SecurityExtraSettings pinOn={pinOn} relockDelay={data.relockDelay ?? 5} pinMaxTries={data.pinMaxTries ?? 5}
+          openHidden={!!data.openHidden} onSave={onSaveSecurityExtra} />
       </Sheet>
 
       {/* 🎯 Versements automatiques */}
@@ -1239,12 +1243,18 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               <div style={{ fontSize:".65rem", fontWeight:800, color:backupOk?"var(--success)":last?"var(--warning)":"var(--danger)" }}>
                 {!last?"⚠️ Aucune sauvegarde":backupOk?`✅ il y a ${daysSinceBackup} jour${daysSinceBackup>1?"s":""}`:`⚠️ il y a ${daysSinceBackup} jours`}
               </div>
-              {last && <div style={{ fontFamily:"var(--mono)", fontSize:".82rem", fontWeight:800, marginTop:4 }}>{new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"})} à {last.date.slice(11,16)}</div>}
+              {last && <div style={{ fontFamily:"var(--mono)", fontSize:".82rem", fontWeight:800, marginTop:4 }}>{new Date(last.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"})} à {new Date(last.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>}
             </div>
             {last && <div style={{ textAlign:"right" }}>
               <div style={{ fontSize:".72rem", fontWeight:800, color:"var(--accent)" }}>{last.sizeKo} ko</div>
               <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{last.txCount} transactions</div>
             </div>}
+          </div>
+          {/* v1.75.0 : sauvegardes toujours chiffrées */}
+          <div data-testid="backup-enc" style={{ fontSize:".62rem", color:"var(--text2)", lineHeight:1.45, marginBottom:10 }}>
+            🔐 Sauvegardes <b>chiffrées</b> avec ton mot de passe de sauvegarde (AES-256). {data.backupKey
+              ? <span style={{ color:"var(--success)", fontWeight:700 }}>Mot de passe défini ✓</span>
+              : <span style={{ color:"var(--warning)", fontWeight:700 }}>Il te sera demandé à la 1ʳᵉ sauvegarde.</span>}
           </div>
           <button className="btn btn-primary" style={{ width:"100%" }} onClick={onExport}>💾 Sauvegarder maintenant</button>
         </div>
@@ -1261,7 +1271,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   <div key={b.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"9px 12px", borderBottom:i<(data.backupHistory||[]).length-1?"1px solid var(--border-soft)":"none" }}>
                     <div style={{ flex:1 }}>
                       <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                        <span style={{ fontSize:".7rem", fontWeight:700 }}>{new Date(b.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} à {b.date.slice(11,16)}</span>
+                        <span style={{ fontSize:".7rem", fontWeight:700 }}>{new Date(b.date).toLocaleDateString("fr-FR",{day:"numeric",month:"short"})} à {new Date(b.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>
                         {i===0 && <span style={{ fontSize:".48rem", background:"rgba(104,212,152,.12)", color:"var(--success)", padding:"1px 5px", borderRadius:6, fontWeight:800 }}>DERNIER</span>}
                       </div>
                       <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:1 }}>{b.txCount} transactions · {b.sizeKo} ko</div>
