@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { fmt, txLabel, todayISO, chequeExpiryISO, daysBetweenISO, MONTHS_SHORT } from "../utils.js";
+import { fmt, txLabel, todayISO, chequeExpiryISO, daysBetweenISO, MONTHS_SHORT, pv } from "../utils.js";
 
 const signed = v => (v > 0.004 ? "+" : "") + fmt(v);
 const ddmm   = iso => iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "";
@@ -116,10 +116,10 @@ function GrocerySection({ grocery: g, total, categories, open, onToggle }) {
           <span style={{ fontWeight: 700, color: "var(--danger)", fontVariantNumeric: "tabular-nums" }}>−{fmt(g.spent)}</span>
         </div>
         <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", margin: "6px 0 3px" }}>
-          <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: isOver ? "var(--danger)" : "var(--coral)" }} />
+          <div data-pv="" style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: isOver ? "var(--danger)" : "var(--coral)" }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".62rem", color: "var(--text2)" }}>
-          <span>{g.average > 0 ? `${Math.round((g.spent / g.average) * 100)} % de la moyenne utilisé` : "Pas de dépense de courses les mois précédents"}</span>
+          <span>{g.average > 0 ? `${pv(Math.round((g.spent / g.average) * 100))} % de la moyenne utilisé` : "Pas de dépense de courses les mois précédents"}</span>
           <span style={{ fontWeight: 700, color: isOver ? "var(--danger)" : "var(--coral)" }}>{isOver ? `dépassé de ${fmt(g.over)}` : `reste ${fmt(g.remaining)}`}</span>
         </div>
       </Line>
