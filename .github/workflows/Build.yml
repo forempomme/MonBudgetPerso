@@ -135,6 +135,36 @@ jobs:
           cp assets/android-icons/ic_stat_notify.png "$DEST/ic_stat_notify.png"
           ls -la "$DEST/ic_stat_notify.png"
 
+      # ── 7e. Aperçu masqué dans les applis récentes (v1.75.0) ─────
+      # Android 13+ (API 33) : setRecentsScreenshotEnabled(false) remplace
+      # l'aperçu de l'appli dans le sélecteur d'applis par un fond uni.
+      # Contrairement à FLAG_SECURE, les captures d'écran restent possibles.
+      # MainActivity.java est recréé à chaque build (cap add android) : on le
+      # réécrit ici en gardant son package d'origine.
+      - name: Hide app preview in recents
+        run: |
+          F=$(find android/app/src/main/java -name MainActivity.java | head -1)
+          PKG=$(grep -m1 '^package ' "$F")
+          echo "Fichier : $F ($PKG)"
+          cat > "$F" << JAVA
+          $PKG
+
+          import android.os.Build;
+          import android.os.Bundle;
+          import com.getcapacitor.BridgeActivity;
+
+          public class MainActivity extends BridgeActivity {
+              @Override
+              public void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      setRecentsScreenshotEnabled(false);
+                  }
+              }
+          }
+          JAVA
+          cat "$F"
+
       # ── 8. Keystore ──────────────────────────────────────────────
       - name: Decode keystore
         run: |
