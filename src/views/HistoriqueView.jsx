@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved, fixedAmountFor, resolveFixedDay } from "../utils.js";
+import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved, fixedAmountFor, resolveFixedDay, pv } from "../utils.js";
 import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
@@ -859,7 +859,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                       )}
                       {hasTx && (
                         <span style={{ fontSize: ".38rem", fontWeight: 700, color: isPos ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)" }}>
-                          {isPos ? "+" : ""}{Math.round(net)}€
+                          {isPos ? "+" : ""}{pv(Math.round(net))}€
                         </span>
                       )}
                     </div>
@@ -885,7 +885,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                     {calSelectedDay} {["Jan","Fév","Mar","Avr","Mai","Jui","Jul","Aoû","Sep","Oct","Nov","Déc"][mo - 1]} {y}
                   </span>
                   <span style={{ fontSize: ".62rem", fontWeight: 700, color: selNet >= 0 ? "var(--success)" : "var(--danger)", fontFamily: "var(--mono)" }}>
-                    {selNet >= 0 ? "+" : ""}{selNet.toFixed(2)} €
+                    {selNet >= 0 ? "+" : ""}{pv(selNet.toFixed(2))} €
                   </span>
                 </div>
                 {selTxs.map((t, i) => {
@@ -1618,11 +1618,11 @@ function CatBreakdown({ txs, allTxs, categories, onSelectCat }) {
             )}
             {/* Barre de progression — basée sur le net */}
             <div style={{ height: 5, background: "var(--surface3)", borderRadius: 99 }}>
-              <div style={{ width: `${(c.net / totalNet * 100).toFixed(0)}%`, height: "100%", background: c.color, borderRadius: 99 }}/>
+              <div data-pv="" style={{ width: `${(c.net / totalNet * 100).toFixed(0)}%`, height: "100%", background: c.color, borderRadius: 99 }}/>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".55rem", color: "var(--text3)", marginTop: 2 }}>
               <span>{hasOffset ? `Brut : ${fmt(c.exp)}` : ""}</span>
-              <span>{(c.net / totalNet * 100).toFixed(0)}% des dépenses nettes</span>
+              <span>{pv((c.net / totalNet * 100).toFixed(0))}% des dépenses nettes</span>
             </div>
           </div>
         );
