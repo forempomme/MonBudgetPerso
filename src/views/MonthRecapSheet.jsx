@@ -6,7 +6,7 @@
 //  Données : computeMonthRecap (hooks.js).
 // ─────────────────────────────────────────────────────────────────
 import { createPortal } from "react-dom";
-import { fmt } from "../utils.js";
+import { fmt, pv } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
 
 const MONTHS_ABBR = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
@@ -40,7 +40,7 @@ function BudgetBar({ label, spent, budget }) {
     <div style={{ padding: "8px 10px", borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", marginBottom: 6 }}>
       <div style={{ display: "flex", fontSize: ".72rem" }}><span style={{ flex: 1 }}>{label}</span><b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(spent)} / {fmt(budget)}</b></div>
       <div style={{ height: 7, borderRadius: 5, background: "var(--surface3)", overflow: "hidden", marginTop: 6 }}>
-        <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: over ? "var(--danger)" : pct >= 80 ? "var(--warning)" : "var(--success)" }} />
+        <div data-pv="" style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: over ? "var(--danger)" : pct >= 80 ? "var(--warning)" : "var(--success)" }} />
       </div>
       {over && <div style={{ fontSize: ".6rem", color: "var(--danger)", marginTop: 3 }}>dépassé de {fmt(spent - budget)}</div>}
     </div>
@@ -54,7 +54,7 @@ export function MonthRecapSheet({ recap: r, categories = [], onClose, onOpenRapp
     if (pct == null) return { sub: r.monthsCompared ? "" : "pas encore de comparaison", col: "var(--text3)" };
     if (Math.abs(pct) < 3) return { sub: `= stable vs moyenne ${r.monthsCompared} mois`, col: "var(--text3)" };
     const good = higherIsGood ? pct > 0 : pct < 0;
-    return { sub: `${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)} % vs moyenne ${r.monthsCompared} mois`, col: good ? "var(--success)" : "var(--danger)" };
+    return { sub: `${pct > 0 ? "▲" : "▼"} ${pv(Math.abs(pct))} % vs moyenne ${r.monthsCompared} mois`, col: good ? "var(--success)" : "var(--danger)" };
   };
   const e = cmp(r.expensesPct, false), i = cmp(r.incomesPct, true);
   const cat = id => categories.find(c => c.id === id);
@@ -85,7 +85,7 @@ export function MonthRecapSheet({ recap: r, categories = [], onClose, onOpenRapp
             <Kpi label="Dépenses" value={fmt(r.expenses)} color="var(--danger)" sub={e.sub} subColor={e.col} />
             <Kpi label="Revenus" value={fmt(r.incomes)} color="var(--success)" sub={i.sub} subColor={i.col} />
             <Kpi label="Épargné" value={signed(r.savings)} color="var(--purple)"
-              sub={[r.savingsRate != null && r.savings !== 0 ? `${Math.round(r.savingsRate * 100)} % des revenus` : null,
+              sub={[r.savingsRate != null && r.savings !== 0 ? `${pv(Math.round(r.savingsRate * 100))} % des revenus` : null,
                 r.savingsCags ? `${r.savingsCags} cagnotte${r.savingsCags > 1 ? "s" : ""}` : "aucun versement"].filter(Boolean).join(" · ")} />
             <Kpi label="Solde fin de mois" value={fmt(r.endBalance)}
               sub={r.balanceDelta == null ? "" : `${r.balanceDelta >= 0 ? "▲" : "▼"} ${signed(r.balanceDelta)} sur le mois`}
@@ -118,7 +118,7 @@ export function MonthRecapSheet({ recap: r, categories = [], onClose, onOpenRapp
                 <Row key={x.catId}>
                   <span>{c?.icon || "❔"}</span><span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"}</span>
                   <span style={{ fontWeight: 800, color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>
-                    {x.pct == null ? "nouveau" : `${x.pct > 0 ? "+" : "−"}${Math.abs(x.pct)} %`}
+                    {x.pct == null ? "nouveau" : `${x.pct > 0 ? "+" : "−"}${pv(Math.abs(x.pct))} %`}
                   </span>
                   <b style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{fmt(x.amount)}</b>
                 </Row>
