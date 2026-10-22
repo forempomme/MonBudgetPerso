@@ -98,6 +98,7 @@ export const A = /** @type {const} */ ({
   DELETE_SCHEDULED:         "DELETE_SCHEDULED",
   CONFIRM_SCHEDULED:        "CONFIRM_SCHEDULED",
   SAVE_SECURITY_SETTINGS:   "SAVE_SECURITY_SETTINGS",
+  SAVE_SECURITY_EXTRA:      "SAVE_SECURITY_EXTRA",
   SAVE_ROUNDING_SETTINGS:   "SAVE_ROUNDING_SETTINGS",
   MARK_ROUNDING_TRANSFERRED:"MARK_ROUNDING_TRANSFERRED",
   SAVE_NOTIF_SETTINGS:      "SAVE_NOTIF_SETTINGS",
@@ -203,6 +204,11 @@ export const DEFAULT_DATA = {
   pinEnabled:           false,
   pinHash:              null,  // SHA-256 hex
   bioEnabled:           false,
+  // v1.75.0 — sécurité
+  relockDelay:          5,     // minutes hors de l'appli avant de redemander le PIN (0 = immédiat, -1 = jamais)
+  pinMaxTries:          5,     // erreurs de PIN avant une attente (0 = illimité)
+  openHidden:           false, // ouvrir l'appli en mode discret
+  backupKey:            null,  // { v, salt, iter, check } — vérificateur du mot de passe de sauvegarde (jamais le mot de passe)
   tags:                 [],
   roundingEnabled:           false,
   roundingCagnotteId:        null,
@@ -1092,6 +1098,16 @@ export function reducer(state, action) {
       };
     }
 
+    // v1.75.0 : réglages de sécurité complémentaires (liste blanche des champs)
+    case A.SAVE_SECURITY_EXTRA: {
+      const p = action.patch || {};
+      const out = { ...state };
+      if ([0, 1, 5, 15, -1].includes(p.relockDelay)) out.relockDelay = p.relockDelay;
+      if ([0, 3, 5, 10].includes(p.pinMaxTries))     out.pinMaxTries = p.pinMaxTries;
+      if (typeof p.openHidden === "boolean")         out.openHidden  = p.openHidden;
+      if ("backupKey" in p)                          out.backupKey   = p.backupKey || null;
+      return out;
+    }
     case A.SAVE_SECURITY_SETTINGS:
       return { ...state, pinEnabled: action.pinEnabled, pinHash: action.pinHash, bioEnabled: action.bioEnabled };
 
