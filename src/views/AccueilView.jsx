@@ -1,7 +1,7 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
-import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM, fixedAmountFor } from "../utils.js";
+import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM, fixedAmountFor, pv, isPrivacy, MASK } from "../utils.js";
 import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
@@ -56,7 +56,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     if (daysSinceBackup > 7)
       return { color: "#fbbf24", glow: "rgba(251,191,36,.35)", label: "🟡 Sauvegarde recommandée",      sub: `${Math.floor(daysSinceBackup)} jours sans backup`, action: "options" };
     return   { color: "#4ade80", glow: "rgba(74,222,128,.5)",  label: "🟢 Tout va bien",               sub: `Budget équilibré, solde sain` };
-  }, [balance, curMonthInc, curMonthExp, daysSinceBackup, alertEnabled, alertThreshold]);
+  }, [balance, curMonthInc, curMonthExp, daysSinceBackup, alertEnabled, alertThreshold, isPrivacy()]); // v1.75.0 : texte refait au passage en mode discret
 
   return (
     <div style={{ position: "absolute", top: 18, right: 18, zIndex: 10 }}>
@@ -546,7 +546,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             </div>
             {evo.deltaPct !== null && (
               <span role="button" data-testid="hero-delta" onClick={() => { if (touchMoved()) return; setEvoOpen(true); }} style={heroPill(evo.isPos ? "var(--success)" : "var(--danger)", evo.isPos ? "rgba(104,212,152,.12)" : "rgba(200,112,112,.12)")}>
-                {evo.isPos ? "▲" : "▼"} {Math.abs(evo.deltaPct)} % vs {evo.todayDay} {evo.prevShort} ›
+                {evo.isPos ? "▲" : "▼"} {pv(Math.abs(evo.deltaPct))} % vs {evo.todayDay} {evo.prevShort} ›
               </span>
             )}
           </div>
@@ -616,7 +616,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
               </div>
               {totalPointable > 0 && (
                 <div style={{ height: 5, background: "rgba(255,255,255,.1)", borderRadius: 99, overflow: "hidden", marginTop: 14 }}>
-                  <div style={{ width: `${(nbPointed / totalPointable) * 100}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .4s ease" }} />
+                  <div data-pv="" style={{ width: `${(nbPointed / totalPointable) * 100}%`, height: "100%", background: "linear-gradient(90deg, var(--success), var(--accent))", borderRadius: 99, transition: "width .4s ease" }} />
                 </div>
               )}
             </>
@@ -657,7 +657,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
           const MF = MONTHS_FR.map(m => m.toLowerCase());
           const MA = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."];
           const dLabel = iso => `${parseInt(iso.slice(8, 10), 10)} ${MA[parseInt(iso.slice(5, 7), 10) - 1]}`;
-          const n0 = v => `${v < 0 ? "−" : ""}${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v))} €`;
+          const n0 = v => isPrivacy() ? MASK + " €" : `${v < 0 ? "−" : ""}${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v))} €`;
           const days = P.days;
           const ends = [{ ym: P.current.ym, label: P.current.label, value: P.current.value, isCur: true }, ...P.months];
           const endIdx = e => days.findIndex(d => d.date.slice(0, 7) === e.ym && d.date === days.filter(x => x.date.slice(0, 7) === e.ym).pop()?.date);
@@ -694,7 +694,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
                   Calcul jour par jour : ton solde estimé d'aujourd'hui, le reste de tes dépenses courantes de {MF[parseInt(P.current.ym.slice(5, 7), 10) - 1]}, puis chaque mois tes revenus et frais fixes à leur jour, tes récurrentes (annuelles comprises) et programmées, et tes dépenses courantes habituelles (médiane de tes {P.historyMonths || 0} derniers mois complets) réparties sur le mois. Touche un point de la courbe pour voir le détail. Ne peut pas deviner un imprévu.
                 </div>
               )}
-              <svg data-testid="proj-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block", marginTop: 6, overflow: "visible" }}>
+              <svg data-pv="" data-testid="proj-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: H, display: "block", marginTop: 6, overflow: "visible" }}>
                 {band && <polygon points={band} fill="rgba(104,212,152,.10)" />}
                 {th != null && <>
                   <line x1="0" x2={W} y1={Y(th)} y2={Y(th)} stroke="#c8b860" strokeDasharray="4 4" strokeWidth="1" opacity=".7" />
@@ -811,18 +811,18 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             </div>
             <div style={{ fontSize: ".72rem", color: "var(--text2)", lineHeight: 1.6 }}>
               Aujourd'hui <b style={{ color: "var(--text)" }}>{fmt(balance)}</b> · le {evo.todayDay} {evo.prevShort} <b style={{ color: "var(--text)" }}>{fmt(evo.balPrev)}</b><br />
-              <b style={{ color: evo.isPos ? "var(--success)" : "var(--danger)" }}>{evo.deltaAbs >= 0 ? "+" : "−"}{fmt(Math.abs(evo.deltaAbs))}{evo.deltaPct !== null ? ` (${evo.deltaAbs >= 0 ? "+" : "−"}${Math.abs(evo.deltaPct)} %)` : ""}</b> en un mois
+              <b style={{ color: evo.isPos ? "var(--success)" : "var(--danger)" }}>{evo.deltaAbs >= 0 ? "+" : "−"}{fmt(Math.abs(evo.deltaAbs))}{evo.deltaPct !== null ? ` (${evo.deltaAbs >= 0 ? "+" : "−"}${pv(Math.abs(evo.deltaPct))} %)` : ""}</b> en un mois
             </div>
             {(() => {
               const sd = evo.sparkData, mx = Math.max(...sd.map(b => Math.abs(b.val)), 1);
-              const n0 = v => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v));
+              const n0 = v => isPrivacy() ? MASK : new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(v));
               return (
                 <>
                   <div style={{ fontSize: ".58rem", color: "var(--text3)", margin: "12px 0 6px" }}>Solde au {evo.todayDay} de chaque mois</div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
                     {sd.map((b, i) => (
                       <div key={i} style={{ flex: 1, display: "flex", alignItems: "flex-end", height: 120 }}>
-                        <div style={{ width: "100%", height: Math.max(3, Math.abs(b.val) / mx * 116), borderRadius: 4,
+                        <div data-pv="" style={{ width: "100%", height: Math.max(3, Math.abs(b.val) / mx * 116), borderRadius: 4,
                           background: b.isLast ? "var(--accent)" : b.val >= 0 ? "rgba(104,212,152,.55)" : "rgba(200,112,112,.5)" }} />
                       </div>
                     ))}
@@ -1239,7 +1239,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
             {alerts.map(({ tag, spent, budget, pct, level }) => (
               <div key={tag.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: ".68rem", padding: "2px 0" }}>
                 <span>{level === "over" ? "🔴" : "⚠️"}</span>
-                <span style={{ flex: 1 }}>Budget <b>{tag.icon} {tag.name}</b> {level === "over" ? "dépassé" : `à ${Math.round(pct)} %`}</span>
+                <span style={{ flex: 1 }}>Budget <b>{tag.icon} {tag.name}</b> {level === "over" ? "dépassé" : `à ${pv(Math.round(pct))} %`}</span>
                 <span style={{ fontFamily: "var(--mono)", fontWeight: 800, color: level === "over" ? "var(--danger)" : "var(--warning)" }}>{fmt(spent)} / {fmt(budget)}</span>
               </div>
             ))}
