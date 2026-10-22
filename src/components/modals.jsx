@@ -37,7 +37,7 @@
 
 import { useState, useRef } from "react";
 import { Modal, ItemRow } from "./index.jsx";
-import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, fixedCashYM, isActiveForMonth, plannedChangeFor, fixedAmountFor } from "../utils.js";
+import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, fixedCashYM, isActiveForMonth, plannedChangeFor, fixedAmountFor, pv } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
 const MONTHS_FULL_LC = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
@@ -769,13 +769,13 @@ export function TransModal({
               <b style={{ color: col, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{fmt(after)} / {fmt(bud.limit)}</b>
             </div>
             <div style={{ height: 6, borderRadius: 4, background: "var(--surface3)", overflow: "hidden", marginTop: 6, position: "relative" }}>
-              <div style={{ width: `${wA}%`, height: "100%", borderRadius: 4, background: col }} />
-              {wA > wB && <div style={{ position: "absolute", top: 0, bottom: 0, left: `${wB}%`, width: `${wA - wB}%`, background: "repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)" }} />}
+              <div data-pv="" style={{ width: `${wA}%`, height: "100%", borderRadius: 4, background: col }} />
+              {wA > wB && <div data-pv="" style={{ position: "absolute", top: 0, bottom: 0, left: `${wB}%`, width: `${wA - wB}%`, background: "repeating-linear-gradient(45deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px)" }} />}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: ".6rem", color: "var(--text2)" }}>
               <span>{over ? <>⚠️ Dépassé de <b style={{ color: col }}>{fmt(after - bud.limit)}</b>{cur > 0 ? " avec cette dépense" : ""}</>
                 : <>Reste <b style={{ color: "var(--text)" }}>{fmt(bud.limit - after)}</b> pour finir le mois{warn && daysLeft ? ` (${daysLeft} jour${daysLeft > 1 ? "s" : ""})` : ""}</>}</span>
-              <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct} %</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{pv(pct)} %</span>
             </div>
           </div>
         );
@@ -2433,7 +2433,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
           return (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 11px", marginBottom: 10, borderRadius: 10, background: "rgba(176,144,224,.08)", border: "1px solid rgba(176,144,224,.25)", fontSize: ".72rem" }}>
               <span style={{ flex: 1, color: "var(--text2)" }}>🐷 Taux d'épargne ce mois</span>
-              <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{rate} %</b>
+              <b style={{ color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{pv(rate)} %</b>
               {d != null && <span style={{ fontSize: ".62rem", fontWeight: 700, color: d >= 0 ? "var(--success)" : "var(--danger)" }}>{d >= 0 ? "▲" : "▼"} {Math.abs(d)} pt vs mois dernier</span>}
             </div>
           );
@@ -2447,7 +2447,7 @@ export function DetailModal({ config, transactions, categories, cagnottes, fixed
                   <div className="item-info">
                     <div className="item-title">{c.name}</div>
                     <div className="item-sub">
-                      {c.target ? `${((c.current / c.target) * 100).toFixed(0)}% — objectif ${fmt(c.target)}` : "Pas d'objectif"}
+                      {c.target ? `${pv(((c.current / c.target) * 100).toFixed(0))}% — objectif ${fmt(c.target)}` : "Pas d'objectif"}
                     </div>
                   </div>
                   <div className="item-amount" style={{ color: "var(--khaki)" }}>{fmt(c.current)}</div>
@@ -2575,8 +2575,8 @@ export function CagHistModal({ cagId, transactions, categories, cagnottes, cagTy
               <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>{ty ? `${ty.icon} ${ty.label}` : "Sans type"}</div>
               <div style={{ fontFamily: "var(--mono)", fontSize: "1.4rem", fontWeight: 800, color: "var(--purple)", fontVariantNumeric: "tabular-nums" }}>{fmt(c.current)}</div>
               {pct != null ? <>
-                <div style={{ height: 6, borderRadius: 3, background: "var(--surface3)", marginTop: 8, overflow: "hidden" }}><div style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: pct >= 100 ? "var(--success)" : "var(--purple)" }} /></div>
-                <div style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 4 }}>{Math.round(pct)} % de {fmt(c.target)}</div>
+                <div style={{ height: 6, borderRadius: 3, background: "var(--surface3)", marginTop: 8, overflow: "hidden" }}><div data-pv="" style={{ width: `${pct}%`, height: "100%", borderRadius: 3, background: pct >= 100 ? "var(--success)" : "var(--purple)" }} /></div>
+                <div style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 4 }}>{pv(Math.round(pct))} % de {fmt(c.target)}</div>
               </> : onEdit && <div role="button" onClick={() => onEdit(c.id)} style={{ fontSize: ".64rem", color: "var(--accent)", fontWeight: 700, marginTop: 4, cursor: "pointer" }}>＋ Définir un objectif</div>}
               {extras && <div style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 4 }}>{extras}</div>}
             </div>
