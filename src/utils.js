@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.74.2";
+export const APP_VERSION = "1.75.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -34,7 +34,29 @@ export function cagIconOf(cagTypes, c) {
 
 // ─── Formatting ──────────────────────────────────────────────────
 /** @param {number} n */
+// ── v1.75.0 : mode discret ───────────────────────────────────────
+// Drapeau global posé par App.jsx à chaque rendu (setPrivacy(hidden)).
+// fmt() et pct() masquent alors les valeurs ; les graphiques sont floutés
+// en CSS via html[data-privacy] (voir styles.css).
+let PRIVACY = false;
+export const MASK = "••••";
+export function setPrivacy(on) { PRIVACY = !!on; }
+export function isPrivacy() { return PRIVACY; }
+/** Valeur brute masquée en mode discret (pour « {pv(x)} % » ou « {pv(n)} € ») */
+export function pv(v) { return PRIVACY ? "••" : v; }
+/** Montant arrondi à l'euro : « 1 234 € » (masqué en mode discret) */
+export function fmtInt(n) {
+  if (PRIVACY) return ((Number(n) || 0) < 0 ? "-" : "") + MASK + " €";
+  return `${Math.round(Number(n) || 0).toLocaleString("fr-FR")} €`;
+}
+/** Pourcentage affichable : « 13 % » ou « •• % » en mode discret. */
+export function pct(v, digits = 0) {
+  if (PRIVACY) return "•• %";
+  return `${(Number(v) || 0).toFixed(digits).replace(".", ",")} %`;
+}
+
 export function fmt(n) {
+  if (PRIVACY) return ((Number(n) || 0) < 0 ? "-" : "") + MASK + " €";
   return (Number(n) || 0).toLocaleString("fr-FR", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -94,8 +116,8 @@ export function deltaInfo(cur, prev) {
   const pct = ((cur - prev) / prev) * 100;
   if (Math.abs(pct) < 0.5) return { cls: "delta-neu", text: "→ 0%" };
   return pct > 0
-    ? { cls: "delta-pos", text: `▲ ${Math.abs(pct).toFixed(1)}%` }
-    : { cls: "delta-neg", text: `▼ ${Math.abs(pct).toFixed(1)}%` };
+    ? { cls: "delta-pos", text: `▲ ${pv(Math.abs(pct).toFixed(1))}%` }
+    : { cls: "delta-neg", text: `▼ ${pv(Math.abs(pct).toFixed(1))}%` };
 }
 
 // ─── Transaction helpers ─────────────────────────────────────────
