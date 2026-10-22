@@ -4,7 +4,7 @@
 //  Rapport › Année. Données : computeYearRecap (hooks.js).
 // ─────────────────────────────────────────────────────────────────
 import { createPortal } from "react-dom";
-import { fmt } from "../utils.js";
+import { fmt, pv } from "../utils.js";
 import { MONTHS_FR } from "./shared.jsx";
 
 const signed = v => (v > 0.004 ? "+" : v < -0.004 ? "−" : "") + fmt(Math.abs(v));
@@ -27,7 +27,7 @@ export function YearRecapSheet({ recap: r, categories = [], onClose, onOpenRappo
   const vs = (p, higherIsGood) => {
     if (p == null) return { t: r.hasPrev ? "" : null, c: "var(--text3)" };
     const good = higherIsGood ? p > 0 : p < 0;
-    return { t: `${p > 0 ? "▲" : p < 0 ? "▼" : "="} ${Math.abs(p)} %`, c: Math.abs(p) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
+    return { t: `${p > 0 ? "▲" : p < 0 ? "▼" : "="} ${pv(Math.abs(p))} %`, c: Math.abs(p) < 3 ? "var(--text3)" : good ? "var(--success)" : "var(--danger)" };
   };
   const inc = vs(r.incomesPct, true), exp = vs(r.expensesPct, false);
   const cat = id => categories.find(c => c.id === id);
@@ -54,7 +54,7 @@ export function YearRecapSheet({ recap: r, categories = [], onClose, onOpenRappo
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
           <Kpi label="Revenus" value={round(r.incomes)} color="var(--success)" sub={inc.t} subColor={inc.c} />
           <Kpi label="Dépenses" value={round(r.expenses)} color="var(--danger)" sub={exp.t} subColor={exp.c} />
-          <Kpi label="Épargné" value={round(r.saved)} color="var(--purple)" sub={r.rate != null ? `${Math.round(r.rate * 100)} % des revenus` : ""} />
+          <Kpi label="Épargné" value={round(r.saved)} color="var(--purple)" sub={r.rate != null ? `${pv(Math.round(r.rate * 100))} % des revenus` : ""} />
           <Kpi label="Cagnottes" value={`${round(r.cagStart)} → ${round(r.cagEnd)}`} color="var(--text)"
             sub={signed(Math.round(cagDelta)).replace(",00", "")} subColor={cagDelta >= 0 ? "var(--success)" : "var(--danger)"} />
         </div>
@@ -73,7 +73,7 @@ export function YearRecapSheet({ recap: r, categories = [], onClose, onOpenRappo
               <Row key={x.catId}>
                 <span>{c?.icon || "❔"}</span>
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c?.name || "Sans catégorie"}</span>
-                {r.hasPrev && <b style={{ color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "+" : "−"}${Math.abs(x.pct)} %`}</b>}
+                {r.hasPrev && <b style={{ color: x.diff > 0 ? "var(--danger)" : "var(--success)" }}>{x.pct == null ? "nouveau" : `${x.pct > 0 ? "+" : "−"}${pv(Math.abs(x.pct))} %`}</b>}
                 <b style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{round(x.amount)}</b>
               </Row>
             );
