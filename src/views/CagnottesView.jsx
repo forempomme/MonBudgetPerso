@@ -1,6 +1,6 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
 import { useState, useMemo } from "react";
-import { fmt, currentYM, cagTypeOf, DEFAULT_CAG_TYPES } from "../utils.js";
+import { fmt, currentYM, cagTypeOf, DEFAULT_CAG_TYPES, pv } from "../utils.js";
 import { EmptyIllustration } from "./shared.jsx";
 import { computeProjectStatus, computeCagnottesSummary } from "../hooks.js";
 
@@ -24,7 +24,7 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
   const plan = (data.autoSavings || []).find(a => a.cagnotteId === p.cagId && a.enabled);
   const bar = (pct, color, marker) => (
     <div style={{ height: 8, borderRadius: 5, background: "var(--surface3)", position: "relative", margin: "4px 0 3px" }}>
-      <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: color }} />
+      <div data-pv="" style={{ width: `${pct}%`, height: "100%", borderRadius: 5, background: color }} />
       {marker != null && <span style={{ position: "absolute", top: -3, left: `calc(${marker}% - 1px)`, width: 2, height: 14, background: "#fff", opacity: .8 }} />}
     </div>
   );
@@ -44,14 +44,14 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
       </div>
       {bar(st.savedPct, "var(--purple)", st.status === "done" ? null : st.expectedPct)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>
-        <span>{Math.round(st.savedPct)} %</span>{st.status !== "done" && <span>prévu à ce jour : {fmt(st.expected)} (trait blanc)</span>}
+        <span>{pv(Math.round(st.savedPct))} %</span>{st.status !== "done" && <span>prévu à ce jour : {fmt(st.expected)} (trait blanc)</span>}
       </div>
       {st.tag && <>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".66rem", color: "var(--text2)" }}>
           <span>{st.tag.icon} Déjà dépensé (tag « {st.tag.name} »)</span><b style={{ color: "var(--coral)" }}>{fmt(st.spent)}</b>
         </div>
         {bar(st.spentPct, "var(--coral)")}
-        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>{Math.round(st.spentPct)} % du budget · {st.spentCount} achat{st.spentCount > 1 ? "s" : ""}</div>
+        <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>{pv(Math.round(st.spentPct))} % du budget · {st.spentCount} achat{st.spentCount > 1 ? "s" : ""}</div>
       </>}
       {st.remaining > 0 && st.status !== "late-deadline" && (
         <div style={{ padding: "8px 10px", borderRadius: 10, fontSize: ".66rem", color: "var(--text2)", background: "var(--purple-glow)", border: "1px solid rgba(176,144,224,.3)", marginBottom: 8 }}>
@@ -78,7 +78,7 @@ function ProgressRing({ ratio }) {
   const C = 72.3, done = ratio >= 1;
   const col = done ? "var(--success)" : "var(--purple)";
   return (
-    <svg width="30" height="30" viewBox="0 0 30 30" style={{ flexShrink: 0 }} data-testid="cag-ring">
+    <svg data-pv="" width="30" height="30" viewBox="0 0 30 30" style={{ flexShrink: 0 }} data-testid="cag-ring">
       <circle cx="15" cy="15" r="11.5" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="3.5" />
       <circle cx="15" cy="15" r="11.5" fill="none" stroke={col} strokeWidth="3.5" strokeLinecap="round"
         strokeDasharray={`${(Math.min(1, ratio) * C).toFixed(1)} ${C}`} transform="rotate(-90 15 15)" />
@@ -135,14 +135,14 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
         </div>
         {sum.total > 0 && sum.byType.some(t => t.amount > 0) && (
           <div data-testid="cag-type-bar" style={{ display: "flex", height: 8, borderRadius: 5, overflow: "hidden", marginTop: 9, background: "var(--surface3)" }}>
-            {sum.byType.filter(t => t.amount > 0).map(t => <i key={t.id || "none"} title={`${t.label} ${Math.round(t.pct)} %`} style={{ display: "block", height: "100%", width: `${t.pct}%`, background: t.color }} />)}
+            {sum.byType.filter(t => t.amount > 0).map(t => <i data-pv="" key={t.id || "none"} title={`${t.label} ${pv(Math.round(t.pct))} %`} style={{ display: "block", height: "100%", width: `${t.pct}%`, background: t.color }} />)}
           </div>
         )}
         <div data-testid="cag-recap-line" onClick={toggleRecap} style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 7, fontSize: ".64rem", color: "var(--text2)", cursor: "pointer" }}>
           <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontVariantNumeric: "tabular-nums" }}>
             {MONTHS_ABBR[mIdx(sum.ym)]} <b style={{ color: netCol(sum.month.net) }}>{signed(sum.month.net)}</b>
             {sum.goal > 0
-              ? <> · {sum.year} <b style={{ color: "var(--purple)" }}>{Math.round(sum.goalPct)} %</b> de l'objectif</>
+              ? <> · {sum.year} <b style={{ color: "var(--purple)" }}>{pv(Math.round(sum.goalPct))} %</b> de l'objectif</>
               : <> · {sum.year} <b style={{ color: netCol(sum.yearFlows.net) }}>{signed(sum.yearFlows.net)}</b></>}
             {sum.auto.monthly > 0 && <> · 🔁 {fmt(sum.auto.monthly)}/mois</>}
           </span>
@@ -168,17 +168,17 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
           <div data-testid="cag-recap-detail" style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, padding: "9px 11px", marginBottom: 10 }}>
             {h6("Répartition", true)}
             {sum.byType.length === 0 && row("Aucune cagnotte", "—")}
-            {sum.byType.map(t => row(<>{t.icon} {t.label} <span style={{ color: "var(--text3)" }}>· {t.count}</span></>, <><b>{fmt(t.amount)}</b> <span style={{ color: "var(--text3)" }}>· {Math.round(t.pct)} %</span></>, t.id || "none"))}
+            {sum.byType.map(t => row(<>{t.icon} {t.label} <span style={{ color: "var(--text3)" }}>· {t.count}</span></>, <><b>{fmt(t.amount)}</b> <span style={{ color: "var(--text3)" }}>· {pv(Math.round(t.pct))} %</span></>, t.id || "none"))}
             {h6("Mouvements")}
             {row(MONTHS_FULL[mIdx(sum.ym)], flow(sum.month))}
             {row(MONTHS_FULL[mIdx(sum.prevYM)], <span style={{ color: "var(--text2)" }}>{signed(sum.prev.net)} net</span>)}
             {row(`Année ${sum.year}`, flow(sum.yearFlows))}
             {row(`Objectif ${sum.year}`, sum.goal > 0
-              ? <><b>{Math.round(sum.goalPct)} %</b> de {fmt(sum.goal)}{sum.goal > sum.yearFlows.sav ? ` · reste ${fmt(sum.goal - sum.yearFlows.sav)}` : " · atteint 🎉"}</>
+              ? <><b>{pv(Math.round(sum.goalPct))} %</b> de {fmt(sum.goal)}{sum.goal > sum.yearFlows.sav ? ` · reste ${fmt(sum.goal - sum.yearFlows.sav)}` : " · atteint 🎉"}</>
               : <span style={{ color: "var(--text3)" }}>aucun (à fixer dans le Rapport)</span>)}
             {h6("Objectifs & automatique")}
             {row("Objectifs des cagnottes", sum.objectives.count > 0
-              ? <><b>{Math.round(sum.objectives.pct)} %</b> · {fmt(sum.objectives.saved)} / {fmt(sum.objectives.target)}</>
+              ? <><b>{pv(Math.round(sum.objectives.pct))} %</b> · {fmt(sum.objectives.saved)} / {fmt(sum.objectives.target)}</>
               : <span style={{ color: "var(--text3)" }}>aucun objectif</span>)}
             {row("Versements auto", sum.auto.count > 0 ? <>{fmt(sum.auto.monthly)}/mois ({sum.auto.count})</> : <span style={{ color: "var(--text3)" }}>aucun</span>)}
             {row("Arrondis ce mois", sum.rounding.cag ? <>{fmt(sum.rounding.month)} → {cagTypeOf(cagTypes, sum.rounding.cag.cagType)?.icon || "🐷"} {sum.rounding.cag.name}</> : <span style={{ color: "var(--text3)" }}>désactivés</span>)}
@@ -208,7 +208,7 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
                       <span style={{ color: "var(--text3)", fontSize: ".6rem" }}>{on ? "▴" : "▾"}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: "var(--surface3)", position: "relative", marginTop: 6 }}>
-                      <div style={{ width: `${Math.min(100, st.savedPct)}%`, height: "100%", borderRadius: 3, background: "var(--purple)" }} />
+                      <div data-pv="" style={{ width: `${Math.min(100, st.savedPct)}%`, height: "100%", borderRadius: 3, background: "var(--purple)" }} />
                       {st.status !== "done" && <span style={{ position: "absolute", top: -3, left: `calc(${Math.min(100, st.expectedPct)}% - 1px)`, width: 2, height: 11, background: "#fff", opacity: .8 }} />}
                     </div>
                     <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
