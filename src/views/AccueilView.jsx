@@ -1303,7 +1303,7 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       {cagSheet && (
         <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.75)", backdropFilter:"blur(5px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
           onClick={() => setCagSheet(null)}>
-          <div style={{ background:"var(--surface)", borderRadius:"18px 18px 0 0", border:"1px solid var(--border)", padding:"16px 16px 32px" }}
+          <div style={{ background: "var(--panel-solid, var(--surface))", borderRadius:"18px 18px 0 0", border:"1px solid var(--border)", padding:"16px 16px 32px" }}
             onClick={e => e.stopPropagation()}>
             <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
 

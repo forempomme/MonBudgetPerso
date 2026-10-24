@@ -76,6 +76,8 @@ export const A = /** @type {const} */ ({
   EXECUTE_TRANSFER:  "EXECUTE_TRANSFER",
   SAVE_CATEGORY:     "SAVE_CATEGORY",
   DELETE_CATEGORY:   "DELETE_CATEGORY",
+  MOVE_CATEGORY:     "MOVE_CATEGORY",              // v1.77.0 : catégorie ↔ sous-catégorie
+  RESTORE_CATEGORY_PARENTS: "RESTORE_CATEGORY_PARENTS", // v1.77.0 : « Annuler » d'un déplacement
   SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   ADD_BACKUP_ENTRY:  "ADD_BACKUP_ENTRY",
@@ -208,6 +210,7 @@ export const DEFAULT_DATA = {
   relockDelay:          5,     // minutes hors de l'appli avant de redemander le PIN (0 = immédiat, -1 = jamais)
   pinMaxTries:          5,     // erreurs de PIN avant une attente (0 = illimité)
   openHidden:           false, // ouvrir l'appli en mode discret
+  hideRecents:          false, // v1.77.1 : masquer l'aperçu dans les applis récentes (bloque les captures sur Pixel)
   backupKey:            null,  // { v, salt, iter, check } — vérificateur du mot de passe de sauvegarde (jamais le mot de passe)
   tags:                 [],
   roundingEnabled:           false,
@@ -679,6 +682,39 @@ export function reducer(state, action) {
     }
 
     // ── Categories ────────────────────────────────────────────────
+    // v1.77.0 : déplacer une catégorie. targetId = catégorie principale de
+    // destination (même type), null = en faire une catégorie principale.
+    // Si la catégorie a des sous-catégories : kidsMode "with" → elles suivent
+    // (rangées dans la destination, un seul niveau), "free" → elles deviennent
+    // catégories principales. Rien d'autre ne bouge : opérations, fixes,
+    // budgets… restent attachés aux mêmes identifiants.
+    case A.MOVE_CATEGORY: {
+      const { id, targetId = null, kidsMode = "with" } = action;
+      const cat = state.categories.find(c => c.id === id);
+      if (!cat) return state;
+      const target = targetId ? state.categories.find(c => c.id === targetId) : null;
+      if (targetId && (!target || target.id === id || target.type !== cat.type || target.parentId)) return state;
+      const top = c => { const { parentId, ...rest } = c; return { ...rest, parentId: undefined }; };
+      return {
+        ...state,
+        categories: state.categories.map(c => {
+          if (c.id === id) return target ? { ...c, parentId: target.id } : top(c);
+          if (c.parentId === id && target) return kidsMode === "free" ? top(c) : { ...c, parentId: target.id };
+          return c;
+        }),
+      };
+    }
+    case A.RESTORE_CATEGORY_PARENTS: {
+      const map = action.parents || {};
+      return {
+        ...state,
+        categories: state.categories.map(c => {
+          if (!(c.id in map)) return c;
+          const { parentId, ...rest } = c;
+          return map[c.id] ? { ...rest, parentId: map[c.id] } : { ...rest, parentId: undefined };
+        }),
+      };
+    }
     case A.SAVE_CATEGORY: {
       // v1.47.0 : un seul niveau de sous-catégories — une catégorie qui a
       // déjà des sous-catégories ne peut pas devenir elle-même sous-catégorie.
@@ -1105,6 +1141,7 @@ export function reducer(state, action) {
       if ([0, 1, 5, 15, -1].includes(p.relockDelay)) out.relockDelay = p.relockDelay;
       if ([0, 3, 5, 10].includes(p.pinMaxTries))     out.pinMaxTries = p.pinMaxTries;
       if (typeof p.openHidden === "boolean")         out.openHidden  = p.openHidden;
+      if (typeof p.hideRecents === "boolean")        out.hideRecents = p.hideRecents;
       if ("backupKey" in p)                          out.backupKey   = p.backupKey || null;
       return out;
     }

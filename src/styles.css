@@ -460,7 +460,8 @@ html[data-theme="abysse"] {
   --fab-shadow: 0 8px 22px rgba(0,0,0,.55), 0 0 0 4px rgba(5,11,24,.9);
   --fab-menu-bg: #0e1e36;
   --btn-pri-bg: #3b84cf; --btn-pri-border: #5aa0e4; --btn-pri-text: #fff;
-  --sheet-bg: rgba(10,22,44,.97);
+  --sheet-bg: #0a162c;      /* v1.77.1 : opaque (avant .97 : l'écran derrière transparaissait) */
+  --panel-solid: #0c1b34;   /* fenêtres flottantes (choix de catégorie, feuilles récap…) */
   --seg-on-bg: rgba(255,255,255,.17); --seg-on-text: #fff;
 }
 html[data-theme="glacier"] {
@@ -468,12 +469,13 @@ html[data-theme="glacier"] {
   --fab-shadow: 0 8px 22px rgba(0,0,0,.5), 0 0 0 4px rgba(7,19,33,.9);
   --fab-menu-bg: #13304e;
   --btn-pri-bg: #3f8fd2; --btn-pri-border: #6cb0e6; --btn-pri-text: #fff;
-  --sheet-bg: rgba(14,30,52,.97);
+  --sheet-bg: #0e1e34;
+  --panel-solid: #11253f;
   --seg-on-bg: rgba(255,255,255,.17); --seg-on-text: #fff;
 }
 /* Cartes */
 html[data-theme="abysse"] .hero-card, html[data-theme="glacier"] .hero-card { border: 1px solid var(--border) !important; }
-html[data-theme="abysse"] .modal-content, html[data-theme="glacier"] .modal-content { background: rgba(10,22,44,.82); }
+html[data-theme="abysse"] .modal-content, html[data-theme="glacier"] .modal-content { background: var(--sheet-bg); } /* v1.77.1 : opaque */
 html[data-theme="abysse"] .bp-header h1, html[data-theme="glacier"] .bp-header h1 { letter-spacing: -.01em; }
 
 /* Effet « verre dépoli » (flou) — réglage Options › Apparence › Effets de verre */

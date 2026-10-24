@@ -191,6 +191,19 @@ export default function App() {
   useEffect(() => { if (locked && data.openHidden) setHidden(true); }, [locked, data.openHidden]);
   const saveSecurityExtra = useCallback(patch => dispatch({ type: A.SAVE_SECURITY_EXTRA, patch }), []);
 
+  // v1.77.1 : aperçu dans les applis récentes masqué seulement si demandé
+  // (petit module Android « PrivacyScreen » ajouté par le build, voir Build.yml).
+  // Sur le Pixel, le masquer bloquait aussi les captures d'écran → désactivé par défaut.
+  useEffect(() => {
+    if (!window.Capacitor?.isNativePlatform?.()) return;
+    import("@capacitor/core")
+      .then(({ registerPlugin }) => {
+        window.__privacyScreen = window.__privacyScreen || registerPlugin("PrivacyScreen");
+        return window.__privacyScreen.setHidden({ hidden: !!data.hideRecents });
+      })
+      .catch(e => console.warn("PrivacyScreen:", e));
+  }, [data.hideRecents]);
+
   // v1.75.0 : ménage des fichiers de sauvegarde restés dans le cache (> 10 min)
   useEffect(() => { cleanBackupCache(10 * 60000); }, []);
 
@@ -1081,6 +1094,10 @@ export default function App() {
         onNewCat={parentId => setCatModal(typeof parentId === "string" ? { parentId } : {})}
         onExport={handleExport}
         onSaveSecurityExtra={saveSecurityExtra}
+        onEditFixed={idx => setFixedModal({ editingIdx: idx })}
+        onEditFixedIncome={idx => setFixedIncomeModal({ editingIdx: idx })}
+        onMoveCat={({ id, targetId, kidsMode }) => dispatch({ type: A.MOVE_CATEGORY, id, targetId, kidsMode })}
+        onRestoreCatParents={parents => dispatch({ type: A.RESTORE_CATEGORY_PARENTS, parents })}
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}

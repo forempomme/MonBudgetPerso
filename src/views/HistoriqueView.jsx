@@ -1515,7 +1515,7 @@ function TxActionSheet({ t, categories, cagnottes, allTags, allSideAmountTypes, 
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", animation: "fadeIn .2s ease" }} />
       <div style={{
         position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "88vh", overflowY: "auto",
-        background: "var(--surface)", borderTop: "1.5px solid var(--border)", borderRadius: "20px 20px 0 0",
+        background: "var(--panel-solid, var(--surface))", borderTop: "1.5px solid var(--border)", borderRadius: "20px 20px 0 0",
         padding: "10px 16px calc(16px + env(safe-area-inset-bottom))", boxShadow: "0 -20px 50px rgba(0,0,0,.7)",
         animation: "slideUp .22s ease", maxWidth: 520, margin: "0 auto",
       }}>

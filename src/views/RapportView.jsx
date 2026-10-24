@@ -397,6 +397,16 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
       <div data-pv="" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, height: "100%", borderRadius: 3, background: col }} />
     </div>
   );
+  // v1.76.0 : barre dont la partie « frais fixes » est hachurée
+  const fixBar = (pct, fixShare, col, h = 5) => {
+    const w = Math.max(0, Math.min(100, pct));
+    return (
+      <div style={{ height: h, borderRadius: 3, background: "var(--surface3)", overflow: "hidden", marginTop: 4, display: "flex" }}>
+        <div data-pv="" data-testid="fix-hatch" style={{ width: `${w * fixShare}%`, height: "100%", background: `repeating-linear-gradient(45deg, ${col} 0 4px, color-mix(in srgb, ${col} 40%, transparent) 4px 8px)` }} />
+        <div data-pv="" style={{ width: `${w * (1 - fixShare)}%`, height: "100%", background: col }} />
+      </div>
+    );
+  };
   const budCol = (spent, limit) => spent > limit + 0.004 ? "var(--danger)" : spent / limit >= .8 ? "var(--warning)" : "var(--success)";
   const vsTxt = (v, avg, higherIsGood) => {
     if (avg == null) return { t: "", c: "var(--text3)" };
@@ -503,6 +513,11 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 </span>
               ))}
             </div>
+            {monthBreakdown.fixTotal > 0 && (
+              <div data-testid="month-fix-total" style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 7, paddingTop: 6, borderTop: "1px solid var(--border-soft)" }}>
+                📌 dont frais fixes <b style={{ color: "#e8944a", fontVariantNumeric: "tabular-nums" }}>{fmt(monthBreakdown.fixTotal)}</b>, comptés dans leurs catégories
+              </div>
+            )}
           </div>
         </>}
 
@@ -739,6 +754,12 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
               <span style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text2)" }}>Total dépensé · {catPer === "year" ? currentYear : MONTHS_FR[mm - 1].toLowerCase()}</span>
               <b style={{ fontFamily: "var(--mono)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>{fmt(breakdown.total)}</b>
             </div>
+            {breakdown.fixTotal > 0 && (
+              <div data-testid="cat-fix-total" style={{ fontSize: ".6rem", color: "var(--text2)", marginTop: 2 }}>
+                📌 dont frais fixes <b style={{ color: "#e8944a", fontVariantNumeric: "tabular-nums" }}>{fmt(breakdown.fixTotal)}</b> · variables <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(Math.max(0, breakdown.total - breakdown.fixTotal))}</b>
+                <span style={{ color: "var(--text3)" }}> — rangés dans leurs catégories (▨)</span>
+              </div>
+            )}
             {breakdown.total > 0 && <div style={{ marginTop: 7 }}>{stackBar(breakdown.rows, breakdown.total)}</div>}
             {breakdown.rows.length === 0 && <div style={{ fontSize: ".7rem", color: "var(--text3)", textAlign: "center", padding: "10px 0 4px" }}>Aucune dépense sur cette période.</div>}
           </div>
@@ -762,13 +783,18 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                     <b style={{ width: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmt(r.net)}</b>
                     <span style={{ color: "var(--text3)", width: 8 }}>{c ? "›" : ""}</span>
                   </div>
+                  {r.fixed > 0 && (
+                    <div data-testid="cat-row-fix" style={{ fontSize: ".56rem", color: "var(--text3)", margin: "1px 0 0 24px", lineHeight: 1.45 }}>
+                      📌 dont fixes <b style={{ color: "#e8944a" }}>{fmt(r.fixed)}</b> ({r.fixes.map(x => `${x.name} ${fmt(x.amount)}`).join(" · ")}){r.gross - r.fixed > 0.004 ? <> · variables {fmt(r.gross - r.fixed)}</> : null}
+                    </div>
+                  )}
                   {(r.subs.length > 0 || r.deducted > 0) && (
                     <div style={{ fontSize: ".56rem", color: "var(--text3)", margin: "1px 0 0 24px" }}>
                       {r.subs.length > 0 && <>dont {r.subs.map(s => `${catOf(s.id)?.icon || ""} ${catOf(s.id)?.name || "?"} ${fmt(s.amount)}`).join(" · ")}</>}
                       {r.deducted > 0 && <>{r.subs.length > 0 ? " · " : ""}− {fmt(r.deducted)} de revenus liés déduits</>}
                     </div>
                   )}
-                  {bar(pct, rowColor(r))}
+                  {r.fixed > 0 ? fixBar(pct, r.gross > 0 ? r.fixed / r.gross : 0, rowColor(r)) : bar(pct, rowColor(r))}
                   {c && (editing ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
                       <span style={{ fontSize: ".6rem", color: "var(--text2)" }}>🎯 Budget / mois</span>

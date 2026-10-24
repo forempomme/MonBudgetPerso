@@ -82,8 +82,13 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
   const items = list.map((f, idx) => {
     const occ = fixedOccurrenceYM(f, curYM);   // occurrence versée ce mois-ci
     const amt = fixedAmountFor(f, occ);
-    return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM), st: fixedStatusForMonth(f, curYM, todayDay), icon: categories.find(c => c.id === f.categoryId)?.icon ?? (isExp ? "📌" : "💰") };
+    // v1.76.0 : catégorie affichée en étiquette (sous-catégorie : « Parent › Sous-cat. »)
+    const cat = categories.find(c => c.id === f.categoryId);
+    const par = cat?.parentId ? categories.find(c => c.id === cat.parentId) : null;
+    return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM), st: fixedStatusForMonth(f, curYM, todayDay), icon: cat?.icon ?? (isExp ? "📌" : "💰"),
+      cat, catLabel: cat ? `${cat.icon} ${par ? par.name + " › " : ""}${cat.name}` : null };
   });
+  const noCat = items.filter(x => !x.cat);
   const byGroup = {};
   GROUPS.forEach(({ g }) => { byGroup[g] = items.filter(x => x.st === g).sort((a, b) => (a.dayNum || 99) - (b.dayNum || 99)); });
   const active    = items.filter(x => x.st === "late" || x.st === "next" || x.st === "ok");
@@ -127,6 +132,9 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
     const rise = isExp && f.prevAmount != null && f.prevAmount !== f.amount && f.prevAmountYM !== curYM;
     const bubTxt = g === "pause" ? "⏸" : g === "later" ? "→" : (x.dayNum || "?");
     const badges = [
+      x.cat ? <span key="cat" data-testid="fix-cat" style={{ fontSize: ".5rem", fontWeight: 800, padding: "1px 6px", borderRadius: 7, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150,
+        color: x.cat.color || "var(--text2)", background: `color-mix(in srgb, ${x.cat.color || "var(--text2)"} 14%, transparent)` }}>{x.catLabel}</span>
+        : badge("⚠️ sans catégorie", "var(--warning)", "cat"),
       f.advance && (g === "ok" || g === "late" || g === "next") ? badge(`→ budget ${ymShort(x.occ)}`, "var(--sapin)", "adv") : null,
       rise ? badge(f.amount > f.prevAmount ? "▲ hausse" : "▼ baisse", f.amount > f.prevAmount ? "var(--danger)" : "var(--success)", "rise") : null,
       !x.dayNum && g !== "pause" && g !== "later" ? badge("jour ?", "var(--warning)", "day") : null,
@@ -282,6 +290,14 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
           : <EmptyIllustration type="fixes" title="Aucun revenu fixe" sub="Ajoute tes revenus récurrents (salaire, loyer perçu…)" cta="+ Ajouter" onCta={onNewFixedIncome} ctaColor="var(--success)" />
       ) : (
         <>
+          {/* v1.76.0 : frais/revenus fixes sans catégorie → absents des catégories du Rapport */}
+          {noCat.length > 0 && (
+            <div data-testid="fix-nocat" onClick={() => onEditFixed && (isExp ? onEditFixed : onEditFixedIncome)(noCat[0].idx)}
+              style={{ fontSize: ".66rem", lineHeight: 1.45, padding: "8px 11px", borderRadius: 12, marginBottom: 9, cursor: "pointer", color: "var(--text)",
+                background: "color-mix(in srgb, var(--warning) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)" }}>
+              ⚠️ <b>{noCat.length} {isExp ? "frais" : "revenu"} fixe{noCat.length > 1 ? "s" : ""}</b> sans catégorie ({noCat.map(x => x.f.name).join(", ")}) : {noCat.length > 1 ? "ils n'apparaissent" : "il n'apparaît"} dans aucune catégorie du Rapport. <u>Choisir</u>
+            </div>
+          )}
           {/* ── Avancement du mois ── */}
           {active.length > 0 && (
             <div className="card" data-testid="fix-progress" style={{ padding: "9px 11px", marginBottom: 9 }}>

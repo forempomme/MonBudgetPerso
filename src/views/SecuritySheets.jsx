@@ -171,7 +171,7 @@ function Toggle({ on }) {
   );
 }
 
-export function SecurityExtraSettings({ pinOn, relockDelay = 5, pinMaxTries = 5, openHidden = false, onSave }) {
+export function SecurityExtraSettings({ pinOn, relockDelay = 5, pinMaxTries = 5, openHidden = false, hideRecents = false, onSave }) {
   const lbl = { ...LBL, color: "var(--accent)", margin: "14px 2px 6px" };
   const relockTxt = relockDelay === -1 ? "Le PIN n'est demandé qu'au démarrage de l'appli."
     : relockDelay === 0 ? "Le PIN est redemandé dès que tu quittes l'appli, même une seconde."
@@ -198,13 +198,16 @@ export function SecurityExtraSettings({ pinOn, relockDelay = 5, pinMaxTries = 5,
         </div>
         <Toggle on={openHidden} />
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 10 }}>
+      {/* v1.77.1 : réglable, désactivé par défaut — sur le Pixel, masquer l'aperçu
+          bloquait aussi les captures d'écran de l'appli */}
+      <div data-testid="hide-recents" onClick={() => onSave?.({ hideRecents: !hideRecents })}
+        style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: hideRecents ? "rgba(112,184,224,.06)" : "var(--surface2)", border: `1px solid ${hideRecents ? "rgba(112,184,224,.2)" : "var(--border)"}`, borderRadius: 10, cursor: "pointer", touchAction: "manipulation" }}>
         <span style={{ fontSize: "1rem" }}>🗂</span>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: ".76rem", fontWeight: 700, color: "var(--text2)" }}>Aperçu masqué dans les applis récentes</div>
-          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Toujours actif (Android 13+) · captures d'écran autorisées</div>
+          <div style={{ fontSize: ".76rem", fontWeight: 700, color: hideRecents ? "var(--accent)" : "var(--text2)" }}>Masquer l'aperçu dans les applis récentes</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)", marginTop: 1 }}>Android 13+ · <b style={{ color: "var(--warning)" }}>sur certains téléphones (dont le Pixel), bloque aussi les captures d'écran</b></div>
         </div>
-        <span style={{ color: "var(--success)", fontWeight: 900 }}>✓</span>
+        <Toggle on={hideRecents} />
       </div>
     </div>
   );

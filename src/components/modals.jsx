@@ -303,7 +303,7 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                   transform: "translate(-50%, -50%)",
                   zIndex: 201,
                   width: "min(92vw, 380px)",
-                  background: "var(--surface)",
+                  background: "var(--panel-solid, var(--surface))",
                   border: "1.5px solid var(--border)",
                   borderRadius: 16,
                   padding: 12,
@@ -899,7 +899,7 @@ export function TransModal({
                 <div style={{
                     position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
                     width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
-                    background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
+                    background: "var(--panel-solid, var(--surface))", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
                     boxShadow: "0 24px 60px rgba(0,0,0,.8)",
                   }}
                   onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
@@ -1222,7 +1222,7 @@ function OptionsField({ hint, chips = [], children }) {
           <div style={{
               position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
               width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
-              background: "var(--surface)", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
+              background: "var(--panel-solid, var(--surface))", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
               boxShadow: "0 24px 60px rgba(0,0,0,.8)",
             }}
             onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
@@ -1350,7 +1350,9 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
 
   const [name,   setName]   = useState(f?.name || "");
   const [amt,    setAmt]    = useState(toPadStr(f?.amount));
-  const [catId,  setCatId]  = useState(f?.categoryId || cats[0]?.id || "");
+  // v1.76.0 : plus de catégorie pré-choisie. null = pas encore choisie (obligatoire),
+  // "" = « Sans catégorie » choisi volontairement. Avant : 1ʳᵉ catégorie de la liste d'office.
+  const [catId,  setCatId]  = useState(isEdit ? (f?.categoryId && categories.some(c => c.id === f.categoryId) ? f.categoryId : "") : null);
   const [startYM, setStartYM] = useState(f?.startYM || "");
   const [day, setDay] = useState(f?.day || null);   // v1.48.0 : jour de prélèvement
   // v1.64.0 : montant prévu fixe ou automatique (moyenne des 3 derniers réels) + budget du mois suivant
@@ -1370,8 +1372,19 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   function switchKind(k) {
     if (k === kind) return;
     setKind(k);
-    setCatId(categories.find(c => c.type === (k === "income" ? "income" : "expense"))?.id || "");
+    setCatId(null);
   }
+  // Suggestions : catégories dont le nom partage un mot avec le nom du frais,
+  // puis catégories déjà utilisées par d'autres fixes du même type.
+  const catSuggestions = (() => {
+    if (catId !== null) return [];
+    const norm = x => (x || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const words = norm(name).split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    const score = new Map();
+    cats.forEach(c => { const cn = norm(c.name); if (words.some(w => cn.includes(w) || w.includes(cn))) score.set(c.id, (score.get(c.id) || 0) + 10); });
+    (isInc ? fixedIncomes : fixedExpenses).forEach(x => { if (x.categoryId && cats.some(c => c.id === x.categoryId)) score.set(x.categoryId, (score.get(x.categoryId) || 0) + 1); });
+    return [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id]) => cats.find(c => c.id === id)).filter(Boolean);
+  })();
 
   const autoOn   = isInc && amountMode === "auto";
   const autoHist = autoOn ? autoIncomeHistory({ ...(f || {}), categoryId: catId }, transactions) : [];
@@ -1382,10 +1395,11 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
     const a = autoOn && autoAmt != null ? autoAmt : amountOf(amt);
     if (!name.trim()) e.name = "Nom requis";
     if (isNaN(a) || a <= 0) e.amt = "Montant requis et doit être > 0";
+    if (catId === null) e.cat = "Choisis une catégorie (ou « Sans catégorie »)";
     setErrors(e);
     if (Object.keys(e).length) return;
     const payload = {
-      name: name.trim(), amount: a, categoryId: catId,
+      name: name.trim(), amount: a, categoryId: catId || null,
       startYM: startYM || null,
       day: day || null,
       paused,
@@ -1442,12 +1456,26 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       ) : (
         <div style={{ marginBottom: 10 }}>
           {errors.amt && <FieldError msg={errors.amt} />}
-          {autoOn && <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 5, lineHeight: 1.5 }}>Aucun montant réel trouvé dans cette catégorie : indique un montant de départ, la moyenne prendra le relais à chaque pointage.</div>}
+          {autoOn && <div style={{ fontSize: ".6rem", color: "var(--warning)", marginBottom: 5, lineHeight: 1.5 }}>{catId
+            ? "Aucun montant réel trouvé dans cette catégorie : indique un montant de départ, la moyenne prendra le relais à chaque pointage."
+            : "La moyenne se calcule sur les versements de la catégorie du revenu : choisis-la plus bas (ou indique un montant de départ)."}</div>}
           <NumPad value={amt} type={isInc ? "income" : "expense"}
             onChange={v => { setAmt(typeof v === "function" ? v(amt) : v); setErrors(x => ({ ...x, amt: "" })); }} />
         </div>
       )}
-      <CategoryField cats={cats} catId={catId} onChange={setCatId} />
+      <div data-testid="fix-cat-field">
+        <CategoryField cats={cats} catId={catId || ""} onChange={v => { setCatId(v); setErrors(x => ({ ...x, cat: "" })); }} error={errors.cat}
+          label={catId === null ? "Catégorie · à choisir" : "Catégorie"} noneLabel="⊘ Sans catégorie"
+          emptyLabel={catId === "" ? "⊘ Sans catégorie" : "Choisir une catégorie…"} />
+        {catSuggestions.length > 0 && (
+          <div data-testid="fix-cat-sugg" style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "-4px 0 10px" }}>
+            {catSuggestions.map(c => (
+              <span key={c.id} role="button" onClick={() => { setCatId(c.id); setErrors(x => ({ ...x, cat: "" })); }}
+                style={{ fontSize: ".64rem", fontWeight: 800, padding: "5px 9px", borderRadius: 12, cursor: "pointer", color: "var(--text)", background: "var(--surface2)", border: "1px solid var(--border)" }}>{c.icon} {c.name}</span>
+            ))}
+          </div>
+        )}
+      </div>
       <DayField label={isInc ? "Jour de versement" : "Jour de prélèvement"} value={day} onChange={setDay} />
       {isInc && (
         <div data-testid="advance-toggle" {...tap(() => setAdvance(v => !v))}
