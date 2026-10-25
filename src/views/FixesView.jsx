@@ -381,7 +381,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
             );
           })}
           {showProvForm && (
-            <div className="card" style={{ padding: 14, marginTop: 8, borderLeft: "3px solid var(--warning)", background: "var(--warning-glow)" }}>
+            <div className="card" style={{ padding: 14, marginTop: 8, border: "1px solid color-mix(in srgb, var(--warning) 45%, transparent)", background: "var(--warning-glow)" }}>
               <div className="form-group">
                 <label>Nom</label>
                 <input type="text" value={provName} placeholder="Ex : Réparation voiture"

@@ -107,7 +107,7 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
       act("del", "🗑", "Supprimer", () => onDeleteCat?.(c.id), { danger: true, touch: true }),
     ].filter(Boolean);
     return (
-      <div data-testid="cat-actions" style={{ position: "sticky", bottom: 0, zIndex: 2, margin: "10px -14px 0", padding: "9px 12px 12px", background: "var(--fab-menu-bg, var(--surface2))", borderTop: "1px solid var(--accent)", boxShadow: "0 -10px 24px rgba(0,0,0,.35)" }}>
+      <div data-testid="cat-actions" style={{ position: "sticky", bottom: -14, zIndex: 2, margin: "10px -14px -14px", padding: "9px 12px 12px", borderRadius: "0 0 21px 21px", background: "var(--fab-menu-bg, var(--surface2))", borderTop: "1px solid var(--accent)", boxShadow: "0 -10px 24px rgba(0,0,0,.35)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <span style={{ width: 30, height: 30, borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", fontSize: ".95rem", flexShrink: 0, background: `color-mix(in srgb, ${tint(c)} 18%, transparent)` }}>{c.icon}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -214,7 +214,7 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
   return (
     <div data-testid="cat-manager">
       {/* En-tête collé en haut : recherche + créer + onglets */}
-      <div style={{ position: "sticky", top: -10, zIndex: 2, background: "var(--sheet-bg, var(--bg))", margin: "-2px -14px 0", padding: "2px 14px 8px" }}>
+      <div style={{ position: "sticky", top: -14, zIndex: 2, background: "var(--sheet-bg, var(--bg))", margin: "-2px -14px 0", padding: "2px 14px 8px" }}>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, borderRadius: 12, padding: "8px 11px", background: "var(--surface2)", border: "1px solid var(--border)" }}>
             <span>🔍</span>

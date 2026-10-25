@@ -72,15 +72,19 @@ export function LockScreen({ pinHash, bioEnabled, maxTries = 5, onUnlock }) {
   const KEYS = [[1,2,3],[4,5,6],[7,8,9],["",0,"⌫"]];
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"var(--bg, #060810)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
-      <div style={{ fontSize:"2.8rem", marginBottom:12 }}>🐷</div>
-      <div style={{ fontSize:".95rem", fontWeight:800, marginBottom:4 }}>Gestion du Budget</div>
-      <div style={{ fontSize:".65rem", color:"var(--text3)", marginBottom:28 }}>Entre ton code PIN pour continuer</div>
+    <div data-testid="lock-screen" style={{ position:"fixed", inset:0, background:"var(--lock-bg, var(--bg, #060810))", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24, zIndex:9999 }}>
+      {/* v1.78.0 : fond et couleurs du thème, icône de l'appli, touches rondes */}
+      <div style={{ width:68, height:68, borderRadius:20, marginBottom:12, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden",
+        background:"var(--surface2)", border:"1px solid var(--border)", boxShadow:"0 10px 30px rgba(0,0,0,.4)" }}>
+        <img src="/ic_launcher_round.png" alt="" style={{ width:56, height:56, borderRadius:"50%" }} />
+      </div>
+      <div style={{ fontSize:"1rem", fontWeight:800, marginBottom:4 }}>Gestion du Budget</div>
+      <div style={{ fontSize:".68rem", color:"var(--text2)", marginBottom:24 }}>Entre ton code PIN</div>
 
       {/* Points PIN */}
       <div style={{ display:"flex", gap:14, marginBottom:28 }}>
         {[0,1,2,3].map(i => (
-          <div key={i} style={{ width:14, height:14, borderRadius:"50%", background:i<pin.length?"#fff":"transparent", border:"2px solid rgba(255,255,255,.35)", transition:"background .1s" }} />
+          <div key={i} style={{ width:14, height:14, borderRadius:"50%", background:i<pin.length?"var(--accent)":"transparent", border:`2px solid ${i<pin.length?"var(--accent)":"rgba(255,255,255,.35)"}`, transition:"background .1s" }} />
         ))}
       </div>
 
@@ -97,20 +101,20 @@ export function LockScreen({ pinHash, bioEnabled, maxTries = 5, onUnlock }) {
 
       {/* Biométrie */}
       {bioEnabled && (
-        <button onClick={tryBio} style={{ display:"flex", alignItems:"center", gap:8, background:"rgba(112,184,224,.1)", border:"1.5px solid var(--accent)", borderRadius:30, padding:"10px 22px", color:"var(--accent)", fontWeight:700, fontSize:".75rem", cursor:"pointer", marginBottom:20, touchAction:"manipulation" }}>
+        <button onClick={tryBio} style={{ display:"flex", alignItems:"center", gap:8, background:"color-mix(in srgb, var(--accent) 14%, transparent)", border:"1px solid var(--accent)", borderRadius:30, padding:"9px 20px", color:"var(--accent)", fontWeight:800, fontSize:".75rem", cursor:"pointer", marginBottom:20, touchAction:"manipulation" }}>
           <span style={{ fontSize:"1.2rem" }}>👆</span> Empreinte digitale
         </button>
       )}
 
       {/* Clavier */}
-      <div style={{ display:"flex", flexDirection:"column", gap:8, width:"100%", maxWidth:240 }}>
+      <div style={{ display:"flex", flexDirection:"column", gap:12, width:"100%", maxWidth:250 }}>
         {KEYS.map((row, ri) => (
-          <div key={ri} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+          <div key={ri} style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:12, justifyItems:"center" }}>
             {row.map((k, ki) => (
               k === ""
                 ? <div key={ki} />
                 : <button key={ki} onClick={() => pressKey(String(k))} disabled={waiting}
-                    style={{ opacity: waiting ? .25 : 1, height:58, background:"rgba(255,255,255,.07)", border:"1px solid rgba(255,255,255,.1)", borderRadius:12, color:"#fff", fontSize:"1.2rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation" }}>
+                    style={{ opacity: waiting ? .25 : 1, width:66, height:66, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:"50%", color:"var(--text)", fontSize:"1.35rem", fontWeight:700, cursor:"pointer", touchAction:"manipulation", fontFamily:"inherit" }}>
                     {k}
                   </button>
             ))}

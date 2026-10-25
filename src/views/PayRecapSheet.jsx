@@ -28,15 +28,14 @@ export function PayRecapSheet({ recap: r, income, amount, paidDate, nextYM, cagn
     </div>
   );
   return createPortal(
-    <div data-testid="pay-recap" style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", animation: "fadeIn .2s ease" }} />
+    <div data-testid="pay-recap" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(2,6,14,.6)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", animation: "fadeIn .2s ease" }} />
       <div style={{
-        position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "92vh", overflowY: "auto",
-        background: "var(--panel-solid, var(--surface))", borderTop: "1.5px solid var(--border)", borderRadius: "20px 20px 0 0",
-        padding: "10px 16px calc(16px + env(safe-area-inset-bottom))", boxShadow: "0 -20px 50px rgba(0,0,0,.7)",
+        position: "relative", width: "100%", maxHeight: "86vh", overflowY: "auto",
+        background: "var(--panel-solid, var(--surface))", border: "1px solid var(--border)", borderRadius: 22,
+        padding: 14, boxShadow: "0 20px 60px rgba(0,0,0,.65)",
         animation: "slideUp .22s ease", maxWidth: 520, margin: "0 auto",
       }}>
-        <div style={{ width: 40, height: 4, borderRadius: 3, background: "var(--border)", margin: "0 auto 10px" }} />
         <div style={{ fontFamily: "var(--display)", fontSize: "1.05rem", fontWeight: 700 }}>💼 {income.name} reçu · bilan {/^[AEIOU]/.test(mName) ? "d'" : "de "}{mName.toLowerCase()}</div>
         <div style={{ fontSize: ".64rem", color: "var(--text2)", margin: "2px 0 12px" }}>
           {fmt(amount)} versés{paidDate ? ` le ${shortDate(paidDate)}` : ""}{income.advance && nextName ? ` → budget de ${nextName}` : ""}

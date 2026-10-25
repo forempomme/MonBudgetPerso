@@ -142,7 +142,7 @@ function PointRow({ item, onToggle, isFixed = false, onEditFixed, onEdit, onDele
 
       {/* Formulaire édition inline — ce mois uniquement */}
       {editing && (
-        <div onClick={e => e.stopPropagation()} style={{ padding: "10px 12px 12px", background: "rgba(112,184,224,.06)", borderBottom: "1px solid rgba(255,255,255,.06)", borderLeft: "3px solid var(--accent)" }}>
+        <div onClick={e => e.stopPropagation()} style={{ padding: "10px 12px 12px", background: "rgba(112,184,224,.06)", borderBottom: "1px solid rgba(255,255,255,.06)", boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent)" }}>
           <div style={{ fontSize: ".6rem", color: "var(--accent)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
             ✏️ Modifier pour ce mois uniquement
           </div>
@@ -965,11 +965,11 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
               const total = sec.fixed ? fixesNet : sec.off ? -items.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) : items.reduce((s, t) => s + signed(t), 0);
               const toPoint = sec.fixed ? fixesToPoint : sec.off ? 0 : items.filter(t => isPointable(t.type) && !t.pointed).length;
               return (
-                <div key={sec.k} style={{ borderRadius: "var(--radius)", border: "1px solid var(--border)", background: "var(--surface)", marginBottom: 8, overflow: "hidden" }}>
+                <div key={sec.k} style={{ borderRadius: "var(--radius)", border: `1px solid color-mix(in srgb, ${sec.color} 45%, transparent)`, background: "var(--surface)", marginBottom: 8, overflow: "hidden" }}>
                   <div role="button"
                     onTouchEnd={e => { if (touchMoved()) return; e.preventDefault(); setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
                     onClick={() => { if (!("ontouchstart" in window)) setOpenTypes(o => ({ ...o, [sec.k]: !o[sec.k] })); }}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderLeft: `4px solid ${sec.color}`, cursor: "pointer", touchAction: "manipulation" }}>
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: `color-mix(in srgb, ${sec.color} 8%, transparent)`, cursor: "pointer", touchAction: "manipulation" }}>
                     <span style={{ fontSize: "1rem" }}>{sec.icon}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: ".82rem", fontWeight: 700 }}>{sec.label}</span>
@@ -1073,7 +1073,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
                       </span>
                     </div>
                     <div className="card" style={{ padding: 0, overflow: "hidden", margin: 0, borderRadius: 14,
-                      background: `color-mix(in srgb, ${col} 7%, var(--surface))`, border: `1px solid color-mix(in srgb, ${col} 30%, transparent)`, borderLeft: `3px solid ${col}` }}>
+                      background: `color-mix(in srgb, ${col} 7%, var(--surface))`, border: `1px solid color-mix(in srgb, ${col} 45%, transparent)` }}>
                       {isOff ? list.map(offRow) : list.map(t => (
                         <SwipeRow key={t.id} t={t} variant="frise" categories={categories} cagnottes={cagnottes}
                           onEdit={onEditTrans} onDelete={onDeleteTrans} onTogglePoint={onTogglePointTx} onDuplicate={onDuplicateTrans}
@@ -1511,15 +1511,14 @@ function TxActionSheet({ t, categories, cagnottes, allTags, allSideAmountTypes, 
   const longDate = new Date(t.date + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
   const act = fn => () => { onClose(); fn(); };
   return createPortal(
-    <div data-testid="tx-sheet" style={{ position: "fixed", inset: 0, zIndex: 1000 }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.6)", animation: "fadeIn .2s ease" }} />
+    <div data-testid="tx-sheet" style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(2,6,14,.6)", backdropFilter: "blur(3px)", WebkitBackdropFilter: "blur(3px)", animation: "fadeIn .2s ease" }} />
       <div style={{
-        position: "absolute", left: 0, right: 0, bottom: 0, maxHeight: "88vh", overflowY: "auto",
-        background: "var(--panel-solid, var(--surface))", borderTop: "1.5px solid var(--border)", borderRadius: "20px 20px 0 0",
-        padding: "10px 16px calc(16px + env(safe-area-inset-bottom))", boxShadow: "0 -20px 50px rgba(0,0,0,.7)",
+        position: "relative", width: "100%", maxHeight: "86vh", overflowY: "auto",
+        background: "var(--panel-solid, var(--surface))", border: "1px solid var(--border)", borderRadius: 22,
+        padding: 14, boxShadow: "0 20px 60px rgba(0,0,0,.65)",
         animation: "slideUp .22s ease", maxWidth: 520, margin: "0 auto",
       }}>
-        <div style={{ width: 40, height: 4, borderRadius: 3, background: "var(--border)", margin: "0 auto 10px" }} />
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={{ fontSize: "1.2rem" }}>{icon}</span>
           <span style={{ flex: 1, minWidth: 0, fontFamily: "var(--display)", fontSize: "1rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
@@ -1589,8 +1588,8 @@ function CatBreakdown({ txs, allTxs, categories, onSelectCat }) {
           <div key={c.name}
             onClick={() => c.id && onSelectCat?.(c.id)}
             style={{
-              background: "var(--surface)", border: "1px solid var(--border)",
-              borderLeft: `3px solid ${c.color}`, borderRadius: "var(--radius-sm)",
+              background: "var(--surface)", border: `1px solid color-mix(in srgb, ${c.color} 45%, transparent)`,
+              borderRadius: 14,
               padding: "10px 12px", cursor: c.id ? "pointer" : "default",
             }}>
             {/* En-tête : nom + montants */}

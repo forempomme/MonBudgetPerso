@@ -89,3 +89,19 @@ export function Modal({ onClose, title, children, center = false }) {
     document.body
   );
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.78.0 — Interrupteur unique (avant : 11 dessins différents)
+//  42 × 24, bouton blanc de 18 px ; couleur « allumé » propre au réglage.
+// ─────────────────────────────────────────────────────────────────
+export function Toggle({ on, color = "var(--accent)", onClick, testid, style }) {
+  return (
+    <span role="switch" aria-checked={!!on} data-testid={testid} data-toggle={on ? "on" : "off"} onClick={onClick}
+      style={{ width: 42, height: 24, borderRadius: 12, flexShrink: 0, position: "relative", display: "inline-block", boxSizing: "border-box",
+        cursor: onClick ? "pointer" : "inherit", transition: "background .2s, border-color .2s", touchAction: "manipulation",
+        background: on ? color : "var(--surface3)", border: `1px solid ${on ? color : "var(--border)"}`, ...style }}>
+      <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18, height: 18, borderRadius: "50%",
+        background: on ? "#fff" : "#cfd8e3", boxShadow: "0 1px 3px rgba(0,0,0,.35)", transition: "left .2s" }} />
+    </span>
+  );
+}

@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.77.1`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.78.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -199,7 +199,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.77.1
+└── package.json         — version: 1.78.0
 ```
 
 ---
@@ -347,6 +347,8 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.78.0** | minor | **Harmonisation des écrans** — *Toutes les fenêtres au centre de l'écran* (avant : feuilles qui montaient du bas, en 4 styles différents) : saisies (opération, frais fixe, cagnotte, programmée, catégorie…), réglages d'Options, récaps (paie, mois, année), détail du solde, prévisions, actions d'une opération (Historique), fenêtre d'une cagnotte (Accueil) — même cadre : marge 12 px, coins 22 px, bordure fine, fond plein, titre + ✕ 32 px, défilement intérieur au-delà de 86 % de l'écran. Choix de catégorie / options : même cadre (titre normal, ✕ 32 px, largeur alignée). *Interrupteur unique* `Toggle` (42 × 24) à la place de 15 interrupteurs dessinés à la main (couleur propre à chaque réglage conservée). *Cartes* : plus de bande colorée à gauche (dernière sauvegarde, cartes du Rapport › Catégories, sections et vue Catégories de l'Historique, types de cagnotte, tags, montants à part, détail du solde, Fixes) → bordure fine teintée. *Écran du code PIN* : fond du thème, icône de l'appli, touches rondes, points de saisie couleur d'accent (fonctionnement inchangé). |
+| **1.77.2** | patch | **Choix de catégorie dans les saisies** — catégories et sous-catégories rangées de A à Z (accents et majuscules ignorés, comme dans Options › Catégories) ; noms affichés en entier sur plusieurs lignes (avant : coupés, ex. « Course sem… ») ; la fenêtre défile si la liste dépasse l'écran. Vaut pour tous les formulaires qui utilisent le choix de catégorie (opération, frais/revenu fixe, programmée, modèle rapide…). |
 | **1.77.1** | patch | **Captures d'écran rétablies + fenêtres opaques** — *Captures* : depuis 1.75.0, l'aperçu de l'appli était toujours masqué dans les applis récentes (`setRecentsScreenshotEnabled(false)` au démarrage) et, sur le Pixel, ça bloquait aussi les captures d'écran. Désormais réglable dans Options › Sécurité (« Masquer l'aperçu dans les applis récentes », **désactivé par défaut**), via un petit module Android `PrivacyScreen` ajouté par le build. *Fenêtres* : fond opaque pour la fenêtre de saisie et toutes les feuilles (avant : légèrement transparentes en thèmes Abysse / Glacier), la fenêtre de choix de catégorie / sous-catégorie, le choix de date, les feuilles récap (paie, mois, année, solde, prévisions, actions d'une opération) et la feuille d'une cagnotte à l'accueil. |
 | **1.77.0** | minor | **Déplacer une catégorie** — bouton « ↔ Déplacer » dans la barre d'Options › Catégories : ranger une catégorie principale dans une autre (elle devient sous-catégorie), ou faire d'une sous-catégorie une catégorie principale. Destinations : catégories principales du même type. Si la catégorie a des sous-catégories : les emmener (elles passent dans la destination, un seul niveau) ou les laisser (elles deviennent principales). Résultat annoncé avant de valider ; bandeau « Annuler » 6 s après. Opérations, frais fixes, budgets et liaisons restent attachés aux mêmes catégories : seul le regroupement change (Rapport, budgets de la catégorie principale). |
 | **1.76.0** | minor | **Catégories en grille + frais fixes rangés dans leurs catégories** — *Options › Catégories* : onglets Dépenses / Revenus et recherche collés en haut, grille de 4 tuiles par ligne des catégories principales (badge = nombre de sous-catégories, 📌 = contient des frais/revenus fixes, 🔗 = liée, point orange = jamais utilisée) ; toucher une tuile → barre collée en bas : frais fixes rangés ici (pastilles avec montant, ouvrent le frais), sous-catégories (pastilles), ＋ Sous-cat. · Modifier · Lier · Supprimer ; la recherche trouve aussi les sous-catégories. Une catégorie qui ne sert qu'à des fixes, récurrentes ou programmées n'est plus marquée « jamais utilisée ». *Rapport* (Mois « Où est parti l'argent » et onglet Catégories) : chaque frais fixe compte dans sa catégorie (avant : ligne « 📌 Frais fixes » à part, alors que budgets, « Ce qui a bougé » et détail d'une catégorie les comptaient déjà dedans) ; détail « dont fixes … · variables … », part fixe hachurée ; total « dont frais fixes » conservé en tête ; fixe sans catégorie → « Sans catégorie » ; total inchangé. *Fixes* : étiquette de catégorie sur chaque ligne, bandeau pour les fixes sans catégorie. *Formulaire d'un frais/revenu fixe* : plus de catégorie pré-remplie (avant : 1ʳᵉ de la liste), choix obligatoire (ou « Sans catégorie »), suggestions d'après le nom. |

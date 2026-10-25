@@ -233,7 +233,7 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
               {selTag && (
                 <div>
                   {/* Hero résumé */}
-                  <div style={{ background:"var(--hero-solde, linear-gradient(135deg,#0c1830,#182a48))", borderRadius:12, padding:"12px 14px", marginBottom:10, borderLeft:`3px solid ${selTag.color}` }}>
+                  <div style={{ background:"var(--hero-solde, linear-gradient(135deg,#0c1830,#182a48))", borderRadius:14, padding:"12px 14px", marginBottom:10, border:`1px solid color-mix(in srgb, ${selTag.color} 50%, transparent)` }}>
                     <div style={{ fontSize:".58rem", color:"rgba(255,255,255,.5)", marginBottom:6 }}>{selTag.icon} {selTag.name} · {tagTxs.length} opération{tagTxs.length!==1?"s":""}</div>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
                       {[
@@ -287,7 +287,7 @@ export function TagsModal({ onClose, tags, transactions, fixedExpenses, categori
                 {tags.map(tag=>{
                   const count = transactions.filter(t=>(t.tagIds||[]).includes(tag.id)).length;
                   return (
-                    <div key={tag.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:`3px solid ${tag.color}`, borderRadius:10 }}>
+                    <div key={tag.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:`color-mix(in srgb, ${tag.color} 6%, var(--surface))`, border:`1px solid color-mix(in srgb, ${tag.color} 45%, transparent)`, borderRadius:12 }}>
                       <span style={{ fontSize:"1rem" }}>{tag.icon}</span>
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:".72rem", fontWeight:700 }}>{tag.name}</div>

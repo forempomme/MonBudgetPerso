@@ -1,4 +1,5 @@
 // Découpé depuis views.jsx en v1.40.0 — voir CARTOGRAPHIE.md
+import { Toggle } from "../components/index.jsx";
 import { SecurityExtraSettings } from "./SecuritySheets.jsx";
 import { CategoryManager } from "./CategoryManager.jsx";
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
@@ -51,7 +52,7 @@ function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, offAccou
               const count = transactions.filter(t => t.sideAmounts && st.id in t.sideAmounts).length
                 + offAccountEntries.filter(e => e.satId === st.id).length;
               return (
-                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"var(--surface)", border:"1px solid var(--border)", borderLeft:"3px solid var(--tr)", borderRadius:10 }}>
+                <div key={st.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", background:"color-mix(in srgb, var(--tr) 6%, var(--surface))", border:"1px solid color-mix(in srgb, var(--tr) 45%, transparent)", borderRadius:12 }}>
                   <span style={{ fontSize:"1rem" }}>{st.icon}</span>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:".72rem", fontWeight:700 }}>{st.label}</div>
@@ -85,9 +86,7 @@ function SideAmountTypesModal({ onClose, sideAmountTypes, transactions, offAccou
                 <div style={{ fontSize:".7rem", fontWeight:700 }}>👛 Suivre le solde</div>
                 <div style={{ fontSize:".58rem", color:"var(--text3)", marginTop:2, lineHeight:1.4 }}>Porte-monnaie sur l'accueil : rechargements − dépenses. À activer pour une carte TR ou cadeau.</div>
               </div>
-              <span style={{ width:38, height:21, borderRadius:20, flexShrink:0, position:"relative", background: newTrack ? "var(--tr)" : "var(--surface3)", transition:"background .15s" }}>
-                <span style={{ position:"absolute", top:2, left: newTrack ? 19 : 2, width:17, height:17, borderRadius:"50%", background:"#fff", transition:"left .15s" }} />
-              </span>
+              <Toggle on={newTrack} color="var(--tr)" />
             </div>
             <div style={{ display:"flex", gap:8 }}>
               <button onClick={()=>{setCreating(false); setEditingId(null);}} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:9, padding:"9px", color:"var(--text3)", fontWeight:700, fontSize:".72rem", cursor:"pointer" }}>Annuler</button>
@@ -119,16 +118,15 @@ function Sheet({ open, onClose, title, children }) {
     if (open && scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [open]);
   if (!open) return null;
-  // v1.74.0 : feuille qui monte du bas (poignée, titre + ✕), comme les autres fenêtres
+  // v1.78.0 : fenêtre au centre de l'écran (titre + ✕), comme toutes les autres fenêtres
   return createPortal(
     <div data-testid="opt-sheet"
-      style={{ position:"fixed", inset:0, background:"rgba(2,6,14,.6)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)", zIndex:600, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+      style={{ position:"fixed", inset:0, background:"rgba(2,6,14,.6)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)", zIndex:600, display:"flex", alignItems:"center", justifyContent:"center", padding:12 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div ref={scrollRef} className="app-sheet"
-        style={{ width:"100%", maxWidth:560, margin:"0 auto", maxHeight:"92vh", overflowY:"auto", WebkitOverflowScrolling:"touch",
-          background:"var(--sheet-bg, var(--bg))", borderTop:"1px solid var(--border)", borderRadius:"24px 24px 0 0",
-          padding:"10px 14px calc(24px + env(safe-area-inset-bottom))", boxShadow:"0 -20px 50px rgba(0,0,0,.6)", animation:"slideUp .22s ease" }}>
-        <div style={{ width:40, height:4, borderRadius:3, background:"var(--border)", margin:"0 auto 10px" }} />
+        style={{ width:"100%", maxWidth:520, maxHeight:"86vh", overflowY:"auto", WebkitOverflowScrolling:"touch",
+          background:"var(--sheet-bg, var(--bg))", border:"1px solid var(--border)", borderRadius:22,
+          padding:14, boxShadow:"0 20px 60px rgba(0,0,0,.65)", animation:"slideUp .2s ease" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, marginBottom:12 }}>
           <div style={{ fontSize:"1rem", fontWeight:800 }}>{title}</div>
           <button onClick={onClose} aria-label="Fermer" style={{ width:32, height:32, flexShrink:0, background:"var(--surface2)", border:"1px solid var(--border)", borderRadius:10, color:"var(--text2)", cursor:"pointer", fontSize:".78rem", touchAction:"manipulation" }}>✕</button>
@@ -610,9 +608,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                     <span style={{ display: "block", fontSize: ".72rem", fontWeight: 600 }}>Effets de verre</span>
                     <span style={{ display: "block", fontSize: ".56rem", color: "var(--text3)", marginTop: 1 }}>Flou derrière les cartes · à couper si l'appli rame</span>
                   </span>
-                  <span style={{ width: 40, height: 22, borderRadius: 11, background: glassOn ? "var(--accent)" : "var(--border)", position: "relative", flexShrink: 0 }}>
-                    <span style={{ position: "absolute", top: 3, left: glassOn ? 21 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
-                  </span>
+                  <Toggle on={glassOn} color="var(--accent)" />
                 </div>
               )}
             </div>
@@ -672,9 +668,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ fontSize:".76rem", fontWeight:700, color:bioOn?"var(--accent)":"var(--text2)" }}>Empreinte / FaceID</div>
             <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Déverrouillage biométrique Android</div>
           </div>
-          <div style={{ width:40, height:22, borderRadius:11, background:bioOn?"var(--accent)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:bioOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
+          <Toggle on={bioOn} color="var(--accent)" />
         </div>
         <div onClick={()=>{if(pinOn){setPinOn(false);onSaveSecuritySettings?.(false,null,bioOn);}else setPinSetup("enter");}}
           style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:pinOn?"rgba(112,184,224,.06)":"var(--surface2)", border:`1px solid ${pinOn?"rgba(112,184,224,.2)":"var(--border)"}`, borderRadius:10, marginBottom:pinSetup||pinOn?10:0, cursor:"pointer", touchAction:"manipulation" }}>
@@ -682,9 +676,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ fontSize:".76rem", fontWeight:700, color:pinOn?"var(--accent)":"var(--text2)" }}>Code PIN (4 chiffres)</div>
             <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{pinOn?"Verrou actif à l'ouverture":"Fallback si biométrie indisponible"}</div>
           </div>
-          <div style={{ width:40, height:22, borderRadius:11, background:pinOn?"var(--accent)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:pinOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
+          <Toggle on={pinOn} color="var(--accent)" />
         </div>
         {pinSetup && (
           <div style={{ background:"var(--surface2)", border:"1.5px solid var(--accent)", borderRadius:10, padding:14, marginBottom:10 }}>
@@ -745,10 +737,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 <div style={{ fontSize:".74rem", fontWeight:700 }}>{cag?.name||"—"}</div>
                 <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} le {plan.dayOfMonth} de chaque mois</div>
               </div>
-              <div onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})}
-                style={{ width:36, height:20, borderRadius:10, background:plan.enabled?"var(--purple)":"var(--border)", position:"relative", cursor:"pointer", transition:"background .2s", flexShrink:0 }}>
-                <div style={{ position:"absolute", top:2, left:plan.enabled?17:2, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-              </div>
+              <Toggle on={plan.enabled} color="var(--purple)" onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})} />
               <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={()=>onDeleteAutoSaving?.(plan.id)}
                 style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", color:"var(--text3)", fontSize:".65rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
             </div>
@@ -801,9 +790,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ fontSize:".76rem", fontWeight:700, color:roundOn?"var(--success)":"var(--text2)" }}>Arrondi automatique {roundOn?"activé":"désactivé"}</div>
             <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Verse la différence dans une cagnotte</div>
           </div>
-          <div style={{ width:40, height:22, borderRadius:11, background:roundOn?"var(--success)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:roundOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
+          <Toggle on={roundOn} color="var(--success)" />
         </div>
         {roundOn && (<>
           <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>Cagnotte cible</div>
@@ -833,9 +820,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ fontSize:".76rem", fontWeight:700, color:alertOn?"var(--warning)":"var(--text2)" }}>Alerte {alertOn?"activée":"désactivée"}</div>
             <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Notification si le solde passe sous le seuil</div>
           </div>
-          <div style={{ width:40, height:22, borderRadius:11, background:alertOn?"var(--warning)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
-            <div style={{ position:"absolute", top:3, left:alertOn?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-          </div>
+          <Toggle on={alertOn} color="var(--warning)" />
         </div>
         {alertOn && (
           <div>
@@ -868,9 +853,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   <div style={{ fontSize:".76rem", fontWeight:700, color:on?"#5cc8c0":"var(--text2)" }}>Pastille {on?"affichée":"masquée"} sur l'accueil</div>
                   <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>(solde estimé − courses prévues − prélèvements avant la paie − marge) ÷ jours restants</div>
                 </div>
-                <div style={{ width:40, height:22, borderRadius:11, background:on?"#5cc8c0":"var(--border)", position:"relative", flexShrink:0 }}>
-                  <div style={{ position:"absolute", top:3, left:on?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-                </div>
+                <Toggle on={on} color="#5cc8c0" />
               </div>
               <div style={{ fontSize:".62rem", color:"var(--text2)", fontWeight:700, marginBottom:6 }}>🛟 Marge de sécurité (€)</div>
               <input type="number" min="0" step="10" value={margin || ""} placeholder="0"
@@ -932,9 +915,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   <div style={{ fontSize:".76rem", fontWeight:700, color:on?"var(--coral)":"var(--text2)" }}>Budget courses {on?"affiché":"masqué"}</div>
                   <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>Pastille sur l'accueil + détail dans le calcul du solde. N'est jamais déduit du solde estimé.</div>
                 </div>
-                <div style={{ width:40, height:22, borderRadius:11, background:on?"var(--coral)":"var(--border)", position:"relative", transition:"background .2s", flexShrink:0 }}>
-                  <div style={{ position:"absolute", top:3, left:on?19:3, width:16, height:16, borderRadius:"50%", background:"#fff", transition:"left .2s" }} />
-                </div>
+                <Toggle on={on} color="var(--coral)" />
               </div>
               {on && (
                 <>
@@ -1051,14 +1032,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
             <div style={{ fontSize:".78rem", fontWeight:700, color:"var(--text)" }}>Activer les notifications</div>
             <div style={{ fontSize:".62rem", color:"var(--text3)", marginTop:2 }}>Rappels locaux Android — 100% hors-ligne</div>
           </div>
-          <div onClick={()=>toggleNotifMain(!notifOn)} style={{
-            width:42, height:24, borderRadius:12, cursor:"pointer",
-            background:notifOn?"rgba(200,184,96,.25)":"var(--surface3,var(--surface2))",
-            border:`1px solid ${notifOn?"var(--warning)":"var(--border)"}`,
-            position:"relative", transition:"all .2s", flexShrink:0,
-          }}>
-            <div style={{ position:"absolute", top:3, left:notifOn?18:3, width:16, height:16, borderRadius:"50%", background:notifOn?"var(--warning)":"var(--text3)", transition:"all .2s" }}/>
-          </div>
+          <Toggle on={notifOn} color="var(--warning)" onClick={()=>toggleNotifMain(!notifOn)} />
         </div>
         {notifOn && (
           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
@@ -1078,14 +1052,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   <div style={{ fontSize:".72rem", fontWeight:700, color:"var(--text)" }}>{lbl}</div>
                   <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{desc}</div>
                 </div>
-                <div onClick={()=>{ setter(!val); saveNotif(key,!val); }} style={{
-                  width:36, height:20, borderRadius:10, cursor:"pointer", flexShrink:0,
-                  background:val?"rgba(200,184,96,.2)":"var(--surface3,var(--surface2))",
-                  border:`1px solid ${val?"var(--warning)":"var(--border)"}`,
-                  position:"relative", transition:"all .2s",
-                }}>
-                  <div style={{ position:"absolute", top:2, left:val?16:2, width:14, height:14, borderRadius:"50%", background:val?"var(--warning)":"var(--text3)", transition:"all .2s" }}/>
-                </div>
+                <Toggle on={val} color="var(--warning)" onClick={()=>{ setter(!val); saveNotif(key,!val); }} />
               </div>
             ))}
             {notifEvening && (
@@ -1151,7 +1118,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
 
       <Sheet open={openSheet==="backup"} onClose={close} title="💾 Sauvegarde">
         {/* Dernière sauvegarde */}
-        <div style={{ background:"var(--surface)", border:`1.5px solid ${backupOk?"rgba(104,212,152,.3)":last?"rgba(200,184,96,.3)":"rgba(200,112,112,.3)"}`, borderLeft:`3px solid ${backupOk?"var(--success)":last?"var(--warning)":"var(--danger)"}`, borderRadius:12, padding:14, marginBottom:10 }}>
+        <div data-testid="backup-card" style={{ background:`color-mix(in srgb, ${backupOk?"var(--success)":last?"var(--warning)":"var(--danger)"} 7%, var(--surface))`, border:`1px solid color-mix(in srgb, ${backupOk?"var(--success)":last?"var(--warning)":"var(--danger)"} 40%, transparent)`, borderRadius:14, padding:14, marginBottom:10 }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
             <div>
               <div style={{ fontSize:".65rem", fontWeight:800, color:backupOk?"var(--success)":last?"var(--warning)":"var(--danger)" }}>

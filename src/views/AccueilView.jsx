@@ -1301,16 +1301,16 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
 
       {/* ── Récap cagnotte ── */}
       {cagSheet && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(6,8,16,.75)", backdropFilter:"blur(5px)", zIndex:200, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}
+        <div style={{ position:"fixed", inset:0, background:"rgba(2,6,14,.6)", backdropFilter:"blur(3px)", WebkitBackdropFilter:"blur(3px)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:12 }}
           onClick={() => setCagSheet(null)}>
-          <div style={{ background: "var(--panel-solid, var(--surface))", borderRadius:"18px 18px 0 0", border:"1px solid var(--border)", padding:"16px 16px 32px" }}
+          {/* v1.78.0 : fenêtre au centre, même cadre que les autres */}
+          <div style={{ position:"relative", width:"100%", maxWidth:520, maxHeight:"86vh", overflowY:"auto", background: "var(--panel-solid, var(--surface))", borderRadius:22, border:"1px solid var(--border)", padding:14, boxShadow:"0 20px 60px rgba(0,0,0,.65)", animation:"slideUp .2s ease" }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ width:32, height:3, background:"var(--border)", borderRadius:2, margin:"0 auto 14px" }}/>
 
             {/* Header */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <div>
-                <div style={{ fontSize:".75rem", fontWeight:800, color:"var(--text)" }}>
+                <div style={{ fontSize:"1rem", fontWeight:800, color:"var(--text)" }}>
                   🐷 {cagSheet === "month" ? `Épargne — ${MONTHS_FR[new Date().getMonth()]} ${new Date().getFullYear()}` : `Épargne — ${new Date().getFullYear()}`}
                 </div>
                 <div style={{ fontSize:".55rem", color:"var(--text3)", marginTop:2 }}>Répartition par cagnotte</div>

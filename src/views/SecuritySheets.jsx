@@ -6,7 +6,7 @@
 //  Le mot de passe ne vit que dans l'état local de la fenêtre.
 // ─────────────────────────────────────────────────────────────────
 import { useState } from "react";
-import { Modal } from "../components/index.jsx";
+import { Modal, Toggle } from "../components/index.jsx"; // v1.78.0 : interrupteur commun
 import { MIN_PWD_LEN, pwdStrength } from "../backupCrypto.js";
 
 const LBL = { fontSize: ".56rem", fontWeight: 800, color: "var(--text3)", letterSpacing: ".12em", textTransform: "uppercase", margin: "10px 2px 5px" };
@@ -163,13 +163,6 @@ function Chips({ opts, value, onPick, testid }) {
   );
 }
 
-function Toggle({ on }) {
-  return (
-    <div style={{ width: 40, height: 22, borderRadius: 11, background: on ? "var(--accent)" : "var(--border)", position: "relative", transition: "background .2s", flexShrink: 0 }}>
-      <div style={{ position: "absolute", top: 3, left: on ? 19 : 3, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .2s" }} />
-    </div>
-  );
-}
 
 export function SecurityExtraSettings({ pinOn, relockDelay = 5, pinMaxTries = 5, openHidden = false, hideRecents = false, onSave }) {
   const lbl = { ...LBL, color: "var(--accent)", margin: "14px 2px 6px" };

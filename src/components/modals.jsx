@@ -36,7 +36,7 @@
 //   • Tous les autres modals : inchangés
 
 import { useState, useRef } from "react";
-import { Modal, ItemRow } from "./index.jsx";
+import { Modal, ItemRow, Toggle } from "./index.jsx";
 import { fmt, todayISO, isIncome, MONTHS_SHORT, uid, currentYM, daysAgoISO, touchMoved, DEFAULT_CAG_TYPES, CAG_TYPE_COLORS, cagIconOf, resolveFixedDay, ymShift, DAY_LAST_BD, DAY_PREV_LAST_BD, autoIncomeHistory, autoIncomeAmount, fixedCashDateISO, fixedOccurrenceYM, fixedCashYM, isActiveForMonth, plannedChangeFor, fixedAmountFor, pv } from "../utils.js";
 import { useToast } from "../context.js";
 import { computePeriodTotals, computeMonthTotals, livedMonths, fixedLinesForPeriod, categoryBudgetFor, categorySpentForMonth } from "../hooks.js";
@@ -248,7 +248,9 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
   const isTop    = c => !c.parentId || !cats.some(p => p.id === c.parentId);
   const kidsOf   = id => cats.filter(c => c.parentId === id);
   const drillCat = drill ? cats.find(c => c.id === drill) : null;
-  const shown    = drillCat ? kidsOf(drillCat.id) : cats.filter(isTop);
+  // v1.77.2 : rangées de A à Z (accents et majuscules ignorés), comme dans Options › Catégories
+  const AZ       = (a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" });
+  const shown    = (drillCat ? kidsOf(drillCat.id) : cats.filter(isTop)).slice().sort(AZ);
   return (
     <div style={{ marginBottom: 10 }}>
           <SectionLabel color="var(--purple)">{label}</SectionLabel>
@@ -302,12 +304,13 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                   top: "50%", left: "50%",
                   transform: "translate(-50%, -50%)",
                   zIndex: 201,
-                  width: "min(92vw, 380px)",
+                  width: "min(calc(100vw - 24px), 520px)",
+                  maxHeight: "85vh", overflowY: "auto",   // v1.77.2 : noms sur plusieurs lignes → tuiles plus hautes
                   background: "var(--panel-solid, var(--surface))",
-                  border: "1.5px solid var(--border)",
-                  borderRadius: 16,
-                  padding: 12,
-                  boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 22,
+                  padding: 14,
+                  boxShadow: "0 20px 60px rgba(0,0,0,.65)",
                 }}
                 // Empêche les events de buller vers l'overlay
                 onTouchStart={e => e.stopPropagation()}
@@ -317,7 +320,7 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
               >
                 {/* En-tête */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--text3)", textTransform: "uppercase", letterSpacing: ".1em" }}>
+                  <span style={{ fontSize: "1rem", fontWeight: 800, color: "var(--text)" }}>
                     {drillCat
                       ? <><span onClick={() => setDrill(null)} onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); setDrill(null); }}
                           style={{ color: "var(--accent)", cursor: "pointer" }}>‹ {label}</span> › {drillCat.icon} {drillCat.name}</>
@@ -328,7 +331,7 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                     onTouchEnd={e => { e.stopPropagation(); if (touchMoved()) return; e.preventDefault(); document.activeElement?.blur(); setCatOpen(false); }}
                     onClick={() => { if (!('ontouchstart' in window)) { document.activeElement?.blur(); setCatOpen(false); } }}
                     style={{
-                      width: 24, height: 24, borderRadius: 6,
+                      width: 32, height: 32, borderRadius: 10,
                       background: "var(--surface2)", border: "1px solid var(--border)",
                       color: "var(--text2)", fontSize: 13, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
@@ -409,7 +412,8 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                         fontSize: ".55rem", lineHeight: 1.2, textAlign: "center",
                         color: selHere ? accentColor : "var(--text3)",
                         fontWeight: selHere ? 700 : 400,
-                        maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        // v1.77.2 : nom complet sur plusieurs lignes (avant : coupé « Course sem… »)
+                        maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere", hyphens: "auto",
                       }}>{c.name}</span>
                       {c.sub && <span style={{ fontSize: ".5rem", color: "var(--text3)", whiteSpace: "nowrap" }}>{c.sub}</span>}
                     </button>
@@ -898,15 +902,15 @@ export function TransModal({
                   onClick={close} />
                 <div style={{
                     position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
-                    width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
-                    background: "var(--panel-solid, var(--surface))", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
-                    boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+                    width: "min(calc(100vw - 24px), 520px)", maxHeight: "80vh", overflowY: "auto",
+                    background: "var(--panel-solid, var(--surface))", border: "1px solid var(--border)", borderRadius: 22, padding: 14,
+                    boxShadow: "0 20px 60px rgba(0,0,0,.65)",
                   }}
                   onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
                   onTouchEnd={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                    <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--tr)", textTransform: "uppercase", letterSpacing: ".1em" }}>✨ Options</span>
-                    <button type="button" onClick={close} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
+                    <span style={{ fontSize: "1rem", fontWeight: 800, color: "var(--text)" }}>✨ Options</span>
+                    <button type="button" onClick={close} style={{ width: 32, height: 32, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
                   </div>
 
                   {canSide && sideAmountTypes.map(st => (
@@ -942,10 +946,7 @@ export function TransModal({
                     <div style={{ ...rowStyle("rgba(92,200,192,.45)"), flexWrap: "wrap" }}>
                       <span style={{ fontSize: ".95rem" }}>↩️</span>
                       <span style={{ flex: 1, fontSize: ".74rem", fontWeight: 700, color: "#5cc8c0" }}>Sera remboursé</span>
-                      <button type="button" onClick={() => setReimbOn(v => !v)}
-                        style={{ width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative", flexShrink: 0, background: reimbOn ? "#5cc8c0" : "var(--surface3)" }}>
-                        <span style={{ position: "absolute", top: 2, left: reimbOn ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
-                      </button>
+                      <Toggle on={reimbOn} color="#5cc8c0" onClick={() => setReimbOn(v => !v)} />
                       {reimbOn && (
                         <div style={{ width: "100%", marginTop: 8 }}>
                           <div style={{ display: "flex", gap: 6, marginBottom: 7 }}>
@@ -1221,15 +1222,15 @@ function OptionsField({ hint, chips = [], children }) {
             onClick={close} />
           <div style={{
               position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 201,
-              width: "min(92vw, 380px)", maxHeight: "80vh", overflowY: "auto",
-              background: "var(--panel-solid, var(--surface))", border: "1.5px solid var(--border)", borderRadius: 16, padding: 12,
-              boxShadow: "0 24px 60px rgba(0,0,0,.8)",
+              width: "min(calc(100vw - 24px), 520px)", maxHeight: "80vh", overflowY: "auto",
+              background: "var(--panel-solid, var(--surface))", border: "1px solid var(--border)", borderRadius: 22, padding: 14,
+              boxShadow: "0 20px 60px rgba(0,0,0,.65)",
             }}
             onTouchStart={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}
             onTouchEnd={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span style={{ fontSize: ".68rem", fontWeight: 700, color: "var(--tr)", textTransform: "uppercase", letterSpacing: ".1em" }}>✨ Options</span>
-              <button type="button" onClick={close} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
+              <span style={{ fontSize: "1rem", fontWeight: 800, color: "var(--text)" }}>✨ Options</span>
+              <button type="button" onClick={close} style={{ width: 32, height: 32, borderRadius: 10, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text2)", fontSize: 13, cursor: "pointer" }}>✕</button>
             </div>
             {children}
             <button type="button" onClick={close} style={{ width: "100%", marginTop: 4, padding: 11, borderRadius: 11, border: "none", background: "var(--tr)", color: "#1a1405", fontWeight: 800, fontSize: ".76rem", cursor: "pointer" }}>OK</button>
@@ -1481,9 +1482,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
         <div data-testid="advance-toggle" {...tap(() => setAdvance(v => !v))}
           style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, marginBottom: 10, cursor: "pointer",
             background: advance ? "rgba(88,192,144,.07)" : "var(--surface2)", border: `1px solid ${advance ? "rgba(88,192,144,.35)" : "var(--border)"}` }}>
-          <span style={{ flexShrink: 0, width: 34, height: 20, borderRadius: 10, position: "relative", marginTop: 2, background: advance ? "var(--sapin)" : "var(--surface3)", transition: "background .15s" }}>
-            <span style={{ position: "absolute", top: 2, left: advance ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
-          </span>
+          <Toggle on={advance} color="var(--sapin)" style={{ marginTop: 2 }} />
           <span style={{ flex: 1 }}>
             <b style={{ fontSize: ".74rem" }}>Compter dans le budget du mois suivant</b>
             <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)", lineHeight: 1.45, marginTop: 3 }}>
@@ -1596,9 +1595,8 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
               if (next && !pausedFrom) setPausedFrom(curM);
               if (!next) { setPausedFrom(""); setPausedUntil(""); }
             }}
-            style={{ width: 40, height: 22, borderRadius: 20, border: "none", cursor: "pointer", position: "relative", flexShrink: 0,
-              background: paused ? "var(--warning)" : "var(--surface3)", transition: "background .15s" }}>
-            <span style={{ position: "absolute", top: 2, left: paused ? 20 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", flexShrink: 0, lineHeight: 0 }}>
+            <Toggle on={paused} color="var(--warning)" />
           </button>
           {paused && (
             <div style={{ width: "100%" }}>
@@ -1721,9 +1719,7 @@ export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onC
         <div data-testid="point-income-excl" {...tap(() => setExcl(v => !v))}
           style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, marginBottom: 12, cursor: "pointer",
             background: excl ? "rgba(200,184,96,.07)" : "var(--surface2)", border: `1px solid ${excl ? "rgba(200,184,96,.4)" : "var(--border)"}` }}>
-          <span style={{ flexShrink: 0, width: 34, height: 20, borderRadius: 10, position: "relative", marginTop: 2, background: excl ? "var(--warning)" : "var(--surface3)", transition: "background .15s" }}>
-            <span style={{ position: "absolute", top: 2, left: excl ? 16 : 2, width: 16, height: 16, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
-          </span>
+          <Toggle on={excl} color="var(--warning)" style={{ marginTop: 2 }} />
           <span style={{ flex: 1 }}>
             <b style={{ fontSize: ".74rem" }}>Mois exceptionnel</b>
             <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)", lineHeight: 1.45, marginTop: 3 }}>
@@ -2325,7 +2321,7 @@ export function CagTypesModal({ cagTypes = DEFAULT_CAG_TYPES, cagnottes = [], on
       {cagTypes.map(t => {
         const n = countOf(t.id);
         return (
-          <div key={t.id} data-cagtype={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", marginBottom: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderLeft: `3px solid ${t.color}`, borderRadius: 10, outline: editing === t.id ? "1.5px solid var(--accent)" : "none" }}>
+          <div key={t.id} data-cagtype={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", marginBottom: 6, background: "var(--surface2)", border: `1px solid color-mix(in srgb, ${t.color} 45%, transparent)`, borderRadius: 12, outline: editing === t.id ? "1.5px solid var(--accent)" : "none" }}>
             <span style={{ fontSize: "1.05rem" }}>{t.icon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: ".78rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.label}</div>
@@ -2355,7 +2351,7 @@ export function CagTypesModal({ cagTypes = DEFAULT_CAG_TYPES, cagnottes = [], on
             ))}
           </div>
           <SectionLabel color="#a8b4c2">Aperçu</SectionLabel>
-          <div style={{ width: 150, padding: "8px 10px", borderRadius: 12, border: "1px solid var(--border)", borderLeft: `3px solid ${color}`, background: "var(--surface)", marginBottom: 12 }}>
+          <div style={{ width: 150, padding: "8px 10px", borderRadius: 12, border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`, background: `color-mix(in srgb, ${color} 7%, var(--surface))`, marginBottom: 12 }}>
             <div style={{ fontSize: ".74rem", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{icon.trim() || "🗂️"} Ma cagnotte</div>
             <div style={{ fontFamily: "var(--mono)", fontSize: ".84rem", fontWeight: 800, color: "var(--khaki)", marginTop: 2 }}>{fmt(1250)}</div>
           </div>

@@ -439,6 +439,7 @@ html[data-theme="glacier"] {
 }
 /* Fond : halos fixes derrière tout le contenu */
 html[data-theme="abysse"] body, html[data-theme="glacier"] body { background: var(--bg); background-image: none; }
+html[data-theme="abysse"], html[data-theme="glacier"] { --lock-bg: var(--halos), var(--bg); } /* v1.78.0 : écran du code PIN aux couleurs du thème */
 html[data-theme="abysse"] body::before, html[data-theme="glacier"] body::before {
   content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: var(--halos), var(--bg);
@@ -491,22 +492,19 @@ html[data-glass="off"][data-theme="glacier"] {
   --surface: rgba(22,48,78,.94); --surface2: rgba(30,60,94,.94); --surface3: rgba(42,76,112,.94); --chrome: rgba(12,30,52,.96);
 }
 
-/* v1.74.0 : fenêtres en feuilles qui montent du bas (thèmes verre) — les confirmations restent centrées */
+/* v1.78.0 : toutes les fenêtres au CENTRE de l'écran (avant 1.78 : feuilles qui montaient du bas).
+   Même cadre partout : marge 12 px, coins 22 px, bordure fine, fond plein, ombre portée. */
 html[data-theme="abysse"] .modal, html[data-theme="glacier"] .modal {
-  align-items: flex-end; padding: 0; background: rgba(2,6,14,.6); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+  align-items: center; padding: 12px; background: rgba(2,6,14,.6); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
 }
 html[data-theme="abysse"] .modal-content, html[data-theme="glacier"] .modal-content {
-  max-width: 560px; max-height: 92vh; background: var(--sheet-bg); border: none; border-top: 1px solid var(--border);
-  border-radius: 24px 24px 0 0; padding: 10px 16px calc(18px + env(safe-area-inset-bottom)); box-shadow: 0 -20px 50px rgba(0,0,0,.6);
-}
-html[data-theme="abysse"] .modal-content::before, html[data-theme="glacier"] .modal-content::before {
-  content: ""; display: block; width: 40px; height: 4px; border-radius: 3px; background: var(--border); margin: 0 auto 12px;
+  max-width: 520px; max-height: 86vh; background: var(--sheet-bg); border: 1px solid var(--border);
+  border-radius: 22px; padding: 14px 14px 14px; box-shadow: 0 20px 60px rgba(0,0,0,.65);
 }
 html[data-theme="abysse"] .modal.modal-center, html[data-theme="glacier"] .modal.modal-center { align-items: center; padding: 24px; }
 html[data-theme="abysse"] .modal-center .modal-content, html[data-theme="glacier"] .modal-center .modal-content {
-  max-width: 360px; border-radius: 22px; border: 1px solid var(--border); padding: 18px 16px 14px; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  max-width: 360px; padding: 18px 16px 14px;
 }
-html[data-theme="abysse"] .modal-center .modal-content::before, html[data-theme="glacier"] .modal-center .modal-content::before { display: none; }
 html[data-theme="abysse"] .modal-content .btn, html[data-theme="glacier"] .modal-content .btn { border-radius: 12px; font-weight: 800; }
 html[data-theme="abysse"] .modal-content .btn-primary, html[data-theme="glacier"] .modal-content .btn-primary { color: #fff; background: var(--btn-pri-bg); border: 1px solid var(--btn-pri-border); }
 html[data-theme="abysse"] .modal-title, html[data-theme="glacier"] .modal-title { font-size: 1rem; font-weight: 800; }

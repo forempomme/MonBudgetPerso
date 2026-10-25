@@ -774,7 +774,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
               const spentB = lim > 0 ? catSpentPeriod(c.id) : 0;
               const editing = editBudget?.catId === r.id;
               return (
-                <div key={r.id} data-cat-row={r.id} style={{ ...card, padding: "8px 11px", borderLeft: `3px solid ${rowColor(r)}`, fontSize: ".72rem" }}>
+                <div key={r.id} data-cat-row={r.id} style={{ ...card, padding: "8px 11px", border: `1px solid color-mix(in srgb, ${rowColor(r)} 45%, transparent)`, fontSize: ".72rem" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: c ? "pointer" : "default" }} onClick={() => c && setCatModal(c.id)}>
                     <span>{icon}</span>
                     <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}
