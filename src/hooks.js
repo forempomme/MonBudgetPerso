@@ -804,6 +804,7 @@ export function payRecapCheck(data, ym) {
 
 // ─────────────────────────────────────────────────────────────────
 //  computeProjectStatus — v1.47.0 : projet avec échéance
+//  (v1.79.0 : sert aussi aux événements annuels — p.repeat, p.since)
 //  Mis de côté = solde de la cagnotte liée ; dépensé = dépenses portant
 //  le tag lié. Rythme régulier entre la création et l'échéance : le
 //  « prévu à ce jour » sert à dire en avance / dans les temps / en retard.
@@ -813,7 +814,8 @@ export function computeProjectStatus(p, data, today = todayISO()) {
   const tag = (data.tags || []).find(t => t.id === p.tagId) || null;
   const target = parseFloat(p.target) || 0;
   const saved = cag ? (parseFloat(cag.current) || 0) : 0;
-  const tagTx = tag ? (data.transactions || []).filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id)) : [];
+  // v1.79.0 : événement reconduit → seules les dépenses depuis l'édition précédente (p.since) comptent
+  const tagTx = tag ? (data.transactions || []).filter(t => t.type === "expense" && (t.tagIds || []).includes(tag.id) && (!p.since || (t.date || "") > p.since)) : [];
   const spent = tagTx.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
   const start = p.createdAt || today;
   const deadline = p.deadline || today;
@@ -827,11 +829,16 @@ export function computeProjectStatus(p, data, today = todayISO()) {
   const remaining = Math.max(0, Math.round((target - saved) * 100) / 100);
   const perMonth = remaining > 0 ? Math.ceil(remaining / Math.max(1, monthsLeft) * 100) / 100 : 0;
   const tol = target * 0.02;
-  const status = saved >= target ? "done"
-    : today > deadline ? "late-deadline"
+  // v1.79.0 : date passée → « bilan » (prévu / dépensé / écart, reconduction si l'événement revient
+  // chaque année) ; sans cagnotte liée → simple compte à rebours (« à venir »).
+  const past = today > deadline;
+  const daysLeft = past ? 0 : daysBetweenISO(today, deadline);
+  const status = past ? "bilan"
+    : !cag ? "nocag"
+    : saved >= target ? "done"
     : saved >= expected + tol ? "ahead"
     : saved >= expected - tol ? "ontrack" : "behind";
-  return { cag, tag, target, saved, spent, spentCount: tagTx.length, expected, monthsLeft: Math.max(0, monthsLeft), remaining, perMonth, status,
+  return { cag, tag, target, saved, spent, spentCount: tagTx.length, tagTx, expected, monthsLeft: Math.max(0, monthsLeft), remaining: cag ? remaining : 0, perMonth: cag ? perMonth : 0, status, past, daysLeft,
     savedPct: target > 0 ? Math.min(100, saved / target * 100) : 0, expectedPct: target > 0 ? Math.min(100, expected / target * 100) : 0,
     spentPct: target > 0 ? Math.min(100, spent / target * 100) : 0 };
 }
@@ -1613,4 +1620,83 @@ export function computeYearRecap(data, year) {
     cagStart, cagEnd, best, worst, cats,
     fixedYear: r2(t.fixExp), rises: rises.length, riseYear,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.79.0 — Vérification des données (Options › État de l'appli › 🩺)
+//  Lecture seule : repère ce qui cloche, ne corrige rien tout seul.
+//  → { orphans, zero, future, dups, fixNoCat, total }
+// ─────────────────────────────────────────────────────────────────
+export function dupKey(group) { return group.map(t => t.id).sort().join("|"); }
+export function computeDataChecks(data, today = todayISO()) {
+  const cats = new Set((data.categories || []).map(c => c.id));
+  const txs = data.transactions || [];
+  const orphans = txs.filter(t => t.categoryId && !cats.has(t.categoryId));
+  const zero    = txs.filter(t => !((parseFloat(t.amount) || 0) > 0));
+  const future  = txs.filter(t => (t.date || "") > today);
+  const ignored = new Set(data.dupIgnored || []);
+  const groups = {};
+  txs.forEach(t => {
+    const a = Math.round((parseFloat(t.amount) || 0) * 100);
+    if (!(a > 0) || !t.date) return;
+    const k = `${t.type}|${t.date}|${a}|${t.categoryId || ""}`;
+    (groups[k] = groups[k] || []).push(t);
+  });
+  const dups = Object.values(groups).filter(g => g.length > 1 && !ignored.has(dupKey(g)))
+    .sort((a, b) => (b[0].date || "").localeCompare(a[0].date || ""));
+  const fixNoCat = [
+    ...(data.fixedExpenses || []).map((f, idx) => ({ f, idx, kind: "expense" })),
+    ...(data.fixedIncomes || []).map((f, idx) => ({ f, idx, kind: "income" })),
+  ].filter(x => !x.f.categoryId || !cats.has(x.f.categoryId));
+  const total = orphans.length + zero.length + future.length + dups.length + fixNoCat.length;
+  return { orphans, zero, future, dups, fixNoCat, total };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.79.0 — Patrimoine : compte courant + cagnottes, fin de chaque mois
+//  • Compte : même calcul que la courbe de la carte du solde (opérations
+//    datées jusqu'à la fin du mois + frais/revenus fixes des mois vécus) ;
+//    le mois en cours = le solde estimé affiché sur l'accueil.
+//  • Cagnottes : total actuel, « remonté » dans le temps en annulant les
+//    mouvements postérieurs (versements, retraits, dissolutions,
+//    corrections manuelles du montant).
+//  → [{ ym, account, cag, total }] du plus ancien au plus récent
+// ─────────────────────────────────────────────────────────────────
+export function computePatrimoine(data, currentBalance, n = 12, endYM = currentYM()) {
+  const txs = data.transactions || [];
+  const cagNow = (data.cagnottes || []).reduce((s, c) => s + (parseFloat(c.current) || 0), 0);
+  const adjs = (data.cagnottes || []).flatMap(c => c.adjustments || []);
+  const first = txs.length ? txs.reduce((mn, t) => (t.date && t.date < mn ? t.date : mn), txs[0].date || endYM + "-01").slice(0, 7) : endYM;
+  const [ey, em] = endYM.split("-").map(Number);
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(ey, em - 1 - i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const end = `${ym}-31`;
+    let account;
+    if (ym === endYM && currentBalance != null) account = currentBalance;
+    else {
+      account = 0;
+      txs.forEach(t => {
+        if (!t.date || t.date > end || !isPointable(t.type)) return;
+        const a = parseFloat(t.amount) || 0;
+        account += isIncomeDirection(t) ? a : -a;
+      });
+      if (ym >= first) monthRange(first, ym).forEach(m => {
+        account -= effectiveFixesForMonth(data.fixedExpenses || [], m);
+        account += effectiveIncomesForMonth(data.fixedIncomes || [], m);
+      });
+    }
+    let cag = cagNow;
+    txs.forEach(t => {
+      if (!t.date || t.date <= end) return;
+      const a = parseFloat(t.amount) || 0;
+      if (t.type === "epargne") cag -= a;
+      else if (t.type === "decagnottage" || t.type === "dissolution_cagnotte") cag += a;
+    });
+    adjs.forEach(x => { if ((x.date || "") > end) cag -= parseFloat(x.amount) || 0; });
+    const r2 = v => Math.round(v * 100) / 100;
+    out.push({ ym, account: r2(account), cag: r2(Math.max(0, cag)), total: r2(account + Math.max(0, cag)) });
+  }
+  return out;
 }

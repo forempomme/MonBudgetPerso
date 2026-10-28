@@ -78,6 +78,9 @@ export const A = /** @type {const} */ ({
   DELETE_CATEGORY:   "DELETE_CATEGORY",
   MOVE_CATEGORY:     "MOVE_CATEGORY",              // v1.77.0 : catégorie ↔ sous-catégorie
   RESTORE_CATEGORY_PARENTS: "RESTORE_CATEGORY_PARENTS", // v1.77.0 : « Annuler » d'un déplacement
+  ARCHIVE_CATEGORY:  "ARCHIVE_CATEGORY",           // v1.79.0 : archiver / réactiver une catégorie
+  DISMISS_DUPLICATE: "DISMISS_DUPLICATE",          // v1.79.0 : « Ce n'est pas un doublon »
+  SAVE_TAX_SETTINGS: "SAVE_TAX_SETTINGS",          // v1.79.0 : réglages du récap fiscal
   SAVE_PROVISIONAL:  "SAVE_PROVISIONAL",
   DELETE_PROVISIONAL:"DELETE_PROVISIONAL",
   ADD_BACKUP_ENTRY:  "ADD_BACKUP_ENTRY",
@@ -704,6 +707,30 @@ export function reducer(state, action) {
         }),
       };
     }
+    case A.DISMISS_DUPLICATE:
+      return { ...state, dupIgnored: [...new Set([...(state.dupIgnored || []), action.key])] };
+    // v1.79.0 : récap fiscal — fusion (les réglages non envoyés sont conservés)
+    case A.SAVE_TAX_SETTINGS:
+      return { ...state, taxSettings: { ...(state.taxSettings || {}), ...action.settings } };
+    // v1.79.0 : archiver une catégorie = la retirer des choix de saisie sans
+    // toucher à son historique. Une catégorie principale emporte ses
+    // sous-catégories ; réactiver une sous-catégorie réactive aussi son parent.
+    case A.ARCHIVE_CATEGORY: {
+      const cat = state.categories.find(c => c.id === action.id);
+      if (!cat) return state;
+      const on = !!action.archived;
+      const ids = new Set([cat.id]);
+      if (on) state.categories.forEach(c => { if (c.parentId === cat.id) ids.add(c.id); });
+      else if (cat.parentId) ids.add(cat.parentId);
+      return {
+        ...state,
+        categories: state.categories.map(c => {
+          if (!ids.has(c.id)) return c;
+          if (on) return { ...c, archived: true };
+          const { archived, ...rest } = c; return rest;
+        }),
+      };
+    }
     case A.RESTORE_CATEGORY_PARENTS: {
       const map = action.parents || {};
       return {
@@ -853,6 +880,10 @@ export function reducer(state, action) {
         const id = uid("tag");
         tags = [...tags, { ...newTag, id }];
         project = { ...project, tagId: id };
+      }
+      // v1.79.0 : reconduction d'un événement → la cagnotte liée suit le nouvel objectif / la nouvelle date
+      if (action.syncCag && project.cagId) {
+        cagnottes = cagnottes.map(c => c.id === project.cagId ? { ...c, target: project.target, targetDate: project.deadline } : c);
       }
       const list = state.projects || [];
       const projects = project.id && list.some(p => p.id === project.id)

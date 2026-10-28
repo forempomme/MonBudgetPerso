@@ -3,6 +3,7 @@ import { useState, useMemo, useEffect } from "react";
 import { fmt, currentYM, isIncome, fixedAmountFor, pv, fmtInt } from "../utils.js";
 import { useYearMonths, computeMonthTotals, computePeriodTotals, isActiveForMonth, isIncomeDirection, computeSidePaidByCategory, catFamilyIds, computeMonthRecap, categorySpentForMonth, firstDataYM, livedMonths, computeCategoryBreakdown, computeSavingsRates } from "../hooks.js";
 import { TagsModal, MONTHS_FR } from "./shared.jsx";
+import { TaxRecapCard, TaxSettingsModal } from "./TaxRecap.jsx";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : résoudre les déductions liées pour une catégorie
@@ -276,7 +277,7 @@ export function SavingsRateChart({ data, endYM, sel, onSel }) {
   );
 }
 
-export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onSaveSavingsGoal, onGoToHistorique, onSubtitle, onPushBack, onPopBack, onOpenYearRecap }) {
+export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}, onSaveMonthNote, categoryThresholds = {}, onSaveCategoryThreshold, tags = [], onSaveTag, onDeleteTag, onSaveSavingsGoal, onGoToHistorique, onSubtitle, onPushBack, onPopBack, onOpenYearRecap, onSaveTaxSettings, onOpenPatrimoine }) {
   // ── v1.52.0 : 3 onglets organisés par question ──
   //  📅 Mois        « Comment s'est passé ce mois ? »
   //  📆 Année       « Où j'en suis sur l'année ? »
@@ -291,6 +292,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   const [cmpYM, setCmpYM] = useState(null);               // Mois : comparaison avec un autre mois
   const [catModal, setCatModal] = useState(null);         // id de catégorie → analyse détaillée
   const [tagsModal, setTagsModal] = useState(null);       // { tagId } | {}
+  const [taxOpen, setTaxOpen] = useState(false);          // v1.79.0 : réglages du récap fiscal
   const [editBudget, setEditBudget] = useState(null);     // { catId, draft }
   const [noteDraft, setNoteDraft] = useState(null);
   const [goalDraft, setGoalDraft] = useState(null);
@@ -300,6 +302,7 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
   // Bouton retour Android : ferme d'abord les fenêtres ouvertes
   useEffect(() => { if (!catModal) return; onPushBack?.(() => setCatModal(null)); return () => onPopBack?.(); }, [catModal]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!tagsModal) return; onPushBack?.(() => setTagsModal(null)); return () => onPopBack?.(); }, [tagsModal]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!taxOpen) return; onPushBack?.(() => setTaxOpen(false)); return () => onPopBack?.(); }, [taxOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Barre collée sous l'en-tête (même principe que l'Historique)
   const [stickyTop, setStickyTop] = useState(0);
@@ -722,6 +725,22 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
                 <b style={{ color: proj.inc - proj.exp >= 0 ? "var(--success)" : "var(--danger)" }}>{signed(proj.inc - proj.exp)}</b></div>
             </div>
           </>}
+
+          {/* v1.79.0 : courbe du patrimoine (compte + cagnottes, 12 mois) */}
+          {onOpenPatrimoine && <>
+            {secT("📈 Patrimoine")}
+            <div data-testid="rap-patrimoine" style={{ ...card, padding: "9px 11px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }} onClick={onOpenPatrimoine}>
+              <span style={{ fontSize: "1.2rem" }}>📈</span>
+              <span style={{ flex: 1, fontSize: ".72rem" }}><b>Évolution sur 12 mois</b><div style={{ fontSize: ".6rem", color: "var(--text3)" }}>compte courant + cagnottes, mois par mois</div></span>
+              <b style={{ color: "var(--accent)", fontSize: ".7rem" }}>Voir ›</b>
+            </div>
+          </>}
+
+          {/* v1.79.0 : récap fiscal de l'année (estimation, règles modifiables) */}
+          {onSaveTaxSettings && <>
+            {secT("🧾 Impôts")}
+            <TaxRecapCard data={data} year={currentYear} onOpenSettings={() => setTaxOpen(true)} />
+          </>}
         </>);
       })()}
 
@@ -875,6 +894,10 @@ export function RapportView({ data, currentYear, setCurrentYear, monthNotes = {}
       {catModal && (
         <CategoryDetailModal onClose={() => setCatModal(null)} initialCatId={catModal}
           categories={categories} transactions={transactions} fixedExpenses={fixedExpenses} />
+      )}
+      {taxOpen && (
+        <TaxSettingsModal data={data} year={currentYear} onClose={() => setTaxOpen(false)}
+          onSave={st => { onSaveTaxSettings?.(st); setTaxOpen(false); }} />
       )}
       {tagsModal && (
         <TagsModal onClose={() => setTagsModal(null)} initialTagId={tagsModal.tagId}

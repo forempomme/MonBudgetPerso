@@ -2,11 +2,12 @@
 import { Toggle } from "../components/index.jsx";
 import { SecurityExtraSettings } from "./SecuritySheets.jsx";
 import { CategoryManager } from "./CategoryManager.jsx";
+import { DataCheckPanel } from "./DataCheckPanel.jsx";
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
 import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved, fmtInt } from "../utils.js";
 import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
-import { useGroceryBudget, groceryCategoryIds } from "../hooks.js";
+import { useGroceryBudget, groceryCategoryIds, computeDataChecks } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  SideAmountTypesModal — v1.39.32
@@ -226,7 +227,7 @@ function LinkForm({ categories, onLink }) {
   );
 }
 
-export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance, onNotifDiagnostic, onSaveSecurityExtra, onEditFixed, onEditFixedIncome, onMoveCat, onRestoreCatParents }) {
+export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, onImport, onReset, onDeleteRecurring, alertEnabled = false, alertThreshold = 500, onSaveAlertSettings, roundingEnabled = false, roundingCagnotteId = null, roundingRule = "ceil", onSaveRoundingSettings, autoSavings = [], onSaveAutoSaving, onDeleteAutoSaving, pinEnabled = false, pinHash = null, bioEnabled = false, onSaveSecuritySettings, notifSettings = {}, onSaveNotifSettings, onScheduleNotifications, onPushBack, onPopBack, onOpenQuickTemplates, onOpenCagTypes, onOpenReleve, onSaveSideAmountType, onDeleteSideAmountType, onSaveTag, onDeleteTag, onSaveGroceryBudget, onSaveRestSettings, onSaveAppearance, onNotifDiagnostic, onSaveSecurityExtra, onEditFixed, onEditFixedIncome, onMoveCat, onRestoreCatParents, onArchiveCat, onEditTrans, onDeleteTrans, onDismissDuplicate }) {
   const [catFilter,     setCatFilter]     = useState("all");
   const [showSideAmountTypesModal, setShowSideAmountTypesModal] = useState(false);
   const [showTagsModalOpt, setShowTagsModalOpt] = useState(false);
@@ -480,6 +481,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
     },
   ];
 
+  const nChecks = useMemo(() => computeDataChecks(data).total, [data]); // v1.79.0
   const openItem = item => { if (item.action) item.action(); else setOpenSheet(item.id); };
 
   return (
@@ -501,6 +503,8 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           { id: "security", icon: "🔒", label: "Verrouillage",   txt: pinOn ? "PIN actif" : "PIN désactivé", ok: pinOn },
           { id: "notif",    icon: "🔔", label: "Notifications",  txt: notifOn ? "actives" : "désactivées", ok: notifOn },
           { id: "grocery",  icon: "🛒", label: "Budget courses", txt: ITEM.grocery.badge, ok: ITEM.grocery.configured },
+          // v1.79.0 : vérification des données
+          { id: "datacheck", icon: "🩺", label: "Données", txt: nChecks ? `${nChecks} point${nChecks > 1 ? "s" : ""} à vérifier` : "en ordre", ok: nChecks === 0 },
         ];
         const nOk = STATE.filter(x => x.ok).length;
         const ringC = nOk === STATE.length ? OK : KO, R = 19, C = 2 * Math.PI * R;
@@ -554,7 +558,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 6, marginTop: 9 }}>
                 {STATE.map(x => (
-                  <div key={x.id} data-state={x.id} {...tap(ITEM[x.id])}
+                  <div key={x.id} data-state={x.id} {...tap(ITEM[x.id] || { id: x.id, configured: true })}
                     style={{ display: "flex", gap: 7, alignItems: "center", padding: "7px 8px", borderRadius: 11, cursor: "pointer", touchAction: "manipulation", minWidth: 0,
                       background: `color-mix(in srgb, ${x.ok ? OK : KO} 9%, transparent)`, border: `1px solid color-mix(in srgb, ${x.ok ? OK : KO} 35%, transparent)` }}>
                     <span>{x.icon}</span>
@@ -968,7 +972,13 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       {/* 🏷️ Gestion catégories — v1.76.0 : grille (CategoryManager) */}
       <Sheet open={openSheet==="categories"} onClose={close} title="🏷️ Catégories">
         <CategoryManager data={data} onNewCat={onNewCat} onEditCat={onEditCat} onDeleteCat={onDeleteCat}
-          onOpenLinks={() => setOpenSheet("links")} onEditFixed={onEditFixed} onEditFixedIncome={onEditFixedIncome} onMoveCat={onMoveCat} onRestoreParents={onRestoreCatParents} />
+          onOpenLinks={() => setOpenSheet("links")} onEditFixed={onEditFixed} onEditFixedIncome={onEditFixedIncome} onMoveCat={onMoveCat} onRestoreParents={onRestoreCatParents} onArchiveCat={onArchiveCat} />
+      </Sheet>
+
+      {/* 🩺 Vérification des données (v1.79.0) */}
+      <Sheet open={openSheet==="datacheck"} onClose={close} title="🩺 Vérification des données">
+        <DataCheckPanel data={data} onEditTrans={onEditTrans} onDeleteTrans={onDeleteTrans}
+          onEditFixed={onEditFixed} onEditFixedIncome={onEditFixedIncome} onDismissDuplicate={onDismissDuplicate} />
       </Sheet>
 
       {/* 🔗 Liaisons */}

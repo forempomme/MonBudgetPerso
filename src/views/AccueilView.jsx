@@ -105,7 +105,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
+export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
 
   // Sections masquables — persistées en localStorage
   // v1.49.0 : période du bloc Bilan — pas mémorisée, revient toujours sur le mois
@@ -1140,7 +1140,11 @@ export function AccueilView({ data, onOpenReimbursement, onOpenOffAccount, onCas
       {/* ── 🐷 Cagnottes + 📌 Fixes ── v1.49.0 : cartes sur une ligne ;
            le taux d'épargne du mois est affiché dans le détail (tap). */}
       <Sec id="cagnottes_fixes">
-      {secTitle("Patrimoine", "sec-patrimoine")}
+      {/* v1.79.0 : « 📈 courbe » ouvre l'évolution du patrimoine sur 12 mois */}
+      <div style={{ display: "flex", alignItems: "center" }}>
+        <div style={{ flex: 1 }}>{secTitle("Patrimoine", "sec-patrimoine")}</div>
+        {onOpenPatrimoine && <span data-testid="open-patrimoine" onClick={onOpenPatrimoine} style={{ fontSize: ".62rem", fontWeight: 800, color: "var(--accent)", cursor: "pointer", margin: "14px 3px 6px", padding: "2px 0 2px 10px" }}>📈 courbe ›</span>}
+      </div>
       <div className="grid-2" style={{ marginBottom: 6, gap: 6 }}>
         <div className="stat-mini" data-testid="card-cagnottes" style={{ padding: "10px 11px", display: "flex", alignItems: "center", gap: 9, borderRadius: 16, ...tintCard(CARD_COL.cag) }}
           onClick={() => {

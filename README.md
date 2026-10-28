@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.78.0`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.79.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -188,6 +188,7 @@ gestion-du-budget/
 │   ├── App.jsx          — state, FAB (+ éventail templates rapides), modals, callbacks
 │   ├── store.js         — reducer, actions A.*, DEFAULT_DATA
 │   ├── releve.js        — lecture du relevé PDF + comparaison (lecture seule)
+│   ├── taxRules.js      — règles fiscales par année de revenus (récap fiscal) — à mettre à jour chaque janvier
 │   ├── backupCrypto.js  — chiffrement des sauvegardes (AES-256-GCM + PBKDF2, WebCrypto)
 │   ├── hooks.js         — useBalance, useReconciliation, useBalanceWithRecurring, computeProjection…
 │   ├── utils.js         — fmt, isIncome, txLabel, txTypeClass, txSign, APP_VERSION
@@ -199,7 +200,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.78.0
+└── package.json         — version: 1.79.0
 ```
 
 ---
@@ -347,6 +348,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.79.0** | minor | **7 nouveautés** — *Montants suggérés* : à la saisie d'une dépense ou d'un revenu, les 3 derniers montants distincts de la catégorie choisie en pastilles (un toucher remplit le montant ; masqués en modification, pour les cagnottes et l'équilibre). *Les plus utilisées* : en tête du choix de catégorie, les 4 catégories les plus utilisées des 3 derniers mois (dès 8 catégories). *Archiver une catégorie* (Options › Catégories) : elle disparaît des choix de saisie mais garde tout son historique ; une principale emporte ses sous-catégories ; section « archivées » repliable pour réactiver. *🩺 Vérification des données* (État de l'appli) : catégorie supprimée, montant à 0 €, date dans le futur, doublons probables (« Pas un doublon » mémorisé), frais/revenus fixes sans catégorie — chaque point avec son bouton, rien n'est corrigé sans un toucher. *🧾 Récap fiscal* (Rapport › Année) : garde d'enfant (7GA), dons aide aux personnes (7UD, plafond 2 000 € LF 2026), autres dons (7UF), emploi à domicile (7DB) — catégories au choix, aides et revenu facultatifs, **taux et plafonds modifiables à tout moment** ; table des règles par année dans l'appli (hors ligne), année inconnue → dernière année connue + avertissement. *📈 Patrimoine* : courbe empilée compte courant + cagnottes sur 12 mois, détail au toucher, depuis l'Accueil (« 📈 courbe ») et Rapport › Année. *Événements à préparer* : intégrés aux **Projets** (section « Projets & événements ») — option « Revient chaque année », cagnotte facultative (compte à rebours J−n), bilan après la date (prévu / dépensé / écart, dépenses du tag), « Reconduire en N+1 » avec le budget dépensé ou le budget gardé. Tout respecte le mode discret. |
 | **1.78.0** | minor | **Harmonisation des écrans** — *Toutes les fenêtres au centre de l'écran* (avant : feuilles qui montaient du bas, en 4 styles différents) : saisies (opération, frais fixe, cagnotte, programmée, catégorie…), réglages d'Options, récaps (paie, mois, année), détail du solde, prévisions, actions d'une opération (Historique), fenêtre d'une cagnotte (Accueil) — même cadre : marge 12 px, coins 22 px, bordure fine, fond plein, titre + ✕ 32 px, défilement intérieur au-delà de 86 % de l'écran. Choix de catégorie / options : même cadre (titre normal, ✕ 32 px, largeur alignée). *Interrupteur unique* `Toggle` (42 × 24) à la place de 15 interrupteurs dessinés à la main (couleur propre à chaque réglage conservée). *Cartes* : plus de bande colorée à gauche (dernière sauvegarde, cartes du Rapport › Catégories, sections et vue Catégories de l'Historique, types de cagnotte, tags, montants à part, détail du solde, Fixes) → bordure fine teintée. *Écran du code PIN* : fond du thème, icône de l'appli, touches rondes, points de saisie couleur d'accent (fonctionnement inchangé). |
 | **1.77.2** | patch | **Choix de catégorie dans les saisies** — catégories et sous-catégories rangées de A à Z (accents et majuscules ignorés, comme dans Options › Catégories) ; noms affichés en entier sur plusieurs lignes (avant : coupés, ex. « Course sem… ») ; la fenêtre défile si la liste dépasse l'écran. Vaut pour tous les formulaires qui utilisent le choix de catégorie (opération, frais/revenu fixe, programmée, modèle rapide…). |
 | **1.77.1** | patch | **Captures d'écran rétablies + fenêtres opaques** — *Captures* : depuis 1.75.0, l'aperçu de l'appli était toujours masqué dans les applis récentes (`setRecentsScreenshotEnabled(false)` au démarrage) et, sur le Pixel, ça bloquait aussi les captures d'écran. Désormais réglable dans Options › Sécurité (« Masquer l'aperçu dans les applis récentes », **désactivé par défaut**), via un petit module Android `PrivacyScreen` ajouté par le build. *Fenêtres* : fond opaque pour la fenêtre de saisie et toutes les feuilles (avant : légèrement transparentes en thèmes Abysse / Glacier), la fenêtre de choix de catégorie / sous-catégorie, le choix de date, les feuilles récap (paie, mois, année, solde, prévisions, actions d'une opération) et la feuille d'une cagnotte à l'accueil. |

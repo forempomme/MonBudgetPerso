@@ -239,7 +239,9 @@ function useSideAmounts(initial) {
 //  Champs partagés par la saisie d'une dépense ET la saisie hors compte,
 //  pour qu'ils restent identiques (même menu, mêmes couleurs, mêmes gestes).
 // ─────────────────────────────────────────────────────────────────
-function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", label = "Catégorie", allowNone = true, emptyLabel = "Aucune catégorie", noneLabel = "⊘ Aucune", error }) {
+function CategoryField({ cats: allCats, catId, onChange, accentColor = "var(--purple)", label = "Catégorie", allowNone = true, emptyLabel = "Aucune catégorie", noneLabel = "⊘ Aucune", error, transactions }) {
+  // v1.79.0 : les catégories archivées ne sont plus proposées (sauf celle déjà choisie, en modification)
+  const cats = allCats.filter(c => !c.archived || c.id === catId);
   const [catOpen, setCatOpen] = useState(false);
   const [drill, setDrill] = useState(null);   // v1.47.0 : catégorie principale dont on affiche les sous-catégories
   const catTouchRef = useRef({ startY: 0, startX: 0, moved: false });
@@ -251,6 +253,15 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
   // v1.77.2 : rangées de A à Z (accents et majuscules ignorés), comme dans Options › Catégories
   const AZ       = (a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitivity: "base" });
   const shown    = (drillCat ? kidsOf(drillCat.id) : cats.filter(isTop)).slice().sort(AZ);
+  // v1.79.0 : « Les plus utilisées » — 4 catégories les plus fréquentes sur les 3 derniers mois
+  const favs = (() => {
+    if (!transactions || cats.length < 8) return [];
+    const from = (() => { const d = new Date(); d.setMonth(d.getMonth() - 3); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; })();
+    const ids = new Set(cats.map(c => c.id)), n = {};
+    transactions.forEach(t => { if (t.categoryId && ids.has(t.categoryId) && (t.date || "") >= from) n[t.categoryId] = (n[t.categoryId] || 0) + 1; });
+    return Object.entries(n).filter(([, k]) => k >= 2).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([id]) => cats.find(c => c.id === id)).filter(c => c && !c.archived);
+  })();
+  const pickFav = id => { document.activeElement?.blur(); onChange(id); setCatOpen(false); };
   return (
     <div style={{ marginBottom: 10 }}>
           <SectionLabel color="var(--purple)">{label}</SectionLabel>
@@ -380,6 +391,27 @@ function CategoryField({ cats, catId, onChange, accentColor = "var(--purple)", l
                       fontSize: ".68rem", fontWeight: 700, cursor: "pointer", touchAction: "pan-y",
                     }}>{noneLabel}</button>}
 
+                  {/* v1.79.0 : rangée « Les plus utilisées » au-dessus de la grille A → Z */}
+                  {!drillCat && favs.length > 0 && <>
+                    <div data-testid="cat-favs-label" style={{ gridColumn: "1 / -1", fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--warning)", margin: "4px 2px 0" }}>⭐ Les plus utilisées · 3 derniers mois</div>
+                    {favs.map(c => {
+                      const par = c.parentId ? cats.find(p => p.id === c.parentId) : null;
+                      return (
+                        <button key={"fav-" + c.id} data-fav={c.id}
+                          onTouchStart={e => { e.stopPropagation(); catTouchRef.current = { startY: e.touches[0].clientY, startX: e.touches[0].clientX, moved: false }; }}
+                          onTouchMove={e => { const dy = Math.abs(e.touches[0].clientY - catTouchRef.current.startY); const dx = Math.abs(e.touches[0].clientX - catTouchRef.current.startX); if (dy > 6 || dx > 6) catTouchRef.current.moved = true; }}
+                          onTouchEnd={e => { e.stopPropagation(); e.preventDefault(); if (!catTouchRef.current.moved) pickFav(c.id); }}
+                          onClick={() => { if (!('ontouchstart' in window)) pickFav(c.id); }}
+                          style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "8px 4px", gap: 4, borderRadius: 10, cursor: "pointer", touchAction: "pan-y",
+                            border: `1.5px solid ${catId === c.id ? accentColor : "color-mix(in srgb, var(--warning) 55%, transparent)"}`,
+                            background: catId === c.id ? `color-mix(in srgb, ${accentColor} 14%, var(--surface2))` : "color-mix(in srgb, var(--warning) 8%, var(--surface2))" }}>
+                          <span style={{ fontSize: "1.2rem" }}>{c.icon}</span>
+                          <span style={{ fontSize: ".55rem", lineHeight: 1.2, textAlign: "center", color: catId === c.id ? accentColor : "var(--text2)", fontWeight: 700, maxWidth: "100%", whiteSpace: "normal", overflowWrap: "anywhere" }}>{par ? `${par.name} › ` : ""}{c.name}</span>
+                        </button>
+                      );
+                    })}
+                    <div style={{ gridColumn: "1 / -1", fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "4px 2px 0" }}>Toutes · A → Z</div>
+                  </>}
                   {shown.map(c => { const hasKids = !drillCat && kidsOf(c.id).length > 0;
                     const selHere = catId === c.id || (hasKids && kidsOf(c.id).some(k => k.id === catId));
                     const pick = () => { if (hasKids) { setDrill(c.id); return; } document.activeElement?.blur(); onChange(c.id); setCatOpen(false); };
@@ -534,6 +566,15 @@ export function TransModal({
   const isCag = type === "epargne" || type === "decagnottage";
   const isInc = type === "income";
   const cats  = categories.filter(c => isInc ? c.type === "income" : c.type === "expense");
+  // v1.79.0 : 3 derniers montants différents saisis dans cette catégorie (même type)
+  const suggestedAmounts = (() => {
+    if (!catId) return [];
+    const out = [];
+    (transactions || []).filter(t => t.categoryId === catId && t.type === type)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+      .forEach(t => { const v = Math.round((parseFloat(t.amount) || 0) * 100) / 100; if (v > 0 && !out.includes(v) && out.length < 3) out.push(v); });
+    return out;
+  })();
 
   // Couleur accentuée selon le type
   const isAdj = type === "balance_adjustment";
@@ -733,7 +774,18 @@ export function TransModal({
       </div>
 
       {/* ── Catégorie : menu déroulant partagé (v1.44.3, aussi utilisé hors compte) ── */}
-      {!isCag && !isAdj && <CategoryField cats={cats} catId={catId} onChange={setCatId} accentColor={accentColor} />}
+      {!isCag && !isAdj && <CategoryField cats={cats} catId={catId} onChange={setCatId} accentColor={accentColor} transactions={transactions} />}
+      {/* v1.79.0 : montants suggérés — les 3 derniers montants différents de la catégorie */}
+      {!isCag && !isAdj && !editingId && suggestedAmounts.length > 0 && (
+        <div data-testid="amount-sugg" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", margin: "-4px 0 10px" }}>
+          <span style={{ fontSize: ".6rem", color: "var(--text3)" }}>↺ Derniers montants :</span>
+          {suggestedAmounts.map(v => (
+            <span key={v} role="button" data-amount={v} {...tap(() => { setAmount(toPadStr(v)); setErrors(x => ({ ...x, amount: "" })); })}
+              style={{ fontSize: ".66rem", fontWeight: 800, padding: "5px 10px", borderRadius: 11, cursor: "pointer", fontVariantNumeric: "tabular-nums", touchAction: "manipulation",
+                color: accentColor, background: `color-mix(in srgb, ${accentColor} 12%, var(--surface2))`, border: `1px solid color-mix(in srgb, ${accentColor} 45%, transparent)` }}>{fmt(v)}</span>
+          ))}
+        </div>
+      )}
 
       {/* ── v1.67.0 : revenu déjà prévu en revenu fixe (risque de double comptage) — n'empêche rien ── */}
       {fixedDup && (() => {
@@ -2175,12 +2227,14 @@ export function ProjectModal({ project = null, cagnottes = [], cagTypes = DEFAUL
   const [deadline, setDeadline] = useState(project?.deadline || endOfMonthIn(12));
   const [cagId, setCagId] = useState(project?.cagId || "__new__");
   const [tagId, setTagId] = useState(project ? (project.tagId || "") : "__new__");
+  // v1.79.0 : événement qui revient chaque année (Noël, anniversaire…) → bilan + reconduction
+  const [repeat, setRepeat] = useState(!!project?.repeat);
   const [errors, setErrors] = useState({});
   const target = amountOf(amt);
   const cagItems = [{ id: "__new__", icon: "＋", name: "Nouvelle cagnotte" },
     ...cagnottes.map(c => ({ id: c.id, icon: cagIconOf(cagTypes, c), name: c.name, sub: fmt(c.current) }))];
   const tagItems = [{ id: "__new__", icon: "＋", name: "Nouveau tag" }, ...tags.map(t => ({ id: t.id, icon: t.icon, name: t.name }))];
-  const savedNow = cagId !== "__new__" ? (parseFloat(cagnottes.find(c => c.id === cagId)?.current) || 0) : 0;
+  const savedNow = cagId && cagId !== "__new__" ? (parseFloat(cagnottes.find(c => c.id === cagId)?.current) || 0) : 0;
   const months = (() => { const [ty, tm] = (deadline || "").split("-").map(Number); const n = new Date();
     return Math.max(1, (ty - n.getFullYear()) * 12 + (tm - 1 - n.getMonth())); })();
   const perMonth = target > savedNow ? Math.ceil((target - savedNow) / months * 100) / 100 : 0;
@@ -2196,8 +2250,9 @@ export function ProjectModal({ project = null, cagnottes = [], cagTypes = DEFAUL
     const nm = name.trim(), ic = icon.trim();
     const base = {
       id: project?.id || null, icon: ic, name: nm, target, deadline,
-      cagId: cagId === "__new__" ? null : cagId,
+      cagId: cagId === "__new__" || !cagId ? null : cagId,
       tagId: tagId === "__new__" || !tagId ? null : tagId,
+      repeat,
       createdAt: project?.createdAt || todayISO(),
       // Point de départ du rythme régulier : ce qui était déjà dans la cagnotte
       startSaved: project ? (project.startSaved || 0) : savedNow,
@@ -2211,7 +2266,7 @@ export function ProjectModal({ project = null, cagnottes = [], cagTypes = DEFAUL
   }
 
   return (
-    <Modal onClose={onClose} title={project ? "Modifier le projet" : "Nouveau projet"}>
+    <Modal onClose={onClose} title={project ? "Modifier le projet" : "Nouveau projet / événement"}>
       <IconNameField icon={icon} name={name} errors={errors} namePlaceholder="Ex : Travaux salle de bain" iconPlaceholder="🛠️"
         onIcon={v => { setIcon(v); setErrors(x => ({ ...x, icon: "" })); }}
         onName={v => { setName(v); setErrors(x => ({ ...x, name: "" })); }} />
@@ -2227,10 +2282,16 @@ export function ProjectModal({ project = null, cagnottes = [], cagTypes = DEFAUL
       <DateField label="Échéance" date={deadline} error={errors.date} min={plusDaysISO(1)}
         onChange={d => { setDeadline(d); setErrors(x => ({ ...x, date: "" })); }}
         shortcuts={[["Dans 6 mois", endOfMonthIn(6)], ["Dans 1 an", endOfMonthIn(12)], ["Dans 2 ans", endOfMonthIn(24)]]} />
-      <CategoryField label="Cagnotte (argent mis de côté)" cats={cagItems} catId={cagId} onChange={setCagId} allowNone={false} />
+      <div data-testid="proj-repeat" onClick={() => setRepeat(v => !v)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 11px", borderRadius: 12, marginBottom: 10, cursor: "pointer", background: "var(--surface2)", border: "1px solid var(--border)" }}>
+        <span style={{ fontSize: "1.05rem" }}>🔁</span>
+        <span style={{ flex: 1, fontSize: ".74rem" }}><b>Revient chaque année</b><div style={{ fontSize: ".6rem", color: "var(--text3)" }}>Noël, anniversaire, rentrée… : bilan après la date, puis reconduction</div></span>
+        <Toggle on={repeat} color="var(--purple)" />
+      </div>
+      <CategoryField label="Cagnotte (argent mis de côté)" cats={cagItems} catId={cagId} onChange={setCagId}
+        noneLabel="⊘ Pas de cagnotte" emptyLabel="Pas de cagnotte (compte à rebours seul)" />
       <CategoryField label="Tag (dépenses du projet)" cats={tagItems} catId={tagId} onChange={setTagId}
         noneLabel="⊘ Pas de suivi des dépenses" emptyLabel="Pas de suivi des dépenses" accentColor="#e48bb8" />
-      {target > 0 && <InfoNote color="var(--purple)">💡 À mettre de côté : <b>{fmt(perMonth)} / mois</b> pendant {months} mois{savedNow > 0 ? ` (déjà ${fmt(savedNow)} dans la cagnotte)` : ""}</InfoNote>}
+      {target > 0 && cagId && <InfoNote color="var(--purple)">💡 À mettre de côté : <b>{fmt(perMonth)} / mois</b> pendant {months} mois{savedNow > 0 ? ` (déjà ${fmt(savedNow)} dans la cagnotte)` : ""}</InfoNote>}
       <FormActions onCancel={onClose} onSave={handleSave} emoji="🎯" />
     </Modal>
   );

@@ -16,12 +16,13 @@ const AZ = (a, b) => (a.name || "").localeCompare(b.name || "", "fr", { sensitiv
 const norm = x => (x || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const FIX_COL = "#e8944a";
 
-export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpenLinks, onEditFixed, onEditFixedIncome, onMoveCat, onRestoreParents }) {
+export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpenLinks, onEditFixed, onEditFixedIncome, onMoveCat, onRestoreParents, onArchiveCat }) {
   const [tab, setTab] = useState("expense");
   const [q, setQ]     = useState("");
   const [sel, setSel] = useState(null);
   const [mv, setMv]   = useState(null);     // v1.77.0 : { id, target: null | "__top" | catId, kidsMode }
   const [undo, setUndo] = useState(null);   // { label, parents: { id: parentId|null } }
+  const [showArch, setShowArch] = useState(false); // v1.79.0 : section « Archivées » dépliée
   useEffect(() => { if (!undo) return; const t = setTimeout(() => setUndo(null), 6000); return () => clearTimeout(t); }, [undo]);
   const cats = data.categories || [];
   const ym = currentYM();
@@ -39,6 +40,7 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
 
   const isTop = c => !c.parentId || !cats.some(p => p.id === c.parentId);
   const kids  = id => cats.filter(c => c.parentId === id).sort(AZ);
+  const liveKids = id => kids(id).filter(k => !k.archived);
   const family = c => isTop(c) ? [c, ...kids(c.id)] : [c];
   const opsOf   = c => family(c).reduce((s, x) => s + (usage.ops[x.id] || 0), 0);
   const fixesOf = c => family(c).flatMap(x => usage.fixes[x.id] || []);
@@ -48,19 +50,23 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
   const nType = t => cats.filter(c => c.type === t).length;
   const shown = q.trim()
     ? cats.filter(c => c.type === tab && norm(c.name).includes(norm(q.trim()))).sort(AZ)
-    : cats.filter(c => c.type === tab && isTop(c)).sort(AZ);
+    : cats.filter(c => c.type === tab && isTop(c) && !c.archived).sort(AZ);
+  // v1.79.0 : catégories archivées (absentes des choix de saisie, historique conservé)
+  const archived = cats.filter(c => c.type === tab && c.archived).sort(AZ);
   const selCat = cats.find(c => c.id === sel) || null;
 
   const tile = c => {
     const sub = !isTop(c);
-    const nk = sub ? 0 : kids(c.id).length;
+    const nk = sub ? 0 : liveKids(c.id).length;
     const on = sel === c.id;
     const fx = fixesOf(c).length > 0;
     return (
       <div key={c.id} data-cat={c.id} role="button" onClick={() => setSel(on ? null : c.id)}
         style={{ position: "relative", borderRadius: 13, padding: "8px 3px 6px", textAlign: "center", cursor: "pointer", minWidth: 0, touchAction: "manipulation",
-          background: on ? "color-mix(in srgb, var(--accent) 12%, var(--surface))" : sub ? "transparent" : "var(--surface)",
-          border: `1px ${sub ? "dashed" : "solid"} ${on ? "var(--accent)" : "var(--border)"}`, boxShadow: on ? "0 0 0 1px var(--accent)" : "none" }}>
+          background: on ? "color-mix(in srgb, var(--accent) 12%, var(--surface))" : sub || c.archived ? "transparent" : "var(--surface)",
+          opacity: c.archived && !on ? .5 : 1,
+          border: `1px ${sub || c.archived ? "dashed" : "solid"} ${on ? "var(--accent)" : "var(--border)"}`, boxShadow: on ? "0 0 0 1px var(--accent)" : "none" }}>
+        {c.archived && <span data-testid="cat-archived" style={{ position: "absolute", bottom: 3, left: 4, fontSize: ".55rem" }}>🗄</span>}
         {fx && <span data-testid="cat-has-fix" style={{ position: "absolute", top: 3, left: 4, fontSize: ".6rem" }}>📌</span>}
         {!fx && unused(c) && <i data-testid="cat-unused" title="jamais utilisée" style={{ position: "absolute", top: 6, left: 6, width: 7, height: 7, borderRadius: "50%", background: "var(--warning)" }} />}
         {c.linkedToId && cats.some(x => x.id === c.linkedToId) && <span data-testid="cat-linked" title="catégorie liée" style={{ position: "absolute", bottom: 3, right: 4, fontSize: ".55rem" }}>🔗</span>}
@@ -94,16 +100,22 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
     if (!selCat) return null;
     const c = selCat, top = isTop(c);
     const par = top ? null : cats.find(p => p.id === c.parentId);
-    const ks = top ? kids(c.id) : [];
+    const ks = top ? liveKids(c.id) : [];
     const fx = fixesOf(c);
     const n = opsOf(c);
-    const sibs = par ? kids(par.id).filter(k => k.id !== c.id) : [];
+    const sibs = par ? liveKids(par.id).filter(k => k.id !== c.id) : [];
+    const recUse = (data.recurringTemplates || []).filter(r => family(c).some(x => x.id === r.categoryId)).length;
     const linkedTo = c.linkedToId ? cats.find(x => x.id === c.linkedToId) : null;
-    const acts = [
+    const acts = c.archived ? [
+      act("unarch", "♻️", "Réactiver", () => { onArchiveCat?.(c.id, false); }, { hl: true }),
+      act("edit", "✏️", "Modifier", () => onEditCat?.(c.id)),
+      act("del", "🗑", "Supprimer", () => onDeleteCat?.(c.id), { danger: true, touch: true }),
+    ] : [
       act("sub", "＋", "Sous-cat.", () => onNewCat?.(c.id), { disabled: !top }),
       onMoveCat ? act("move", "↔", "Déplacer", () => setMv({ id: c.id, target: null, kidsMode: "with" }), { hl: true }) : null,
       act("edit", "✏️", "Modifier", () => onEditCat?.(c.id)),
       act("link", "🔗", "Lier", () => onOpenLinks?.()),
+      onArchiveCat ? act("arch", "🗄", "Archiver", () => { onArchiveCat(c.id, true); setShowArch(true); }) : null,
       act("del", "🗑", "Supprimer", () => onDeleteCat?.(c.id), { danger: true, touch: true }),
     ].filter(Boolean);
     return (
@@ -113,6 +125,7 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
           <div style={{ flex: 1, minWidth: 0 }}>
             <b style={{ display: "block", fontSize: ".8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</b>
             <div data-testid="cat-sel-info" style={{ fontSize: ".58rem", color: "var(--text2)" }}>
+              {c.archived && <><b style={{ color: "var(--warning)" }}>🗄 archivée</b> · </>}
               {par && <>sous-catégorie de {par.icon} {par.name} · </>}
               {n ? `${n} opération${n > 1 ? "s" : ""}` : (unused(c) ? <span style={{ color: "var(--warning)", fontWeight: 700 }}>jamais utilisée</span> : "aucune opération")}
               {fx.length > 0 && <> · <b style={{ color: FIX_COL }}>{fx.length} {c.type === "income" ? "revenu" : "frais"} fixe{fx.length > 1 ? "s" : ""}</b></>}
@@ -129,7 +142,12 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
         </>}
         {ks.length > 0 && <>{lbl("Sous-catégories")}{strip(ks.map(k => chip(k.id, <>{k.icon} {k.name}{unused(k) ? <b style={{ color: "var(--warning)" }}> ●</b> : null}</>, () => setSel(k.id), false, "cat-sub-chip")))}</>}
         {par && strip([chip(par.id, <>‹ {par.icon} {par.name}</>, () => setSel(par.id), false, "cat-parent-chip"), ...sibs.map(k => chip(k.id, <>{k.icon} {k.name}</>, () => setSel(k.id), false))])}
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${acts.length}, 1fr)`, gap: 6 }}>{acts}</div>
+        {!c.archived && onArchiveCat && (fx.length > 0 || recUse > 0) && (
+          <div data-testid="arch-warn" style={{ fontSize: ".58rem", color: "var(--warning)", margin: "-2px 2px 7px", lineHeight: 1.4 }}>
+            ⚠️ Utilisée par {[fx.length ? `${fx.length} frais/revenu${fx.length > 1 ? "s" : ""} fixe${fx.length > 1 ? "s" : ""}` : null, recUse ? `${recUse} récurrente${recUse > 1 ? "s" : ""}` : null].filter(Boolean).join(" et ")} : si tu l'archives, ils continuent de fonctionner.
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${acts.length}, 1fr)`, gap: 5 }}>{acts}</div>
       </div>
     );
   };
@@ -141,7 +159,7 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
     const top = isTop(c);
     const par = top ? null : cats.find(p => p.id === c.parentId);
     const ks = top ? kids(c.id) : [];
-    const targets = cats.filter(x => x.type === c.type && isTop(x) && x.id !== c.id && x.id !== c.parentId).sort(AZ);
+    const targets = cats.filter(x => x.type === c.type && isTop(x) && !x.archived && x.id !== c.id && x.id !== c.parentId).sort(AZ);
     const T = mv.target && mv.target !== "__top" ? cats.find(x => x.id === mv.target) : null;
     const optSt = on => ({ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 11px", borderRadius: 12, marginBottom: 6, cursor: "pointer", fontSize: ".7rem", touchAction: "manipulation",
       background: on ? "color-mix(in srgb, var(--accent) 12%, var(--surface2))" : "var(--surface2)", border: `1px solid ${on ? "var(--accent)" : "var(--border)"}` });
@@ -251,6 +269,15 @@ export function CategoryManager({ data, onNewCat, onEditCat, onDeleteCat, onOpen
       <div style={{ fontSize: ".56rem", color: "var(--text3)", textAlign: "center", margin: "9px 4px 0" }}>
         Rangées de A à Z · 📌 = contient des fixes · 🔗 = liée · <span style={{ color: "var(--warning)" }}>●</span> = jamais utilisée · toucher pour agir
       </div>
+      {/* v1.79.0 : catégories archivées, section repliée */}
+      {!q.trim() && archived.length > 0 && <>
+        <div data-testid="arch-toggle" role="button" onClick={() => setShowArch(v => !v)}
+          style={{ display: "flex", alignItems: "center", gap: 6, fontSize: ".56rem", fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 2px 6px", cursor: "pointer" }}>
+          {showArch ? "▾" : "▸"} 🗄 Archivées ({archived.length})
+          <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>· absentes des saisies, historique gardé</span>
+        </div>
+        {showArch && <div data-testid="arch-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>{archived.map(tile)}</div>}
+      </>}
       {bar()}
       {moveModal()}
     </div>

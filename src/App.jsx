@@ -2,6 +2,7 @@ import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "r
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
 import { LS_KEY, uid, fmt, setPrivacy, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES } from "./utils.js";
+import { PatrimoineSheet } from "./views/PatrimoineSheet.jsx";
 import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
@@ -576,6 +577,7 @@ export default function App() {
     if (deleteCatId)   { setDeleteCatId(null);    return; }
     if (importPreview) { setImportPreview(null);  return; }
     if (yearRecap)     { setYearRecap(null);      return; }
+    if (patriOpen)     { setPatriOpen(false);     return; }
     if (recapYM)       { closeMonthRecap();       return; }
     if (projectModal)  { setProjectModal(null);   return; }
     if (reimbModal)    { setReimbModal(null);     return; }
@@ -664,6 +666,7 @@ export default function App() {
   const [importPreview, setImportPreview] = useState(null); // v1.47.0 : { fileName, data }
   const [recapYM,       setRecapYM]       = useState(null); // v1.47.0 : clôture du mois affichée
   const [yearRecap,     setYearRecap]     = useState(null); // v1.68.0 : année du bilan annuel affiché
+  const [patriOpen,     setPatriOpen]     = useState(false); // v1.79.0 : courbe du patrimoine
   const pendingYearRef = useRef(null);                      // v1.68.0 : bilan annuel à ouvrir après celui de décembre
   const [projectModal,  setProjectModal]  = useState(null); // v1.47.0 : {} (nouveau) | projet
   const [reimbModal,    setReimbModal]    = useState(null); // v1.48.0 : {} (nouveau) | remboursement attendu
@@ -953,7 +956,7 @@ export default function App() {
   function renderView(tab) {
   switch (tab) {
   case "accueil": return (
-      <AccueilView data={data}
+      <AccueilView data={data} onOpenPatrimoine={() => setPatriOpen(true)}
         onOpenReimbursement={r => setReimbModal(r || {})}
         onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
         onDeleteTrans={deleteTransaction}
@@ -997,6 +1000,13 @@ export default function App() {
           msg: "La cagnotte et le tag liés sont conservés (argent et historique intacts).",
           onConfirm: () => { dispatch({ type: A.DELETE_PROJECT, id: p.id }); addToast("Projet supprimé", "error"); },
         })}
+        onRenewProject={(p, target, deadline) => {
+          // v1.79.0 : événement annuel → même projet l'an prochain ; seules les dépenses
+          // après la date de cette édition compteront (since), la cagnotte suit.
+          const cag = (data.cagnottes || []).find(c => c.id === p.cagId);
+          dispatch({ type: A.SAVE_PROJECT, syncCag: true, project: { ...p, target, deadline, since: p.deadline, createdAt: todayISO(), startSaved: Math.min(target, parseFloat(cag?.current) || 0) } });
+          addToast(`🔁 ${p.name} reconduit au ${deadline.slice(8, 10)}/${deadline.slice(5, 7)}/${deadline.slice(0, 4)}`);
+        }}
         onProjectAutoSaving={(p, amount, plan) => {
           dispatch({ type: A.SAVE_AUTO_SAVING, plan: plan ? { ...plan, amount } : { cagnotteId: p.cagId, amount, dayOfMonth: 1, enabled: true } });
           addToast(plan ? `Versement auto ajusté à ${fmt(amount)}` : `Versement auto créé : ${fmt(amount)} le 1ᵉʳ du mois (modifiable dans Options)`);
@@ -1065,6 +1075,8 @@ export default function App() {
   case "rapport": return (
       <RapportView data={data} currentYear={year} setCurrentYear={setYear}
         onOpenYearRecap={y => setYearRecap(y)}
+        onOpenPatrimoine={() => setPatriOpen(true)}
+        onSaveTaxSettings={settings => { dispatch({ type: A.SAVE_TAX_SETTINGS, settings }); addToast("🧾 Réglages fiscaux enregistrés"); }}
         categoryThresholds={data.categoryThresholds || {}}
         onSaveCategoryThreshold={saveCategoryThreshold}
         tags={data.tags || []}
@@ -1098,6 +1110,10 @@ export default function App() {
         onEditFixedIncome={idx => setFixedIncomeModal({ editingIdx: idx })}
         onMoveCat={({ id, targetId, kidsMode }) => dispatch({ type: A.MOVE_CATEGORY, id, targetId, kidsMode })}
         onRestoreCatParents={parents => dispatch({ type: A.RESTORE_CATEGORY_PARENTS, parents })}
+        onEditTrans={id => setTransModal({ editingId: id })}
+        onDeleteTrans={deleteTransaction}
+        onDismissDuplicate={key => { dispatch({ type: A.DISMISS_DUPLICATE, key }); addToast("✓ Ce n'est plus signalé comme doublon"); }}
+        onArchiveCat={(id, archived) => { dispatch({ type: A.ARCHIVE_CATEGORY, id, archived }); addToast(archived ? "🗄 Catégorie archivée — elle n'est plus proposée dans les saisies" : "♻️ Catégorie réactivée"); }}
         onImport={() => importRef.current?.click()}
         onReset={handleReset}
         onDeleteRecurring={deleteRecurring}
@@ -1583,6 +1599,7 @@ export default function App() {
           onOpenRapport={() => { closeMonthRecap(); navigateTo("rapport"); }}
           onGoUnpointed={() => { closeMonthRecap(); goToHistoriqueWithFilter("unpointed"); }} />
       )}
+      {patriOpen && <PatrimoineSheet data={data} currentBalance={currentBalance} onClose={() => setPatriOpen(false)} />}
       {yearRecap && (
         <YearRecapSheet recap={computeYearRecap(data, yearRecap)} categories={data.categories}
           onClose={() => setYearRecap(null)}

@@ -16,8 +16,58 @@ const PROJECT_STATUS = {
   ontrack:         ["DANS LES TEMPS",  "var(--accent)"],
   behind:          ["EN RETARD",       "var(--danger)"],
   "late-deadline": ["ÉCHÉANCE PASSÉE", "var(--warning)"],
+  bilan:           ["BILAN",           "var(--warning)"],   // v1.79.0 : date passée
+  nocag:           ["À VENIR",         "var(--accent)"],    // v1.79.0 : sans cagnotte
 };
-function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
+const jLabel = st => st.past ? "" : st.daysLeft === 0 ? "aujourd'hui" : `J−${st.daysLeft}`;
+const plusOneYear = iso => { const [y, m, d] = iso.split("-").map(Number); const last = new Date(y + 1, m, 0).getDate();
+  return `${y + 1}-${String(m).padStart(2, "0")}-${String(Math.min(d, last)).padStart(2, "0")}`; };
+
+// v1.79.0 : bilan d'un projet / événement dont la date est passée
+function ProjectBilan({ p, st, onRenew }) {
+  const diff = st.spent - st.target;
+  const y = parseInt(p.deadline.slice(0, 4), 10);
+  const k = (l, v, col) => <div style={{ flex: 1, textAlign: "center" }}><div style={{ fontSize: ".55rem", color: "var(--text3)" }}>{l}</div><b style={{ fontSize: ".82rem", color: col, fontVariantNumeric: "tabular-nums" }}>{v}</b></div>;
+  const pct = st.target > 0 ? Math.min(100, st.target / Math.max(st.spent, st.target) * 100) : 100;
+  const rows = [...st.tagTx].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const bb = { padding: "9px 10px", borderRadius: 10, fontSize: ".68rem", fontWeight: 800, cursor: "pointer", border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)" };
+  const newBudget = st.tag && st.spent > 0 ? Math.round(st.spent) : st.target;
+  return (
+    <div data-testid="proj-bilan" style={{ borderRadius: 12, padding: "9px 10px", marginBottom: 8, background: "color-mix(in srgb, var(--warning) 7%, var(--surface))", border: "1px solid color-mix(in srgb, var(--warning) 35%, transparent)" }}>
+      <div style={{ fontSize: ".66rem", fontWeight: 800, marginBottom: 6 }}>📋 Bilan {p.repeat ? y : ""}</div>
+      {st.tag ? <>
+        <div style={{ display: "flex" }}>
+          {k("Prévu", fmt(st.target))}
+          {k("Dépensé", fmt(st.spent), "var(--coral)")}
+          {k("Écart", `${diff > 0 ? "+" : diff < 0 ? "−" : ""}${fmt(Math.abs(diff))}`, diff > 0 ? "var(--danger)" : "var(--success)")}
+        </div>
+        <div style={{ height: 7, borderRadius: 4, background: "var(--danger)", overflow: "hidden", margin: "7px 0 4px" }}>
+          <div data-pv="" style={{ width: `${diff > 0 ? pct : 100}%`, height: "100%", background: "var(--success)" }} />
+        </div>
+        {rows.length > 0 && (
+          <div style={{ maxHeight: 130, overflowY: "auto", marginTop: 4 }}>
+            {rows.slice(0, 30).map(t => (
+              <div key={t.id} style={{ display: "flex", gap: 6, fontSize: ".62rem", padding: "3px 0", borderTop: "1px solid var(--border-soft)" }}>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text2)" }}>{t.note || "Dépense"} · {parseInt(t.date.slice(8, 10), 10)}/{t.date.slice(5, 7)}</span>
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(parseFloat(t.amount) || 0)}</b>
+              </div>
+            ))}
+          </div>
+        )}
+      </> : <div style={{ fontSize: ".62rem", color: "var(--text2)" }}>Pas de tag lié : dépenses non suivies (budget prévu {fmt(st.target)}).</div>}
+      {st.cag && <div style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 6 }}>🐷 Cagnotte « {st.cag.name} » : <b style={{ color: "var(--purple)" }}>{fmt(st.saved)}</b> restant</div>}
+      {p.repeat && onRenew && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+          <button data-testid="proj-renew" style={{ ...bb, background: "var(--purple)", border: "none", color: "#fff" }} onClick={() => onRenew(p, newBudget)}>
+            🔁 Reconduire en {y + 1} · budget {fmt(newBudget)}
+          </button>
+          {newBudget !== st.target && <button data-testid="proj-renew-keep" style={bb} onClick={() => onRenew(p, st.target)}>Reconduire en gardant {fmt(st.target)}</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving, onRenew }) {
   const st = computeProjectStatus(p, data);
   const [label, col] = PROJECT_STATUS[st.status];
   const dl = new Date(p.deadline + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
@@ -35,25 +85,29 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
         <span style={{ fontSize: "1.4rem" }}>{p.icon}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: ".85rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-          <div style={{ fontSize: ".6rem", color: "var(--text3)" }}>Objectif {fmt(st.target)} · pour le {dl}{st.status !== "late-deadline" && st.status !== "done" ? ` · ${st.monthsLeft} mois restant${st.monthsLeft > 1 ? "s" : ""}` : ""}</div>
+          <div style={{ fontSize: ".6rem", color: "var(--text3)" }}>{p.repeat ? "🔁 " : ""}{st.cag ? "Objectif" : "Budget"} {fmt(st.target)} · {st.past ? "le" : "pour le"} {dl}{!st.past ? ` · ${jLabel(st)}` : ""}</div>
         </div>
         <span style={{ fontSize: ".55rem", fontWeight: 800, padding: "3px 8px", borderRadius: 9, color: col, background: `color-mix(in srgb, ${col} 14%, transparent)`, whiteSpace: "nowrap" }}>{label}</span>
       </div>
+      {st.past && <ProjectBilan p={p} st={st} onRenew={onRenew} />}
+      {!st.past && st.cag && <>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".66rem", color: "var(--text2)" }}>
-        <span>🐷 Mis de côté{st.cag ? ` (« ${st.cag.name} »)` : " — cagnotte supprimée"}</span><b style={{ color: "var(--purple)" }}>{fmt(st.saved)}</b>
+        <span>🐷 Mis de côté (« {st.cag.name} »)</span><b style={{ color: "var(--purple)" }}>{fmt(st.saved)}</b>
       </div>
       {bar(st.savedPct, "var(--purple)", st.status === "done" ? null : st.expectedPct)}
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>
         <span>{pv(Math.round(st.savedPct))} %</span>{st.status !== "done" && <span>prévu à ce jour : {fmt(st.expected)} (trait blanc)</span>}
       </div>
-      {st.tag && <>
+      </>}
+      {!st.past && !st.cag && p.cagId && <div style={{ fontSize: ".62rem", color: "var(--text3)", marginBottom: 8 }}>🐷 Cagnotte liée supprimée</div>}
+      {!st.past && st.tag && <>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".66rem", color: "var(--text2)" }}>
           <span>{st.tag.icon} Déjà dépensé (tag « {st.tag.name} »)</span><b style={{ color: "var(--coral)" }}>{fmt(st.spent)}</b>
         </div>
         {bar(st.spentPct, "var(--coral)")}
         <div style={{ fontSize: ".58rem", color: "var(--text3)", marginBottom: 8 }}>{pv(Math.round(st.spentPct))} % du budget · {st.spentCount} achat{st.spentCount > 1 ? "s" : ""}</div>
       </>}
-      {st.remaining > 0 && st.status !== "late-deadline" && (
+      {st.remaining > 0 && !st.past && (
         <div style={{ padding: "8px 10px", borderRadius: 10, fontSize: ".66rem", color: "var(--text2)", background: "var(--purple-glow)", border: "1px solid rgba(176,144,224,.3)", marginBottom: 8 }}>
           💡 Reste à mettre de côté : <b style={{ color: "var(--text)" }}>{fmt(st.remaining)}</b> → <b style={{ color: "var(--purple)" }}>{fmt(st.perMonth)} / mois</b>
           {st.status === "behind" ? " pour rattraper le retard" : ` pendant ${Math.max(1, st.monthsLeft)} mois`}
@@ -63,7 +117,7 @@ function ProjectCard({ project: p, data, onEdit, onDelete, onAutoSaving }) {
       <div style={{ display: "flex", gap: 6 }}>
         <button style={btn} onClick={() => onEdit(p)}>✏️</button>
         <button style={{ ...btn, color: "var(--danger)" }} onClick={() => onDelete(p)}>🗑</button>
-        {st.cag && st.perMonth > 0 && st.status !== "late-deadline" && (!plan || Math.abs(plan.amount - st.perMonth) > 0.009) && (
+        {st.cag && st.perMonth > 0 && !st.past && (!plan || Math.abs(plan.amount - st.perMonth) > 0.009) && (
           <button style={{ ...btn, flex: 1, background: "var(--purple)", border: "none", color: "#fff" }} onClick={() => onAutoSaving(p, st.perMonth, plan)}>
             🎯 {plan ? `Ajuster le versement auto à ${fmt(st.perMonth)}` : `Versement auto ${fmt(st.perMonth)} / mois`}
           </button>
@@ -87,7 +141,7 @@ function ProgressRing({ ratio }) {
   );
 }
 
-export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving }) {
+export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransfer, onShowCagHistory, onNewProject, onEditProject, onDeleteProject, onProjectAutoSaving, onRenewProject }) {
   // v1.53.0 — « grille compacte » : barre collée (total, transfert, nouvelle), récap
   // (v1.57.0 : net du mois, répartition par type, détail au toucher), projets en bandeau horizontal (détail complet au toucher), cartes basses.
   // Suppression d'une cagnotte : dans la fenêtre ✏️ (plus de ✕ sur les cartes).
@@ -189,12 +243,12 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
       {/* ── Projets : bandeau horizontal, détail complet au toucher ── */}
       {onNewProject && (
         <div style={{ marginBottom: 10 }}>
-          {secT("🎯 Projets", <span onClick={onNewProject} style={{ color: "var(--accent)", textTransform: "none", letterSpacing: 0, fontSize: ".66rem", cursor: "pointer" }}>＋ projet</span>)}
+          {secT("🎯 Projets & événements", <span onClick={onNewProject} style={{ color: "var(--accent)", textTransform: "none", letterSpacing: 0, fontSize: ".66rem", cursor: "pointer" }}>＋ projet</span>)}
           {projects.length === 0 ? (
             <button onClick={onNewProject} style={{ width: "100%", padding: 10, borderRadius: 12, border: "1.5px dashed var(--border)", background: "none", color: "var(--text2)", fontSize: ".7rem", fontWeight: 700, cursor: "pointer" }}>＋ Nouveau projet</button>
           ) : (
             <div style={{ display: "flex", gap: 7, overflowX: "auto", scrollbarWidth: "none", paddingBottom: 2 }}>
-              {projects.map(p => {
+              {[...projects].sort((x, y) => (x.deadline || "").localeCompare(y.deadline || "")).map(p => {
                 const st = computeProjectStatus(p, data);
                 const [label, col] = PROJECT_STATUS[st.status];
                 const on = openProject === p.id;
@@ -212,7 +266,9 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
                       {st.status !== "done" && <span style={{ position: "absolute", top: -3, left: `calc(${Math.min(100, st.expectedPct)}% - 1px)`, width: 2, height: 11, background: "#fff", opacity: .8 }} />}
                     </div>
                     <div style={{ fontSize: ".58rem", color: "var(--text3)", marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-                      {fmt(st.saved)} / {fmt(st.target)}{st.remaining > 0 && st.status !== "late-deadline" ? <> · <b style={{ color: "var(--purple)" }}>{fmt(st.perMonth)}/mois</b></> : null}
+                      {p.repeat ? "🔁 " : ""}{st.past
+                        ? <>{st.tag ? <>dépensé {fmt(st.spent)} / {fmt(st.target)}</> : <>budget {fmt(st.target)}</>} · <b style={{ color: "var(--warning)" }}>voir le bilan</b></>
+                        : <>{st.cag ? <>{fmt(st.saved)} / {fmt(st.target)}</> : <>budget {fmt(st.target)}</>} · <b style={{ color: "var(--text2)" }}>{jLabel(st)}</b>{st.remaining > 0 ? <> · <b style={{ color: "var(--purple)" }}>{fmt(st.perMonth)}/mois</b></> : null}</>}
                     </div>
                   </div>
                 );
@@ -224,7 +280,7 @@ export function CagnottesView({ data, onNewCag, onEditCag, onDeleteCag, onTransf
           )}
           {projOpen && (
             <div style={{ marginTop: 7 }}>
-              <ProjectCard project={projOpen} data={data} onEdit={onEditProject} onDelete={pp => { setOpenProject(null); onDeleteProject(pp); }} onAutoSaving={onProjectAutoSaving} />
+              <ProjectCard project={projOpen} data={data} onRenew={onRenewProject && ((pp, budget) => onRenewProject(pp, budget, plusOneYear(pp.deadline)))} onEdit={onEditProject} onDelete={pp => { setOpenProject(null); onDeleteProject(pp); }} onAutoSaving={onProjectAutoSaving} />
             </div>
           )}
         </div>
