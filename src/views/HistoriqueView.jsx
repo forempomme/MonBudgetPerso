@@ -192,10 +192,11 @@ export function txSubLabel(note, cat, categories, iso) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onOverrideIncomeMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange }) {
+export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTrans, onDeleteTrans, onDuplicateTrans, onTogglePointTx, onTogglePointFix, onTogglePointIncome, onOverrideFixMonth, onOverrideIncomeMonth, onConfirmRecurring, onDeleteRecurring, onApplyAutoSaving, onSkipAutoSaving, onConfirmScheduled, onDeleteScheduled, initPointFilter = "all", onClearPointFilter, onMonthChange, initYM = null }) {
   const now = new Date();
-  const [year,     setYear]     = useState(now.getFullYear());
-  const [monthIdx, setMonthIdx] = useState(now.getMonth());
+  // v1.80.1 : peut s'ouvrir sur un mois donné (fenêtre « En attente » de l'Accueil)
+  const [year,     setYear]     = useState(initYM ? parseInt(initYM.slice(0, 4), 10) : now.getFullYear());
+  const [monthIdx, setMonthIdx] = useState(initYM ? parseInt(initYM.slice(5, 7), 10) - 1 : now.getMonth());
   // v1.49.0 : remonte le mois affiché à App.jsx (sous-titre de l'en-tête)
   useEffect(() => { onMonthChange?.(year, monthIdx); }, [year, monthIdx]); // eslint-disable-line react-hooks/exhaustive-deps
   const [search,   setSearch]   = useState("");
@@ -418,7 +419,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
     const isInc = kind === "income";
     const all = isInc ? monthIncomes : monthFixes;
     const list = (pointFilter === "unpointed" ? all.filter(f => !f.pointedMonths?.[month]) : all)
-      .map(f => ({ f, dayNum: resolveFixedDay(f.day, month) || null }))
+      .map(f => ({ f, dayNum: resolveFixedDay(f.day, month, !!f.satWorkday) || null }))
       .sort((a, b) => (a.dayNum || 99) - (b.dayNum || 99));
     const nPt = all.filter(f => f.pointedMonths?.[month]).length;
     const total = all.reduce((s, f) => s + fixedAmountFor(f, month), 0);

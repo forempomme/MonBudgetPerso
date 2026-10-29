@@ -5,6 +5,7 @@ import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate,
 import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
+import { PendingSheet } from "./PendingSheet.jsx";
 import { ForecastPanel, RestToLiveSheet, ReimbursementsSheet } from "./ForecastPanels.jsx";
 import { SimulationSheet, SimulationBlock, SurplusCard, SurplusSheet } from "./InsightPanels.jsx";
 
@@ -105,7 +106,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
+export function AccueilView({ data, onOpenPatrimoine, onTogglePointTx, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
 
   // Sections masquables — persistées en localStorage
   // v1.49.0 : période du bloc Bilan — pas mémorisée, revient toujours sur le mois
@@ -461,6 +462,7 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
     <div data-testid={id} style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 3px 6px" }}>{txt}</div>
   );
   const awaitingPay = breakdown.awaitingPay?.items || [];   // v1.80.0 : paie due, non pointée → non comptée
+  const [pendingOpen, setPendingOpen] = useState(false);   // v1.80.1 : « En attente » tous mois confondus
   const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0 || awaitingPay.length > 0
     || unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0;
 
@@ -614,7 +616,7 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
                 <span role="button" onClick={() => onGoToHistorique?.("pointed")} title={`${nbPointed} op. confirmées`} style={heroPill("var(--success)", "rgba(104,212,152,.1)")}>
                   ✓ {soldePointe >= 0 ? "+" : ""}{fmt(soldePointe)} pointé ›
                 </span>
-                <span role="button" onClick={() => onGoToHistorique?.("unpointed")} title={`${totalPointable - nbPointed} op. restantes`} style={heroPill("var(--warning)", "rgba(200,184,96,.1)")}>
+                <span role="button" data-testid="hero-pending" onClick={() => { if (touchMoved()) return; setPendingOpen(true); }} title={`${totalPointable - nbPointed} op. restantes`} style={heroPill("var(--warning)", "rgba(200,184,96,.1)")}>
                   ⏳ {soldeAttente >= 0 ? "+" : ""}{fmt(soldeAttente)} en attente ›
                 </span>
                 {w && (
@@ -872,6 +874,11 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
       )}
       {surplusSheet && surplus && <SurplusSheet surplus={surplus} onClose={() => setSurplusSheet(false)} />}
 
+      {pendingOpen && (
+        <PendingSheet data={data} onClose={() => setPendingOpen(false)}
+          onTogglePointTx={onTogglePointTx} onTogglePointFix={onTogglePointFix} onTogglePointIncome={onTogglePointIncome}
+          onGoToMonth={ym => { setPendingOpen(false); onGoToHistorique?.("unpointed", ym); }} />
+      )}
       {/* ── 💰 Paie pas encore pointée (v1.80.0) : non comptée dans le solde tant qu'elle n'est pas pointée ── */}
       {awaitingPay.map(({ f, ym, date, signed: v }) => (
         <div key={f.id + ym} data-testid="card-awaiting-pay" style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 7px", padding: "10px 12px", borderRadius: 16,
@@ -1097,7 +1104,7 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
                     const label=(isFix||isInc)?item.name:isRec?(item.label||cat?.name||"Récurrente"):(item.note||cat?.name||"Dépense programmée");
                     // v1.48.0 : date de prélèvement quand elle est connue
                     const recDay = isRec ? (breakdown.recurring.items.find(x => x.tpl.id === item.id)?.day || null) : null;
-                    const dayLbl = (isFix||isInc) && item.day ? `le ${resolveFixedDay(item.day, curM)}` : recDay ? `le ${recDay}` : null;
+                    const dayLbl = (isFix||isInc) && item.day ? `le ${resolveFixedDay(item.day, curM, !!item.satWorkday)}` : recDay ? `le ${recDay}` : null;
                     const sub=(isFix||isInc)?`${dayLbl ? dayLbl + " · " : "Ce mois · "}non pointé`:isRec?`${dayLbl ? dayLbl + " · " : "Ce mois · "}${item.frequency==="yearly"?"annuelle":"mensuelle"}`:new Date(item.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long"});
                     const badge=isSch?daysUntil(item.date):null;
                     const recurBadge = isRec && item.occurrences != null ? (() => {

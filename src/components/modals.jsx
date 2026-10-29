@@ -1322,11 +1322,11 @@ const toPadStr = n => (n === undefined || n === null || n === "") ? "" : String(
 //  Jour de prélèvement (v1.48.0) : Aucun / 1 / 5 / 10 / Autre… → grille
 // ─────────────────────────────────────────────────────────────────
 /** Prochaines dates réelles d'une règle de jour (v1.64.0) */
-export function nextDayDates(day, n = 4, from = todayISO()) {
+export function nextDayDates(day, n = 4, from = todayISO(), sat = false) {
   const out = [];
   for (let i = 0; out.length < n && i < n + 2; i++) {
     const ym = ymShift(from.slice(0, 7), i);
-    const d = resolveFixedDay(day, ym);
+    const d = resolveFixedDay(day, ym, sat);
     if (!d) break;
     const iso = `${ym}-${String(d).padStart(2, "0")}`;
     if (iso >= from) out.push(iso);
@@ -1335,7 +1335,7 @@ export function nextDayDates(day, n = 4, from = todayISO()) {
 }
 export const shortDateFR = iso => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" }); };
 
-function DayField({ value, onChange, label = "Jour de prélèvement" }) {
+function DayField({ value, onChange, label = "Jour de prélèvement", sat = false, onSat }) {
   const [grid, setGrid] = useState(false);
   const quick = [[null, "Aucun"], [1, "Le 1"], [5, "Le 5"], [10, "Le 10"]];
   const rules = [[DAY_LAST_BD, "Dernier jour ouvré"], [DAY_PREV_LAST_BD, "Avant-dernier jour ouvré"]];
@@ -1344,7 +1344,7 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
   const chip = sel => ({ padding: "6px 2px", borderRadius: 20, fontSize: ".62rem", whiteSpace: "nowrap",
     border: `1.5px solid ${sel ? "var(--accent)" : "var(--border)"}`, background: sel ? "rgba(112,184,224,.14)" : "var(--surface2)",
     color: sel ? "var(--accent)" : "var(--text2)", fontWeight: sel ? 700 : 400, cursor: "pointer", touchAction: "manipulation" });
-  const dates = isRule ? nextDayDates(value) : [];
+  const dates = isRule ? nextDayDates(value, 4, todayISO(), sat) : [];
   return (
     <div style={{ marginBottom: 10 }}>
       <SectionLabel color="var(--accent)">{label}</SectionLabel>
@@ -1368,7 +1368,16 @@ function DayField({ value, onChange, label = "Jour de prélèvement" }) {
       {isRule && dates.length > 0 && (
         <div data-testid="day-rule-dates" style={{ fontSize: ".62rem", color: "var(--text2)", marginTop: 6, lineHeight: 1.5 }}>
           Prochaines dates : {dates.map((d, i) => <span key={d}>{i > 0 && " · "}{i === 0 ? <b style={{ color: "var(--text)" }}>{shortDateFR(d)}</b> : shortDateFR(d)}</span>)}
-          <br /><span style={{ color: "var(--text3)" }}>Week-ends et jours fériés sautés ; un lundi est avancé au vendredi (banques fermées).</span>
+          <br /><span style={{ color: "var(--text3)" }}>{sat ? "Samedi compté comme jour ouvré ; dimanches et jours fériés sautés. Un samedi ou un lundi est avancé au vendredi (banques fermées)." : "Week-ends et jours fériés sautés ; un lundi est avancé au vendredi (banques fermées)."}</span>
+        </div>
+      )}
+      {/* v1.80.2 : certains employeurs comptent le samedi comme jour ouvré */}
+      {isRule && onSat && (
+        <div data-testid="sat-workday" {...tap(() => onSat(!sat))} style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, padding: "8px 11px", borderRadius: 12, cursor: "pointer",
+          background: sat ? "rgba(112,184,224,.07)" : "var(--surface2)", border: `1px solid ${sat ? "rgba(112,184,224,.35)" : "var(--border)"}` }}>
+          <span style={{ flex: 1, fontSize: ".68rem" }}><b>Le samedi compte comme jour ouvré</b>
+            <span style={{ display: "block", fontSize: ".58rem", color: "var(--text3)", marginTop: 1 }}>Selon ton employeur (ex. octobre 2026 : le 30 au lieu du 29)</span></span>
+          <Toggle on={sat} />
         </div>
       )}
       {grid && (
@@ -1408,6 +1417,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
   const [catId,  setCatId]  = useState(isEdit ? (f?.categoryId && categories.some(c => c.id === f.categoryId) ? f.categoryId : "") : null);
   const [startYM, setStartYM] = useState(f?.startYM || "");
   const [day, setDay] = useState(f?.day || null);   // v1.48.0 : jour de prélèvement
+  const [satWorkday, setSatWorkday] = useState(!!f?.satWorkday);   // v1.80.2 : samedi = jour ouvré
   // v1.64.0 : montant prévu fixe ou automatique (moyenne des 3 derniers réels) + budget du mois suivant
   const [amountMode, setAmountMode] = useState(f?.amountMode || "fixed");
   const [advance, setAdvance] = useState(!!f?.advance);
@@ -1455,6 +1465,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       name: name.trim(), amount: a, categoryId: catId || null,
       startYM: startYM || null,
       day: day || null,
+      satWorkday: day < 0 ? satWorkday : false,
       paused,
       // Point de départ de la pause : le mois en cours par défaut si on
       // vient de l'activer (jamais rétroactif sur l'historique déjà passé)
@@ -1529,7 +1540,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
           </div>
         )}
       </div>
-      <DayField label={isInc ? "Jour de versement" : "Jour de prélèvement"} value={day} onChange={setDay} />
+      <DayField label={isInc ? "Jour de versement" : "Jour de prélèvement"} value={day} onChange={setDay} sat={satWorkday} onSat={setSatWorkday} />
       {isInc && (
         <div data-testid="advance-toggle" {...tap(() => setAdvance(v => !v))}
           style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 12, marginBottom: 10, cursor: "pointer",
@@ -1539,7 +1550,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
             <b style={{ fontSize: ".74rem" }}>Compter dans le budget du mois suivant</b>
             <span style={{ display: "block", fontSize: ".6rem", color: "var(--text2)", lineHeight: 1.45, marginTop: 3 }}>
               {advance && day ? (() => {
-                const occ = ymShift(curM, 1), paid = fixedCashDateISO({ day, advance: true }, occ);
+                const occ = ymShift(curM, 1), paid = fixedCashDateISO({ day, advance: true, satWorkday }, occ);
                 return <>Versé le <b style={{ color: "var(--text)" }}>{shortDateFR(paid)}</b> → budget de <b style={{ color: "var(--sapin)" }}>{MONTHS_FULL_LC[parseInt(occ.slice(5, 7), 10) - 1]}</b>. </>;
               })() : null}
               Le versement de fin de mois sert à vivre le mois suivant : il compte dans ce mois-là pour le budget et les rapports. Le solde, la paie et le reste à vivre utilisent la vraie date.
@@ -1554,7 +1565,7 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
         // v1.68.0 : changements prévus + effet sur la projection (3 mois)
         const base = autoOn && autoAmt != null ? autoAmt : (amountOf(amt) || 0);
         const months = c => { const [y1, m1] = c.from.split("-").map(Number), [y2, m2] = (c.until || c.from).split("-").map(Number); return (y2 - y1) * 12 + m2 - m1 + 1; };
-        const draft = isEdit ? { ...f, amount: base, amountMode, advance, day, plannedChanges: planned } : null;
+        const draft = isEdit ? { ...f, amount: base, amountMode, advance, day, satWorkday, plannedChanges: planned } : null;
         // Point bas pendant / après le changement (pas avant : un creux déjà prévu sans lui ne le concerne pas)
         const low = (() => {
           if (!draft || !planned.length || !previewLow) return null;

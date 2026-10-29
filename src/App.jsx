@@ -531,8 +531,10 @@ export default function App() {
   // Filtre pointage partagé entre AccueilView et HistoriqueView
   const [histPointFilter, setHistPointFilter] = useState("all");
 
-  const goToHistoriqueWithFilter = useCallback((filter) => {
+  const [histInitYM, setHistInitYM] = useState(null);   // v1.80.1 : mois à ouvrir (« En attente » → mois)
+  const goToHistoriqueWithFilter = useCallback((filter, ym = null) => {
     setHistPointFilter(filter);
+    setHistInitYM(ym);
     navigateTo("historique");
   }, [navigateTo]);
 
@@ -1025,7 +1027,7 @@ export default function App() {
   function renderView(tab) {
   switch (tab) {
   case "accueil": return (
-      <AccueilView data={data} onOpenPatrimoine={() => setPatriOpen(true)}
+      <AccueilView data={data} onOpenPatrimoine={() => setPatriOpen(true)} onTogglePointTx={togglePointTx}
         onOpenReimbursement={r => setReimbModal(r || {})}
         onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
         onDeleteTrans={deleteTransaction}
@@ -1110,7 +1112,7 @@ export default function App() {
         onConfirmScheduled={id => dispatch({ type: A.CONFIRM_SCHEDULED, id })}
         onDeleteScheduled={id  => dispatch({ type: A.DELETE_SCHEDULED,  id })}
         onMonthChange={(y, m) => setHistYM(p => (p.y === y && p.m === m ? p : { y, m }))}
-        initPointFilter={histPointFilter}
+        initPointFilter={histPointFilter} initYM={histInitYM}
         onClearPointFilter={() => setHistPointFilter("all")}
       />
   );

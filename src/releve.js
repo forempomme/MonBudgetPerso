@@ -227,7 +227,7 @@ export function appMovements(data, start, end, margin = 5) {
     if (!isActiveForMonth(f, oym)) return;
     const a = fixedAmountFor(f, oym);
     if (!a) return;
-    const day = resolveFixedDay(f.day, ym);
+    const day = resolveFixedDay(f.day, ym, !!f.satWorkday);
     const date = day ? `${ym}-${pad2(day)}` : null;
     if (date && (date < from || date > to)) return;
     if (!date && (`${ym}-${pad2(lastDayOf(ym))}` < start || `${ym}-01` > end)) return;

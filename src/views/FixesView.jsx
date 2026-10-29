@@ -26,7 +26,7 @@ export function fixedStatusForMonth(f, ym, todayDay) {
   const occ = fixedOccurrenceYM(f, ym);
   if (!isActiveForMonth(f, occ)) return (f.startYM && occ < f.startYM) ? "later" : "pause";
   if (f.pointedMonths?.[occ]) return "ok";
-  const d = resolveFixedDay(f.day, ym);
+  const d = resolveFixedDay(f.day, ym, !!f.satWorkday);
   if (!d) return "next";
   return d <= todayDay ? "late" : "next";
 }
@@ -85,7 +85,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
     // v1.76.0 : catégorie affichée en étiquette (sous-catégorie : « Parent › Sous-cat. »)
     const cat = categories.find(c => c.id === f.categoryId);
     const par = cat?.parentId ? categories.find(c => c.id === cat.parentId) : null;
-    return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM), st: fixedStatusForMonth(f, curYM, todayDay), icon: cat?.icon ?? (isExp ? "📌" : "💰"),
+    return { f, idx, amt, occ, dayNum: resolveFixedDay(f.day, curYM, !!f.satWorkday), st: fixedStatusForMonth(f, curYM, todayDay), icon: cat?.icon ?? (isExp ? "📌" : "💰"),
       cat, catLabel: cat ? `${cat.icon} ${par ? par.name + " › " : ""}${cat.name}` : null };
   });
   const noCat = items.filter(x => !x.cat);
@@ -220,7 +220,7 @@ export function FixesView({ data, onNewFixed, onEditFixed, onDeleteFixed, onQuic
               })}
             </div>
             <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 5 }}>
-              {parseInt(f.day, 10) < 0 && <>Ce mois-ci : le {resolveFixedDay(f.day, curYM)} · </>}Le 29, 30 ou 31 tombe le dernier jour des mois plus courts.
+              {parseInt(f.day, 10) < 0 && <>Ce mois-ci : le {resolveFixedDay(f.day, curYM, !!f.satWorkday)} · </>}Le 29, 30 ou 31 tombe le dernier jour des mois plus courts.
             </div>
           </div>
         )}

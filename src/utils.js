@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.80.0";
+export const APP_VERSION = "1.80.2";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -281,7 +281,10 @@ export function isBankCreditDay(iso) {
   return new Date(y, m - 1, d).getDay() !== 1 && isBusinessDay(iso);
 }
 /** Jour (1–31) correspondant à `day` dans le mois `ym` ; null si aucun jour */
-export function resolveFixedDay(day, ym) {
+// v1.80.2 : `sat` = le samedi compte comme jour ouvré (employeur) — pour le
+// comptage seulement : un versement ne tombe jamais un samedi ni un lundi
+// (banques), il est alors avancé au vendredi.
+export function resolveFixedDay(day, ym, sat = false) {
   const n = parseInt(day, 10);
   if (!n) return null;
   const [y, m] = ym.split("-").map(Number);
@@ -289,7 +292,9 @@ export function resolveFixedDay(day, ym) {
   if (n > 0) return Math.min(n, last);
   let skip = -n;  // 1 = dernier jour ouvré, 2 = avant-dernier
   for (let d = last; d >= 1; d--) {
-    if (isBusinessDay(`${ym}-${_pad2(d)}`) && --skip === 0) {
+    const iso = `${ym}-${_pad2(d)}`;
+    const work = isBusinessDay(iso) || (sat && new Date(iso + "T12:00:00").getDay() === 6 && !frenchHolidays(parseInt(ym, 10)).has(iso));
+    if (work && --skip === 0) {
       while (d > 1 && !isBankCreditDay(`${ym}-${_pad2(d)}`)) d--;   // lundi → vendredi
       return d;
     }
@@ -321,7 +326,7 @@ export function fixedCashDateISO(f, ym) {
   // v1.80.0 : paie pointée avec sa date réelle de versement → cette date prime
   if (f?.pointedMonths?.[ym] && f?.paidDates?.[ym]) return f.paidDates[ym];
   const cym = fixedCashYM(f, ym);
-  const d = resolveFixedDay(f?.day, cym);
+  const d = resolveFixedDay(f?.day, cym, !!f?.satWorkday);
   return d ? `${cym}-${_pad2(d)}` : null;
 }
 

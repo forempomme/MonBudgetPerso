@@ -927,9 +927,9 @@ const pad2 = n => String(n).padStart(2, "0");
 const ymAdd = (ym, n) => { const [y, m] = ym.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`; };
 const lastDayOf = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 /** Date (YYYY-MM-DD) d'un jour de prélèvement dans un mois donné */
-export function dayInMonthISO(day, ym) {
+export function dayInMonthISO(day, ym, sat = false) {
   // v1.64.0 : accepte aussi les règles « dernier / avant-dernier jour ouvré » (-1 / -2)
-  const d = resolveFixedDay(day, ym) || 1;
+  const d = resolveFixedDay(day, ym, sat) || 1;
   return `${ym}-${pad2(d)}`;
 }
 const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); const x = new Date(y, m - 1, d + n); return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`; };
@@ -975,7 +975,7 @@ export function pendingEventsThisMonth(data, breakdown, today = todayISO()) {
   const ev = (date, amount, label, kind, extra = {}) => events.push({ date, amount, label, kind, ...extra });
   (data.fixedExpenses || []).forEach(f => {
     if (!f.day || !isActiveForMonth(f, curYM) || f.pointedMonths?.[curYM]) return;
-    const d = dayInMonthISO(f.day, curYM); if (d <= today) return;
+    const d = dayInMonthISO(f.day, curYM, !!f.satWorkday); if (d <= today) return;
     const a = fixedAmountFor(f, curYM);
     ev(d, -a, f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌" }); addBack += a;
   });
@@ -1021,7 +1021,7 @@ export function computeDailyForecast(data, breakdown, grocery, today = todayISO(
     monthRange(ymAdd(curYM, 1), end.slice(0, 7)).forEach(ym => {
       (data.fixedExpenses || []).forEach(f => {
         if (!f.day || !isActiveForMonth(f, ym)) return;
-        const d = dayInMonthISO(f.day, ym); if (d > end) return;
+        const d = dayInMonthISO(f.day, ym, !!f.satWorkday); if (d > end) return;
         ev(d, -(fixedAmountFor(f, ym)), f.name, "fix", { icon: cats.find(c => c.id === f.categoryId)?.icon || "📌", next: true });
       });
       (data.fixedIncomes || []).forEach(f => {
@@ -1442,7 +1442,7 @@ export function computeProjection(data, breakdown, { today = todayISO(), monthsA
     (data.fixedExpenses || []).forEach(f => {
       if (!isActiveForMonth(f, ym)) return;
       const a = fixedAmountFor(f, ym);
-      push(dayInMonthISO(f.day || 1, ym), -a, f.name, "fix", icon(f.categoryId, "📌"));
+      push(dayInMonthISO(f.day || 1, ym, !!f.satWorkday), -a, f.name, "fix", icon(f.categoryId, "📌"));
     });
     (data.recurringTemplates || []).forEach(tpl => {
       const amount = parseFloat(tpl.amount) || 0;
