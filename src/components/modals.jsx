@@ -1728,8 +1728,10 @@ export function FixedIncomeModal({ categories, fixedIncomes, fixedExpenses, tran
 //  Pointage d'un revenu fixe avec le montant réellement reçu — v1.64.0
 //  (revenus en montant prévu « automatique » : salaire variable…)
 // ─────────────────────────────────────────────────────────────────
-export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onClose }) {
+export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onClose, isPay = false }) {
   const predicted = fixedAmountFor(income, ym);
+  // v1.80.0 : paie → date réelle de versement (aujourd'hui par défaut ; la date prévue peut être fausse)
+  const [paidOn, setPaidOn] = useState(todayISO());
   const [amt, setAmt] = useState(toPadStr(predicted));
   const fresh = useRef(true);
   const a = amountOf(amt);
@@ -1750,7 +1752,7 @@ export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onC
   return (
     <Modal onClose={onClose} title={`💼 ${income.name} reçu`}>
       <div style={{ fontSize: ".66rem", color: "var(--text2)", marginBottom: 8 }}>
-        {paid ? <>Versé le {shortDateFR(paid)}</> : "Ce mois-ci"}
+        {paid ? <>{isPay ? "Prévue le" : "Versé le"} {shortDateFR(paid)}</> : "Ce mois-ci"}
         {income.advance && <> · compté dans le budget de <b style={{ color: "var(--sapin)" }}>{MONTHS_FULL_LC[parseInt(ym.slice(5, 7), 10) - 1]}</b></>}
       </div>
       <SectionLabel color="var(--success)">Montant réel</SectionLabel>
@@ -1781,7 +1783,11 @@ export function PointIncomeModal({ income, ym, transactions = [], onConfirm, onC
           </span>
         </div>
       )}
-      <FormActions onCancel={onClose} onSave={() => { if (ok) onConfirm(a, isAuto && excl); }} emoji="✓" label="Pointer" color="var(--success)" />
+      {isPay && (
+        <DateField label="Versée le" date={paidOn} onChange={d => setPaidOn(d || todayISO())}
+          shortcuts={[["Aujourd'hui", todayISO()], ["Hier", daysAgoISO(1)], ["Avant-hier", daysAgoISO(2)], ...(paid && paid < todayISO() && paid < daysAgoISO(2) ? [["Prévue", paid]] : [])]} />
+      )}
+      <FormActions onCancel={onClose} onSave={() => { if (ok) onConfirm(a, isAuto && excl, isPay ? paidOn : null); }} emoji="✓" label="Pointer" color="var(--success)" />
     </Modal>
   );
 }

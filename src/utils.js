@@ -6,7 +6,7 @@ export const APP_NAME    = "Gestion du budget";
  *  minor : nouvelle fonctionnalité visible
  *  patch : correction de bug, retouche visuelle mineure
  */
-export const APP_VERSION = "1.79.0";
+export const APP_VERSION = "1.80.0";
 
 // ─── Constants ───────────────────────────────────────────────────
 export const MONTHS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -318,6 +318,8 @@ export function fixedCashYM(f, ym) { return f?.advance ? ymShift(ym, -1) : ym; }
 export function fixedOccurrenceYM(f, cashYM) { return f?.advance ? ymShift(cashYM, 1) : cashYM; }
 /** Date réelle (YYYY-MM-DD) de l'occurrence `ym`, ou null sans jour */
 export function fixedCashDateISO(f, ym) {
+  // v1.80.0 : paie pointée avec sa date réelle de versement → cette date prime
+  if (f?.pointedMonths?.[ym] && f?.paidDates?.[ym]) return f.paidDates[ym];
   const cym = fixedCashYM(f, ym);
   const d = resolveFixedDay(f?.day, cym);
   return d ? `${cym}-${_pad2(d)}` : null;

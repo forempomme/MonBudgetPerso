@@ -460,7 +460,8 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
   const secTitle = (txt, id) => (
     <div data-testid={id} style={{ fontSize: ".56rem", fontWeight: 800, letterSpacing: ".12em", textTransform: "uppercase", color: "var(--text3)", margin: "14px 3px 6px" }}>{txt}</div>
   );
-  const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0
+  const awaitingPay = breakdown.awaitingPay?.items || [];   // v1.80.0 : paie due, non pointée → non comptée
+  const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0 || awaitingPay.length > 0
     || unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0;
 
   // ── Couleur dynamique du solde ────────────────────────────────
@@ -552,10 +553,16 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
           </div>
 
           {/* ── Ce mois-ci : courses, reste à vivre, à recevoir, prévisions, arrondis ── */}
-          {(grocery || rest || reimbs.length > 0 || provTotal > 0 || roundStats) && (
+          {(grocery || rest || reimbs.length > 0 || provTotal > 0 || roundStats || awaitingPay.length > 0) && (
             <>
               <div style={heroRowTitle}>Ce mois-ci</div>
               <div data-testid="hero-row-month" style={heroRow}>
+                {awaitingPay.length > 0 && (
+                  <span role="button" data-testid="hero-awaiting-pay" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
+                    style={heroPill("var(--warning)", "rgba(200,184,96,.12)")}>
+                    💰 Paie attendue · {fmt(breakdown.awaitingPay.total)} non comptée ›
+                  </span>
+                )}
                 {grocery && (
                   <span role="button" onClick={() => { if (touchMoved()) return; setBreakdownOpen(true); }}
                     style={heroPill(grocery.over > 0 ? "var(--danger)" : "var(--coral)", grocery.over > 0 ? "rgba(200,112,112,.1)" : "rgba(224,136,112,.1)")}>
@@ -567,7 +574,9 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
                 {rest && (
                   <span role="button" onClick={() => { if (touchMoved()) return; setRestOpen(true); }}
                     style={heroPill(rest.perDay >= 0 ? "#5cc8c0" : "var(--danger)", rest.perDay >= 0 ? "rgba(92,200,192,.12)" : "rgba(200,112,112,.1)")}>
-                    💶 {fmt(rest.perDay)}/jour {rest.payday ? "jusqu'à la paie" : "jusqu'à fin du mois"}
+                    💶 {awaitingPay.length > 0 && rest.payday && rest.payday <= todayISO()
+                      ? `${fmt(rest.available)} dispo d'ici la paie`
+                      : `${fmt(rest.perDay)}/jour ${rest.payday ? "jusqu'à la paie" : "jusqu'à fin du mois"}`}
                   </span>
                 )}
                 {reimbs.length > 0 && (
@@ -863,6 +872,22 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
       )}
       {surplusSheet && surplus && <SurplusSheet surplus={surplus} onClose={() => setSurplusSheet(false)} />}
 
+      {/* ── 💰 Paie pas encore pointée (v1.80.0) : non comptée dans le solde tant qu'elle n'est pas pointée ── */}
+      {awaitingPay.map(({ f, ym, date, signed: v }) => (
+        <div key={f.id + ym} data-testid="card-awaiting-pay" style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 7px", padding: "10px 12px", borderRadius: 16,
+          background: "rgba(200,184,96,.08)", border: "1px solid rgba(200,184,96,.4)" }}>
+          <span style={{ fontSize: "1.1rem" }}>💰</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: ".7rem", fontWeight: 800, color: "var(--warning)" }}>Paie pas encore pointée</div>
+            <div style={{ fontSize: ".58rem", color: "var(--text2)", marginTop: 2 }}>
+              {f.name}{date ? ` · prévue le ${parseInt(date.slice(8, 10), 10)}/${date.slice(5, 7)}` : ""} · ≈ {fmt(v)} · non comptée dans le solde
+            </div>
+          </div>
+          <button data-testid="point-pay" onClick={() => { if (touchMoved()) return; onTogglePointIncome?.(f.id, ym); }}
+            style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid var(--success)", background: "rgba(104,212,152,.14)", color: "var(--success)", fontSize: ".66rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Pointer</button>
+        </div>
+      ))}
+
       {/* ── 🧾 Chèques non encaissés (v1.43.0) — n'apparaît que s'il y en a ── */}
       {(() => {
         const pend = pendingCheques(transactions);
@@ -958,7 +983,7 @@ export function AccueilView({ data, onOpenPatrimoine, onOpenReimbursement, onOpe
             </div>
             <div style={{ fontSize: ".56rem", color: "var(--text3)", marginTop: 10, lineHeight: 1.6 }}>
               <span style={{ color: "var(--chq)" }}>■</span> moins de 30 j · <span style={{ color: "var(--warning)" }}>■</span> 30 j à 3 mois · <span style={{ color: "var(--danger)" }}>■</span> plus de 3 mois.<br/>
-              Un chèque n'est plus encaissable 1 an et 8 jours après son émission. Pointer un chèque dans l'Historique l'encaisse à la date du jour.
+              Un chèque n'est plus encaissable 1 an et 8 jours après son émission. Pointer un chèque dans l'Historique te demande sa date d'encaissement.
             </div>
           </Modal>
         );

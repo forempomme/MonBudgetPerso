@@ -250,6 +250,10 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const [eveningHour,   setEveningHour]   = useState(notifSettings.eveningHour ?? 21);
   const [eveningDays,   setEveningDays]   = useState(notifSettings.eveningDays || "all");
   const [notifReimb,    setNotifReimb]    = useState(notifSettings.reimbursements ?? true);
+  // v1.80.0 : paie non pointée
+  const [notifPay,      setNotifPay]      = useState(notifSettings.payUnpointed ?? true);
+  const [payHour,       setPayHour]       = useState(notifSettings.payHour ?? 20);
+  const [payDays,       setPayDays]       = useState(notifSettings.payDays ?? 3);
 
   function saveNotif(field, val) {
     const next = { enabled:notifOn, recurring:notifRecurring, autoSaving:notifAuto, alertSolde:notifAlert, scheduled:notifSched, backup:notifBackup, cheques:notifCheques, chequeDelay, [field]:val };
@@ -1054,6 +1058,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
               ["backup",     notifBackup,    setNotifBackup,    "💾", "Rappel sauvegarde",         "Si aucune sauvegarde depuis 7 jours"],
               ["cheques",    notifCheques,   setNotifCheques,   "🧾", "Chèques non encaissés",     `Tous les ${chequeDelay} jours, et 1 mois avant péremption`],
               ["reimbursements", notifReimb, setNotifReimb,     "↩️", "Remboursements en retard",  "15 jours après la date prévue, s'il n'est pas reçu"],
+              ["payUnpointed", notifPay,     setNotifPay,       "💰", "Paie non pointée",          `À ${payHour} h le jour prévu${payDays > 1 ? `, puis ${payDays - 1} soir${payDays > 2 ? "s" : ""} de plus` : ""}, tant qu'elle n'est pas pointée`],
               ["evening",    notifEvening,   setNotifEvening,   "🌙", "Rappel du soir",            "Seulement si rien n'a été saisi ce jour-là"],
             ].map(([key, val, setter, ico, lbl, desc]) => (
               <div key={key} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
@@ -1091,6 +1096,29 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                   ))}
                 </div>
                 <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.4 }}>Les 7 prochains soirs sont programmés ; celui du jour est annulé dès qu'une opération est saisie. Sans ouvrir l'app pendant 7 jours, les rappels s'arrêtent.</div>
+              </div>
+            )}
+            {notifPay && (
+              <div data-testid="pay-notif-settings" style={{ marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
+                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>💰 Heure</span>
+                  {[19, 20, 21, 22].map(h => (
+                    <button key={h} data-pay-hour={h} onClick={() => { setPayHour(h); saveNotif("payHour", h); }} style={{
+                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+                      border:`1px solid ${payHour===h ? "var(--accent)" : "var(--border)"}`, color: payHour===h ? "var(--accent)" : "var(--text2)",
+                      background: payHour===h ? "var(--accent-glow)" : "transparent" }}>{h} h</button>
+                  ))}
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1, minWidth:90 }}>Rappels</span>
+                  {[[1,"Le jour même"],[2,"2 soirs"],[3,"3 soirs"],[5,"5 soirs"]].map(([n,l]) => (
+                    <button key={n} data-pay-days={n} onClick={() => { setPayDays(n); saveNotif("payDays", n); }} style={{
+                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+                      border:`1px solid ${payDays===n ? "var(--accent)" : "var(--border)"}`, color: payDays===n ? "var(--accent)" : "var(--text2)",
+                      background: payDays===n ? "var(--accent-glow)" : "transparent" }}>{l}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.4 }}>La paie n'est comptée dans le solde estimé qu'une fois pointée. Aucun rappel si elle est pointée avant l'heure. Toucher la notification ouvre le pointage (montant réel et date).</div>
               </div>
             )}
             {notifCheques && (

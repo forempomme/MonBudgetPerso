@@ -74,15 +74,15 @@ const monthName = ym => new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1).toLoca
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Budget courses (v1.46.0) — affiché SOUS le total : information seulement, jamais déduite */
-function GrocerySection({ grocery: g, total, categories, open, onToggle }) {
+function GrocerySection({ grocery: g, total, categories, open, onToggle, noHeader = false }) {
   const catLbl = g.catIds.map(id => categories.find(c => c.id === id)?.name).filter(Boolean).join(", ");
   const pct = g.average > 0 ? Math.min(100, (g.spent / g.average) * 100) : 100;
   const isOver = g.over > 0;
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: ".58rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)", margin: "0 0 6px 2px" }}>
+    <div style={{ marginTop: noHeader ? 0 : 12 }}>
+      {!noHeader && <div style={{ fontSize: ".58rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)", margin: "0 0 6px 2px" }}>
         Pour information · non déduit
-      </div>
+      </div>}
       <Line icon="🛒" title="Courses restantes ce mois"
         sub={isOver ? "Moyenne déjà dépassée ce mois" : g.remaining > 0 ? `Estimation · ${g.months.length > 1 ? `${g.months.length} derniers mois` : "dernier mois"} + ${monthName(g.curYM)} au prorata` : "Moyenne atteinte ce mois"}
         value={-g.remaining} color={isOver ? "var(--danger)" : "var(--coral)"} open={open} onToggle={onToggle}>
@@ -139,6 +139,7 @@ export function BalanceBreakdownSheet({ breakdown, grocery = null, categories = 
   const tg = k => setOpen(o => ({ ...o, [k]: !o[k] }));
   const { pointed, pending, recurring, scheduled, total } = breakdown;
   const reimb = breakdown.reimbursements || { total: 0, items: [] };   // v1.69.0
+  const awaiting = breakdown.awaitingPay || { total: 0, items: [] };   // v1.80.0
   const today = todayISO();
   const catOf = id => categories.find(c => c.id === id);
   const nPending = pending.cheques.items.length + pending.others.items.length + pending.fixes.items.length + pending.incomes.items.length;
@@ -224,7 +225,19 @@ export function BalanceBreakdownSheet({ breakdown, grocery = null, categories = 
           <span style={{ fontSize: ".78rem", fontWeight: 800 }}>= Solde bancaire estimé</span>
           <span style={{ fontSize: "1.25rem", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: total < 0 ? "var(--danger)" : "var(--text)" }}>{fmt(total)}</span>
         </div>
-        {grocery && <GrocerySection grocery={grocery} total={total} categories={categories} open={open.g} onToggle={() => tg("g")} />}
+        {/* v1.80.0 : paie due mais pas pointée → affichée, jamais comptée */}
+        {awaiting.items.length > 0 && <>
+          <div style={{ fontSize: ".58rem", fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text3)", margin: "12px 0 6px 2px" }}>
+            Pour information · non compté
+          </div>
+          <div data-testid="bd-awaiting-pay">
+            <Line icon="💰" title="Paie attendue" sub="Comptée dès que tu la pointes" value={awaiting.total} color="var(--warning)" open={open.ap} onToggle={() => tg("ap")}>
+              {awaiting.items.map(({ f, ym, date, signed: v }) =>
+                <DetailRow key={f.id + ym} value={v} label={`${catOf(f.categoryId)?.icon || "💼"} ${f.name}${date ? ` · prévue le ${ddmm(date)}` : ` (${ymLbl(ym)})`}`} />)}
+            </Line>
+          </div>
+        </>}
+        {grocery && <GrocerySection grocery={grocery} total={total} categories={categories} open={open.g} onToggle={() => tg("g")} noHeader={awaiting.items.length > 0} />}
 
         <div style={{ fontSize: ".62rem", color: "var(--text3)", lineHeight: 1.5, marginTop: 10, padding: "8px 10px", borderRadius: 9, background: "var(--surface2)" }}>
           ℹ️ Les frais fixes non pointés sont déjà dans « En attente » : ils ne sont <b style={{ color: "var(--text2)" }}>jamais comptés deux fois</b>.

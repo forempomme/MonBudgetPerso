@@ -203,7 +203,10 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
   // Sans `today` : aujourd'hui pour le mois en cours, fin de mois pour un mois passé.
   const asOf = today || (curYM === currentYM() ? todayISO() : `${curYM}-31`);
   let ptInc = 0, ptExp = 0, noPtInc = 0, noPtExp = 0;
-  const pendingTx = [], pendingFixes = [], pendingIncomes = [], futureIncomes = [];
+  const pendingTx = [], pendingFixes = [], pendingIncomes = [], futureIncomes = [], awaitingPay = [];
+  // v1.80.0 : la PAIE (revenu fixe principal) n'entre dans le solde qu'une fois pointée,
+  // même si sa date prévue est passée (la date peut être fausse d'un jour ou deux).
+  const payId = mainPayIncome({ fixedIncomes })?.id || null;
 
   transactions.filter(t => isPointable(t.type)).forEach(t => {
     const a = parseFloat(t.amount) || 0;
@@ -242,6 +245,7 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
       if (f.pointedMonths?.[ym]) { ptInc += a; nbPtInc++; return; }
       const date = fixedCashDateISO(f, ym);
       if (date && date > asOf) { totalInc--; futureIncomes.push({ f, ym, date, signed: a }); return; }
+      if (f.id === payId) { awaitingPay.push({ f, ym, date, signed: a }); return; }   // à pointer, non compté
       noPtInc += a; pendingIncomes.push({ f, ym, signed: a });
     });
   });
@@ -254,7 +258,7 @@ export function computeReconciliation(transactions, fixedExpenses, fixedIncomes,
     soldeAttente:   noPtInc - noPtExp,
     nbPointed:      nbPtTx + nbPtFix + nbPtInc,
     totalPointable: pointableTxs.length + totalFix + totalInc,
-    pendingTx, pendingFixes, pendingIncomes, futureIncomes,
+    pendingTx, pendingFixes, pendingIncomes, futureIncomes, awaitingPay,
   };
 }
 
@@ -328,6 +332,7 @@ export function computeBalanceBreakdown(transactions, fixedExpenses, fixedIncome
       incomes: { total: sum(rec.pendingIncomes), items: rec.pendingIncomes },
     },
     futureIncomes: { total: sum(rec.futureIncomes), items: rec.futureIncomes },   // v1.65.0 : pas encore dans le solde
+    awaitingPay:   { total: sum(rec.awaitingPay),   items: rec.awaitingPay },     // v1.80.0 : paie due, non pointée → non comptée
     recurring: { total: sum(recurring), items: recurring },
     scheduled: { total: sum(scheduled), items: scheduled },
     reimbursements: { total: sum(expected), items: expected },
@@ -935,11 +940,15 @@ export function nextPayday(data, today = todayISO()) {
   const main = mainPayIncome(data);
   if (!main) return null;
   // v1.64.0 : occurrences par date réelle de versement (revenu compté le mois suivant compris)
-  for (let i = 0; i <= 3; i++) {
+  // v1.80.0 : une paie dont la date est passée (≤ 31 j) mais pas encore pointée reste
+  // « la prochaine paie » : attendue aujourd'hui (overdue), elle n'est pas dans le solde.
+  for (let i = -1; i <= 3; i++) {
     const ym = fixedOccurrenceYM(main, ymAdd(curYM, i));
     if (!isActiveForMonth(main, ym) || main.pointedMonths?.[ym]) continue;
     const d = fixedCashDateISO(main, ym);
+    if (!d) continue;
     if (d > today) return { date: d, income: main, ym };
+    if (daysBetweenISO(d, today) <= 31) return { date: today, expected: d, income: main, ym, overdue: true };
   }
   return null;
 }
@@ -978,6 +987,10 @@ export function pendingEventsThisMonth(data, breakdown, today = todayISO()) {
     // v1.65.0 : un revenu daté après aujourd'hui n'est PAS dans le solde estimé → rien à retirer
     ev(d, a, f.name, "inc", { icon: cats.find(c => c.id === f.categoryId)?.icon || "💰", id: f.id, occYM: ym });
   });
+  // v1.80.0 : paie due mais pas pointée → pas dans le solde estimé ; attendue aujourd'hui
+  const late = nextPayday(data, today);
+  if (late?.overdue) ev(today, fixedAmountFor(late.income, late.ym), late.income.name, "inc",
+    { icon: cats.find(c => c.id === late.income.categoryId)?.icon || "💰", id: late.income.id, occYM: late.ym, overdue: true });
   (breakdown?.recurring?.items || []).forEach(({ tpl, signed, day }) => {
     if (!day || tpl.frequency === "yearly") return;
     const d = dayInMonthISO(day, curYM); if (d <= today) return;
@@ -1699,4 +1712,50 @@ export function computePatrimoine(data, currentBalance, n = 12, endYM = currentY
     out.push({ ym, account: r2(account), cag: r2(Math.max(0, cag)), total: r2(account + Math.max(0, cag)) });
   }
   return out;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.80.0 — Contrôle au pointage d'une opération (Historique)
+//  Appelé AVANT de pointer, sur l'état courant. Retourne le premier point à
+//  vérifier, ou null. Le chèque se règle avant de pointer (date d'encaissement) ;
+//  les autres s'affichent juste après, sans jamais bloquer le pointage.
+//   cheque         : chèque → encaissé quand ?
+//   reimbPending   : dépense dont le remboursement n'est pas encore reçu
+//   reimbUnpointed : remboursement reçu mais pas pointé
+//   origUnpointed  : on pointe le remboursement, la dépense d'origine ne l'est pas
+//   dup            : une opération identique (montant, type, catégorie, ±3 j) est déjà pointée
+// ─────────────────────────────────────────────────────────────────
+const _cents = v => Math.round((parseFloat(v) || 0) * 100);
+export function reimbLinkCandidates(data, r, today = todayISO()) {
+  const txs = data.transactions || [];
+  const linked = new Set((data.reimbursements || []).map(x => x.receivedTxId).filter(Boolean));
+  const src = txs.find(t => t.id === r.txId);
+  const from = src?.date || r.createdAt || "0000";
+  return txs.filter(t => t.type === "income" && !linked.has(t.id) && _cents(t.amount) === _cents(r.amount)
+      && (t.date || "") >= from && (t.date || "") <= today)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
+}
+export function pointCheck(data, id, today = todayISO()) {
+  const txs = data.transactions || [];
+  const t = txs.find(x => x.id === id);
+  if (!t || t.pointed || !isPointable(t.type)) return null;
+  if (t.paymentMethod === "cheque") return { kind: "cheque", t };
+  const reimbs = data.reimbursements || [];
+  const byId = new Map(txs.map(x => [x.id, x]));
+  const own = reimbs.filter(r => r.txId === t.id);
+  const pend = own.find(r => r.status !== "received");
+  if (pend) return { kind: "reimbPending", t, r: pend, candidates: reimbLinkCandidates(data, pend, today) };
+  const recv = own.map(r => ({ r, inc: byId.get(r.receivedTxId) })).find(x => x.inc && !x.inc.pointed);
+  if (recv) return { kind: "reimbUnpointed", t, r: recv.r, other: recv.inc };
+  const back = reimbs.find(r => r.receivedTxId === t.id && r.txId);
+  const orig = back ? byId.get(back.txId) : null;
+  if (orig && !orig.pointed && isPointable(orig.type)) return { kind: "origUnpointed", t, r: back, other: orig };
+  if ((t.type === "expense" || t.type === "income") && !t.isRounding && _cents(t.amount) > 0 && t.date) {
+    const ign = new Set(data.dupIgnored || []);
+    const other = txs.find(o => o.id !== t.id && o.pointed && o.type === t.type && !o.isRounding
+      && (o.categoryId || "") === (t.categoryId || "") && _cents(o.amount) === _cents(t.amount)
+      && o.date && Math.abs(daysBetweenISO(o.date, t.date)) <= 3 && !ign.has(dupKey([o, t])));
+    if (other) return { kind: "dup", t, other };
+  }
+  return null;
 }

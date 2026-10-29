@@ -1,9 +1,10 @@
 import { useReducer, useEffect, useState, useCallback, useRef, useMemo } from "react";
 import "./styles.css";
 import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
-import { LS_KEY, uid, fmt, setPrivacy, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES } from "./utils.js";
+import { LS_KEY, uid, fmt, setPrivacy, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES, fixedOccurrenceYM, isActiveForMonth } from "./utils.js";
 import { PatrimoineSheet } from "./views/PatrimoineSheet.jsx";
-import { useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
+import { PointCheckModal } from "./views/PointCheckModal.jsx";
+import { pointCheck, useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
@@ -79,6 +80,42 @@ function eveningReminders(ns, data, now) {
     const jour = at.toLocaleDateString("fr-FR", { weekday: "long" });
     out.push({ id: 900 + i, title: "🌙 Une dépense aujourd'hui ?", body: `Rien n'a été saisi ce ${jour}. Un petit tap pour garder ton solde juste.`,
       schedule: { at, allowWhileIdle: true }, channelId: "budget", actionTypeId: "EVENING", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" });
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.80.0 — Paie non pointée : le soir du jour prévu (20 h par défaut), puis les
+//  soirs suivants (3 par défaut) tant qu'elle n'est pas pointée — la date prévue
+//  peut être fausse d'un jour ou deux. Ids 950–959. Toucher → fenêtre de pointage.
+// ─────────────────────────────────────────────────────────────────
+export function payReminders(ns, data, now) {
+  if (!ns?.enabled || ns.payUnpointed === false) return [];
+  const main = mainPayIncome(data);
+  if (!main) return [];
+  const hour = Math.min(23, Math.max(0, parseInt(ns.payHour, 10) || 20));
+  const nDays = Math.min(7, Math.max(1, parseInt(ns.payDays, 10) || 3));
+  const fmtAmt = n => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(n)) + " €";
+  const p2 = n => String(n).padStart(2, "0");
+  const out = [];
+  for (let i = -1; i <= 1 && out.length < 10; i++) {
+    const b = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    const ym = fixedOccurrenceYM(main, `${b.getFullYear()}-${p2(b.getMonth() + 1)}`);
+    if (!isActiveForMonth(main, ym) || main.pointedMonths?.[ym]) continue;
+    const date = fixedCashDateISO(main, ym);
+    if (!date) continue;
+    const [y, m, d] = date.split("-").map(Number);
+    const amt = fmtAmt(fixedAmountFor(main, ym));
+    for (let k = 0; k < nDays && out.length < 10; k++) {
+      const at = new Date(y, m - 1, d + k, hour, 0, 0);
+      if (at <= now) continue;
+      out.push({ id: 950 + out.length,
+        title: k === 0 ? "💰 Ta paie est arrivée ?" : "💰 Paie toujours pas pointée",
+        body: k === 0 ? `${main.name} prévu aujourd'hui (≈ ${amt}) pas encore pointé : il n'est pas compté dans ton solde. Touche pour le pointer.`
+                      : `${main.name} prévu le ${p2(d)}/${p2(m)} (≈ ${amt}). Arrivé aujourd'hui ? Touche pour le pointer.`,
+        schedule: { at, allowWhileIdle: true }, channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0",
+        extra: { payId: main.id, ym } });
+    }
   }
   return out;
 }
@@ -341,6 +378,7 @@ export default function App() {
       }
       // v1.48.0 : rappel du soir (7 prochains soirs, sauf ceux où une opération existe déjà)
       eveningReminders(ns, data, now).forEach(n => pending.push(n));
+      payReminders(ns, data, now).forEach(n => pending.push(n));   // v1.80.0
       // v1.74.1 : le test vérifie séparément l'affichage (notification immédiate, sans alarme)
       // et la programmation (alarme dans 1 minute) — avant, un seul test à +5 s via une
       // alarme « non exacte » pouvait arriver plusieurs minutes plus tard, ou pas du tout.
@@ -363,7 +401,7 @@ export default function App() {
   // addToast est défini plus bas mais stable (useCallback sans dépendance) :
   // il est lu au moment de l'appel, jamais au rendu — pas dans les deps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold, data.transactions, data.reimbursements, data.notifSettings, data.offAccountEntries]);
+  }, [data.fixedIncomes, data.recurringTemplates, data.autoSavings, data.scheduledTransactions, data.lastBackupDate, data.cagnottes, currentBalance, data.alertEnabled, data.alertThreshold, data.transactions, data.reimbursements, data.notifSettings, data.offAccountEntries]);
 
   // ── Rappel du soir (v1.48.0) : reprogrammé à chaque saisie, pour annuler
   // celui du jour dès qu'une opération est enregistrée ───────────────
@@ -385,6 +423,24 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.transactions, data.offAccountEntries, data.notifSettings]);
 
+  // v1.80.0 : rappels de paie reprogrammés dès qu'un revenu fixe change (paie pointée →
+  // plus aucun rappel, même sans rouvrir l'appli)
+  useEffect(() => {
+    if (!window?.Capacitor?.isNativePlatform?.()) return;
+    const id = setTimeout(async () => {
+      try {
+        const { LocalNotifications: LN } = await import("@capacitor/local-notifications");
+        const perm = await LN.checkPermissions();
+        if (perm.display !== "granted") return;
+        await LN.cancel({ notifications: Array.from({ length: 10 }, (_, i) => ({ id: 950 + i })) });
+        const list = payReminders(data.notifSettings || {}, data, new Date());
+        if (list.length) await LN.schedule({ notifications: list });
+      } catch (e) { console.warn("pay reminders:", e); }
+    }, 1500);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.fixedIncomes, data.notifSettings]);
+
   // Boutons de la notification du soir : « Saisir » / « Rien aujourd'hui »
   useEffect(() => {
     if (!window?.Capacitor?.isNativePlatform?.()) return;
@@ -399,6 +455,9 @@ export default function App() {
         handle = await LN.addListener("localNotificationActionPerformed", ev => {
           const nid = ev?.notification?.id;
           if (nid >= 900 && nid <= 906 && ev.actionId !== "none") setTransModal({ editingId: null, defaultType: "expense" });
+          // v1.80.0 : rappel de paie → fenêtre de pointage (montant réel + date)
+          const ex = ev?.notification?.extra;
+          if (nid >= 950 && nid <= 959 && ex?.payId && ex?.ym) setPointIncome({ id: ex.payId, ym: ex.ym });
         });
       } catch (e) { console.warn("notification actions:", e); }
     })();
@@ -441,7 +500,15 @@ export default function App() {
   const saveSideAmountType     = useCallback(sat  => dispatch({ type: A.SAVE_SIDE_AMOUNT_TYPE,   sat }), []);
   const deleteSideAmountType   = useCallback(id   => dispatch({ type: A.DELETE_SIDE_AMOUNT_TYPE, id  }), []);
 
-  const togglePointTx  = useCallback(id => dispatch({ type: A.TOGGLE_POINT_TX,  id }), []);
+  // v1.80.0 : contrôle au pointage — chèque : date d'encaissement AVANT de pointer ;
+  // remboursement / dépense d'origine / doublon : fenêtre juste APRÈS (jamais bloquante)
+  const [pointChk, setPointChk] = useState(null);
+  const togglePointTx  = useCallback(id => {
+    const chk = pointCheck(data, id);
+    if (chk?.kind === "cheque") { setPointChk(chk); return; }
+    dispatch({ type: A.TOGGLE_POINT_TX, id });
+    if (chk) setPointChk(chk);
+  }, [data]);
   const togglePointFix    = useCallback((id, ym) => dispatch({ type: A.TOGGLE_POINT_FIX, id, ym }), []);
   // v1.64.0 : un revenu au montant « automatique » se pointe avec son montant réel
   const [pointIncome, setPointIncome] = useState(null); // null | { id, ym }
@@ -449,7 +516,8 @@ export default function App() {
   const [payRecap, setPayRecap] = useState(null);       // null | { id, ym, amount }
   const togglePointIncome = useCallback((id, ym) => {
     const f = (data.fixedIncomes || []).find(x => x.id === id);
-    if (f?.amountMode === "auto" && !f.pointedMonths?.[ym]) { setPointIncome({ id, ym }); return; }
+    // v1.80.0 : la paie s'ouvre TOUJOURS sur la fenêtre de pointage (montant réel modifiable + date de versement)
+    if (f && !f.pointedMonths?.[ym] && (f.amountMode === "auto" || mainPayIncome(data)?.id === id)) { setPointIncome({ id, ym }); return; }
     dispatch({ type: A.TOGGLE_POINT_INCOME, id, ym });
     if (f && !f.pointedMonths?.[ym] && mainPayIncome(data)?.id === id)
       setPayRecap({ id, ym, amount: fixedAmountFor(f, ym) });
@@ -578,6 +646,7 @@ export default function App() {
     if (importPreview) { setImportPreview(null);  return; }
     if (yearRecap)     { setYearRecap(null);      return; }
     if (patriOpen)     { setPatriOpen(false);     return; }
+    if (pointChk)      { setPointChk(null);       return; }
     if (recapYM)       { closeMonthRecap();       return; }
     if (projectModal)  { setProjectModal(null);   return; }
     if (reimbModal)    { setReimbModal(null);     return; }
@@ -1521,9 +1590,9 @@ export default function App() {
       {pointIncome && (() => {
         const inc = (data.fixedIncomes || []).find(x => x.id === pointIncome.id);
         return inc ? (
-          <PointIncomeModal income={inc} ym={pointIncome.ym} transactions={data.transactions}
-            onConfirm={(amount, exclude) => {
-              dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount, exclude }); setPointIncome(null);
+          <PointIncomeModal income={inc} ym={pointIncome.ym} transactions={data.transactions} isPay={mainPayIncome(data)?.id === inc.id}
+            onConfirm={(amount, exclude, date) => {
+              dispatch({ type: A.POINT_INCOME_AMOUNT, id: inc.id, ym: pointIncome.ym, amount, exclude, date }); setPointIncome(null);
               if (mainPayIncome(data)?.id === inc.id) setPayRecap({ id: inc.id, ym: pointIncome.ym, amount });
               else addToast(`✓ ${inc.name} pointé : ${fmt(amount)}`);
             }}
@@ -1598,6 +1667,19 @@ export default function App() {
           onClose={closeMonthRecap}
           onOpenRapport={() => { closeMonthRecap(); navigateTo("rapport"); }}
           onGoUnpointed={() => { closeMonthRecap(); goToHistoriqueWithFilter("unpointed"); }} />
+      )}
+      {pointChk && (
+        <PointCheckModal check={pointChk} data={data} onClose={() => setPointChk(null)}
+          onCashCheque={(id, date) => { dispatch({ type: A.CASH_CHEQUE, id, date }); setPointChk(null); addToast("🧾 Chèque encaissé et pointé"); }}
+          onReceiveReimb={(id, date, point) => { dispatch({ type: A.RECEIVE_REIMBURSEMENT, id, date, point }); setPointChk(null); addToast(`↩️ Remboursement reçu${point ? " et pointé" : ""}`); }}
+          onLinkReimb={(id, txId, point) => {
+            dispatch({ type: A.LINK_REIMBURSEMENT, id, txId });
+            if (point) dispatch({ type: A.TOGGLE_POINT_TX, id: txId });
+            setPointChk(null); addToast("🔗 Remboursement relié");
+          }}
+          onPointTx={(id, msg) => { dispatch({ type: A.TOGGLE_POINT_TX, id }); setPointChk(null); addToast(msg); }}
+          onDeleteTx={id => { dispatch({ type: A.DELETE_TRANSACTION, id }); setPointChk(null); addToast("🗑 Doublon supprimé", "error"); }}
+          onDismissDup={key => { dispatch({ type: A.DISMISS_DUPLICATE, key }); setPointChk(null); addToast("OK · ce ne sont pas des doublons (mémorisé)"); }} />
       )}
       {patriOpen && <PatrimoineSheet data={data} currentBalance={currentBalance} onClose={() => setPatriOpen(false)} />}
       {yearRecap && (

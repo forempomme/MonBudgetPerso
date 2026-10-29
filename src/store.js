@@ -128,6 +128,7 @@ export const A = /** @type {const} */ ({
   SAVE_REIMBURSEMENT:       "SAVE_REIMBURSEMENT",
   DELETE_REIMBURSEMENT:     "DELETE_REIMBURSEMENT",
   RECEIVE_REIMBURSEMENT:    "RECEIVE_REIMBURSEMENT",
+  LINK_REIMBURSEMENT:       "LINK_REIMBURSEMENT",     // v1.80.0 : relier un revenu déjà saisi
   SAVE_REST_SETTINGS:       "SAVE_REST_SETTINGS",
   DISMISS_INSIGHT:          "DISMISS_INSIGHT",        // v1.50.0
   SAVE_SAVINGS_GOAL:        "SAVE_SAVINGS_GOAL",      // v1.52.0
@@ -259,6 +260,7 @@ export const DEFAULT_DATA = {
     // v1.48.0 : rappel du soir (seulement si rien n'a été saisi ce jour-là)
     evening: false, eveningHour: 21, eveningDays: "all",   // "all" | "week" | "weekend"
     reimbursements: true,             // v1.48.0 : rappel des remboursements en retard
+    payUnpointed: true, payHour: 20, payDays: 3,   // v1.80.0 : paie non pointée (soir du jour prévu + soirs suivants)
   },
 };
 
@@ -383,9 +385,17 @@ export function reducer(state, action) {
       if (!r) return state;
       const src = state.transactions.find(t => t.id === r.txId);
       const income = { id: uid("t"), type: "income", amount: parseFloat(r.amount) || 0, date: action.date || todayISO(),
-        categoryId: src?.categoryId || "", note: `Remboursement ${r.from ? "· " + r.from : ""}${r.note ? " — " + r.note : ""}`.trim(), pointed: false };
+        categoryId: src?.categoryId || "", note: `Remboursement ${r.from ? "· " + r.from : ""}${r.note ? " — " + r.note : ""}`.trim(), pointed: !!action.point };   // v1.80.0 : pointé d'emblée si demandé
       return { ...state, transactions: [...state.transactions, income],
         reimbursements: state.reimbursements.map(x => x.id === r.id ? { ...x, status: "received", receivedTxId: income.id, receivedDate: income.date } : x) };
+    }
+
+    // v1.80.0 : le remboursement est arrivé et a déjà été saisi comme revenu → on le relie
+    case A.LINK_REIMBURSEMENT: {
+      const inc = state.transactions.find(t => t.id === action.txId);
+      if (!inc) return state;
+      return { ...state, reimbursements: (state.reimbursements || []).map(x => x.id === action.id
+        ? { ...x, status: "received", receivedTxId: inc.id, receivedDate: inc.date } : x) };
     }
 
     case A.SAVE_SAVINGS_GOAL: {
@@ -944,11 +954,14 @@ export function reducer(state, action) {
           if (f.id !== action.id) return f;
           const pointedMonths = { ...(f.pointedMonths || {}) };
           pointedMonths[action.ym] = !pointedMonths[action.ym];
+          // v1.80.0 : dépointer oublie la date réelle de versement
+          let paidDates = f.paidDates;
+          if (!pointedMonths[action.ym] && paidDates?.[action.ym]) { paidDates = { ...paidDates }; delete paidDates[action.ym]; }
           // Mode automatique : le montant d'un mois pointé est figé (sinon il suivrait la moyenne)
           const monthlyOverrides = f.amountMode === "auto" && pointedMonths[action.ym] && f.monthlyOverrides?.[action.ym]?.amount == null
             ? { ...(f.monthlyOverrides || {}), [action.ym]: { ...(f.monthlyOverrides?.[action.ym] || {}), amount: f.amount } }
             : f.monthlyOverrides;
-          return withAutoAmount({ ...f, pointedMonths, monthlyOverrides }, state.transactions || []);
+          return withAutoAmount({ ...f, pointedMonths, monthlyOverrides, paidDates }, state.transactions || []);
         }),
       };
 
@@ -963,10 +976,13 @@ export function reducer(state, action) {
           if (amount <= 0) return f;
           const monthlyOverrides = { ...(f.monthlyOverrides || {}), [action.ym]: { ...(f.monthlyOverrides?.[action.ym] || {}), amount } };
           const pointedMonths = { ...(f.pointedMonths || {}), [action.ym]: true };
+          // v1.80.0 : date réelle de versement (la paie peut arriver un autre jour que prévu)
+          const paidDates = { ...(f.paidDates || {}) };
+          if (action.date) paidDates[action.ym] = action.date; else delete paidDates[action.ym];
           // v1.67.0 : mois exceptionnel (congé, prime…) → exclu de la moyenne du montant prévu
           const avgExcluded = { ...(f.avgExcluded || {}) };
           if (action.exclude) avgExcluded[action.ym] = true; else delete avgExcluded[action.ym];
-          return withAutoAmount({ ...f, monthlyOverrides, pointedMonths, avgExcluded }, state.transactions || []);
+          return withAutoAmount({ ...f, monthlyOverrides, pointedMonths, avgExcluded, paidDates }, state.transactions || []);
         }),
       };
 
