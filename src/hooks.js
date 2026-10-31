@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO, isActiveForMonth, fixedAmountFor } from "./utils.js";
+import { currentYM, isIncome, recurringRefDate, chequeExpiryISO, daysBetweenISO, todayISO, getPrevMonth, DEFAULT_CAG_TYPES, resolveFixedDay, fixedOccurrenceYM, fixedCashDateISO, isActiveForMonth, fixedAmountFor, isBusinessDay, isBankCreditDay } from "./utils.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  Helper : montant effectif des frais fixes pour un mois donné
@@ -1758,4 +1758,100 @@ export function pointCheck(data, id, today = todayISO()) {
     if (other) return { kind: "dup", t, other };
   }
   return null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.81.0 — Versements automatiques
+//  Un plan : { id, cagnotteId, amount, enabled,
+//    mode: "day" (défaut) | "pay",
+//    dayOfMonth, shiftBD  (jour fixe ; décalé au jour ouvré suivant si week-end/férié),
+//    afterPay 0–3         (après la paie : N jours de virement mar.–ven. après la date de la paie),
+//    endYM "YYYY-MM"|null (dernier mois inclus), startKey (1ʳᵉ occurrence), skipped { [key]: true },
+//    lastAppliedYm        (ancien suivi, toujours respecté) }
+//  Une occurrence est repérée par sa CLÉ = le mois du plan (jour fixe : mois du
+//  versement ; après la paie : mois de VERSEMENT de la paie, le virement pouvant
+//  tomber au début du mois suivant).
+// ─────────────────────────────────────────────────────────────────
+export function autoSavingDate(plan, key, data) {
+  if (plan.mode === "pay") {
+    const main = mainPayIncome(data);
+    if (!main) return null;
+    let d = fixedCashDateISO(main, fixedOccurrenceYM(main, key));
+    if (!d) return null;
+    let n = Math.max(0, Math.min(3, parseInt(plan.afterPay, 10) || 0));
+    while (n > 0) { d = addDaysISO(d, 1); if (isBankCreditDay(d)) n--; }
+    return d;
+  }
+  const day = Math.max(1, Math.min(31, parseInt(plan.dayOfMonth, 10) || 1));
+  let d = `${key}-${pad2(Math.min(day, lastDayOf(key)))}`;
+  if (plan.shiftBD) { let k = 0; while (!isBusinessDay(d) && k++ < 10) d = addDaysISO(d, 1); }
+  return d;
+}
+/** L'occurrence `key` du plan a-t-elle déjà été créée (ou passée) ? */
+export function autoSavingDone(plan, key, transactions) {
+  if (plan.skipped?.[key]) return true;
+  if (plan.lastAppliedYm && plan.lastAppliedYm >= key) return true;
+  if (!plan.id) return false;   // brouillon pas encore enregistré
+  return (transactions || []).some(t => t.autoSavingId === plan.id && (t.autoSavingKey ? t.autoSavingKey === key : (t.date || "").startsWith(key)));
+}
+/** Occurrence active pour cette clé (début, fin, plan actif) ? */
+export function autoSavingInRange(plan, key) {
+  if (plan.startKey && key < plan.startKey) return false;
+  if (plan.endYM && key > plan.endYM) return false;
+  return true;
+}
+/** Occurrences arrivées à échéance (date ≤ aujourd'hui) pas encore créées → à créer */
+export function dueAutoSavings(data, today = todayISO()) {
+  const cur = today.slice(0, 7), out = [];
+  (data.autoSavings || []).forEach(plan => {
+    if (!plan.enabled || !(parseFloat(plan.amount) > 0)) return;
+    if (!(data.cagnottes || []).some(c => c.id === plan.cagnotteId)) return;
+    [ymAdd(cur, -1), cur].forEach(key => {
+      if (!autoSavingInRange(plan, key) || autoSavingDone(plan, key, data.transactions)) return;
+      const date = autoSavingDate(plan, key, data);
+      if (date && date <= today) out.push({ plan, key, date });
+    });
+  });
+  return out;
+}
+/** Prochaines occurrences d'un plan à partir d'aujourd'hui (aperçu, liste, notifications) */
+export function nextAutoSavings(plan, data, n = 3, today = todayISO()) {
+  const out = [];
+  for (let i = -1; out.length < n && i < 24; i++) {
+    const key = ymAdd(today.slice(0, 7), i);
+    if (!autoSavingInRange(plan, key)) { if (plan.endYM && key > plan.endYM) break; continue; }
+    if (autoSavingDone(plan, key, data.transactions)) continue;
+    const date = autoSavingDate(plan, key, data);
+    if (date && date >= today) out.push({ key, date });
+  }
+  return out;
+}
+/** 1ʳᵉ clé d'un nouveau plan : la 1ʳᵉ occurrence dont la date n'est pas passée */
+export function firstAutoSavingKey(plan, data, today = todayISO()) {
+  for (let i = -1; i < 3; i++) {
+    const key = ymAdd(today.slice(0, 7), i);
+    const d = autoSavingDate(plan, key, data);
+    if (d && d >= today) return key;
+  }
+  return today.slice(0, 7);
+}
+/** Plan terminé : sa date de fin est passée et plus aucune occurrence à venir */
+export function autoSavingFinished(plan, data, today = todayISO()) {
+  return !!plan.endYM && nextAutoSavings(plan, data, 1, today).length === 0 && plan.endYM < today.slice(0, 7);
+}
+/** Nombre d'occurrences de startKey (ou du mois courant) à endYM inclus */
+export function autoSavingCount(plan, today = todayISO()) {
+  if (!plan.endYM) return null;
+  const from = plan.startKey || today.slice(0, 7);
+  const [y1, m1] = from.split("-").map(Number), [y2, m2] = plan.endYM.split("-").map(Number);
+  return Math.max(0, (y2 - y1) * 12 + m2 - m1 + 1);
+}
+/** Versements auto / programmées arrivés à échéance mais pas encore pointés (À traiter) */
+export function unpointedDueOps(data, today = todayISO()) {
+  const txs = data.transactions || [];
+  const from = addDaysISO(today, -45);
+  return {
+    autoSavings: txs.filter(t => t.isAutoSaving && !t.pointed && (t.date || "") <= today && (t.date || "") >= from).sort((a, b) => a.date.localeCompare(b.date)),
+    scheduled:   txs.filter(t => t.fromScheduled && !t.pointed && (t.date || "") <= today && (t.date || "") >= from).sort((a, b) => a.date.localeCompare(b.date)),
+  };
 }

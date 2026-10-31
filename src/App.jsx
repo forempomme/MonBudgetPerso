@@ -4,7 +4,8 @@ import { reducer, DEFAULT_DATA, A, normalizeData } from "./store.js";
 import { LS_KEY, uid, fmt, setPrivacy, todayISO, APP_NAME, APP_VERSION, currentYM, getPrevMonth, recurringRefDate, chequeExpiryISO, fixedCashYM, fixedCashDateISO, MONTHS_SHORT, fixedAmountFor, DEFAULT_CAG_TYPES, fixedOccurrenceYM, isActiveForMonth } from "./utils.js";
 import { PatrimoineSheet } from "./views/PatrimoineSheet.jsx";
 import { PointCheckModal } from "./views/PointCheckModal.jsx";
-import { pointCheck, useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
+import { AutoSavingPointModal, ScheduledPointModal } from "./views/AutoSavingViews.jsx";
+import { pointCheck, dueAutoSavings, nextAutoSavings, unpointedDueOps, useBalanceWithRecurring, categoryUsage, computeMonthRecap, detectInsights, computePayRecap, mainPayIncome, computeBalanceBreakdown, computeProjection, computeYearRecap } from "./hooks.js";
 import { PayRecapSheet } from "./views/PayRecapSheet.jsx";
 import { YearRecapSheet } from "./views/YearRecapSheet.jsx";
 import { MonthRecapSheet } from "./views/MonthRecapSheet.jsx";
@@ -65,7 +66,7 @@ function loadState() {
 // ─────────────────────────────────────────────────────────────────
 function eveningReminders(ns, data, now) {
   if (!ns?.enabled || !ns.evening) return [];
-  const hour = Math.min(23, Math.max(0, parseInt(ns.eveningHour, 10) || 21));
+  const hour = nightHourOf(ns);   // v1.81.0 : heure commune des rappels du soir
   const days = ns.eveningDays || "all";
   const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const used = new Set([...(data.transactions || []), ...(data.offAccountEntries || [])].map(t => t.date));
@@ -93,7 +94,7 @@ export function payReminders(ns, data, now) {
   if (!ns?.enabled || ns.payUnpointed === false) return [];
   const main = mainPayIncome(data);
   if (!main) return [];
-  const hour = Math.min(23, Math.max(0, parseInt(ns.payHour, 10) || 20));
+  const hour = nightHourOf(ns);   // v1.81.0 : heure commune des rappels du soir
   const nDays = Math.min(7, Math.max(1, parseInt(ns.payDays, 10) || 3));
   const fmtAmt = n => new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(Math.abs(n)) + " €";
   const p2 = n => String(n).padStart(2, "0");
@@ -119,6 +120,58 @@ export function payReminders(ns, data, now) {
   }
   return out;
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  v1.81.0 — Rappels du soir : UNE heure commune (ns.nightHour, 20 h par défaut)
+//  pour la paie, les versements auto, les programmées et « rien saisi ».
+//  Versement / programmée : le soir du jour prévu s'ils ne sont pas pointés.
+//  Ids : paie 950–959, versements 960–969, programmées 970–979.
+// ─────────────────────────────────────────────────────────────────
+export function nightHourOf(ns) { return Math.min(23, Math.max(0, parseInt(ns?.nightHour, 10) || 20)); }
+export function opsNightReminders(ns, data, now) {
+  if (!ns?.enabled) return [];
+  const hour = nightHourOf(ns);
+  const p2 = n => String(n).padStart(2, "0");
+  const iso = d => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+  const today = iso(now);
+  const fmtAmt = n => new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(n)) + " €";
+  const atOf = date => { const [y, m, d] = date.split("-").map(Number); return new Date(y, m - 1, d, hour, 0, 0); };
+  const base = { channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0" };
+  const out = [];
+  const txs = data.transactions || [];
+  if (ns.nightAutoSaving !== false) {
+    const items = [];
+    // déjà créés, pas pointés, prévus aujourd'hui ou plus tard
+    txs.filter(t => t.isAutoSaving && !t.pointed && t.date >= today).forEach(t => items.push({ planId: t.autoSavingId, key: t.autoSavingKey || t.date.slice(0, 7), date: t.date, amount: t.amount, cagId: t.targetCagId }));
+    // à venir (créés le jour J)
+    (data.autoSavings || []).filter(p => p.enabled).forEach(p => nextAutoSavings(p, data, 2, today).forEach(n => {
+      if (!items.some(x => x.planId === p.id && x.key === n.key)) items.push({ planId: p.id, key: n.key, date: n.date, amount: p.amount, cagId: p.cagnotteId });
+    }));
+    let n = 0;
+    items.sort((a, b) => a.date.localeCompare(b.date)).forEach(x => {
+      const at = atOf(x.date);
+      if (at <= now || n >= 10) return;
+      const cag = (data.cagnottes || []).find(c => c.id === x.cagId);
+      out.push({ ...base, id: 960 + n++, title: "🐷 Versement pas encore pointé", body: `${fmtAmt(x.amount)} → ${cag?.name || "cagnotte"}, prévu aujourd'hui. Vu sur ton relevé ? Touche pour le pointer.`,
+        schedule: { at, allowWhileIdle: true }, extra: { kind: "as", planId: x.planId, key: x.key } });
+    });
+  }
+  if (ns.nightScheduled !== false) {
+    const items = [
+      ...txs.filter(t => t.fromScheduled && !t.pointed && t.date >= today).map(t => ({ ref: t.scheduledId || t.id, date: t.date, amount: t.amount, note: t.note })),
+      ...(data.scheduledTransactions || []).filter(s => !s.confirmed && s.date >= today).map(s => ({ ref: s.id, date: s.date, amount: s.amount, note: s.note })),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+    let n = 0;
+    items.forEach(x => {
+      const at = atOf(x.date);
+      if (at <= now || n >= 10) return;
+      out.push({ ...base, id: 970 + n++, title: "📅 Programmée pas encore pointée", body: `${fmtAmt(x.amount)}${x.note ? " — " + x.note : ""}, prévue aujourd'hui. Vue sur ton relevé ? Touche pour la pointer.`,
+        schedule: { at, allowWhileIdle: true }, extra: { kind: "sch", ref: x.ref } });
+    });
+  }
+  return out;
+}
+export function nightReminders(ns, data, now) { return [...payReminders(ns, data, now), ...opsNightReminders(ns, data, now)]; }
 
 // v1.75.0 : supprime les anciens fichiers de sauvegarde laissés dans le cache
 // de l'appli après un partage (Drive lit le fichier après coup : on ne le
@@ -319,18 +372,29 @@ export default function App() {
       }
       // Prochaine occurrence : ce mois-ci si le jour n'est pas passé, sinon le
       // mois suivant (avant : rien n'était programmé si le jour était passé).
+      // v1.81.0 : le jour J à 9 h, à la vraie date de l'occurrence (jour fixe décalé, après la paie, fin)
       if (ns.autoSaving) {
-        (data.autoSavings||[]).filter(p => p.enabled).forEach((p, i) => {
-          let d = at9(now.getFullYear(), now.getMonth(), p.dayOfMonth);
-          if (d <= now) d = at9(now.getFullYear(), now.getMonth() + 1, p.dayOfMonth);
+        let k = 0;
+        (data.autoSavings||[]).filter(p => p.enabled).forEach(p => {
           const cag = data.cagnottes.find(c => c.id === p.cagnotteId);
-          push(100 + i, "🐷 Versement automatique", `${fmtAmt(p.amount)} → ${cag?.name || "cagnotte"}`, d);
+          nextAutoSavings(p, data, 2).forEach(n => {
+            const [y, m, d] = n.date.split("-").map(Number);
+            const at = new Date(y, m - 1, d, 9, 0, 0);
+            if (at > now && k < 50) pending.push({ id: 100 + k++, title: `🐷 Versement de ${fmtAmt(p.amount)} → ${cag?.name || "cagnotte"}`,
+              body: "Déduit de ton solde estimé dès aujourd'hui. Touche pour le pointer quand il apparaît sur ton relevé.",
+              schedule: { at, allowWhileIdle: true }, channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0", extra: { kind: "as", planId: p.id, key: n.key } });
+          });
         });
       }
+      // Programmées : la veille (désactivable) + v1.81.0 le jour J à 9 h
       if (ns.scheduled) {
-        (data.scheduledTransactions||[]).filter(s => !s.confirmed).forEach((s, i) => {
+        (data.scheduledTransactions||[]).filter(s => !s.confirmed).slice(0, 50).forEach((s, i) => {
           const veille = new Date(new Date(s.date + "T09:00:00").getTime() - 86400000);
-          if (veille > now) push(200 + i, "📅 Dépense prévue demain", `${fmtAmt(s.amount)}${s.note ? " — " + s.note : ""}`, veille);
+          if (ns.scheduledVeille !== false && veille > now) push(200 + i, "📅 Dépense prévue demain", `${fmtAmt(s.amount)}${s.note ? " — " + s.note : ""}`, veille);
+          const jourJ = new Date(s.date + "T09:00:00");
+          if (jourJ > now) pending.push({ id: 250 + i, title: `📅 ${s.note || "Dépense programmée"} · ${fmtAmt(s.amount)} aujourd'hui`,
+            body: "Dépense programmée prévue aujourd'hui. Touche pour la pointer quand elle apparaît sur ton relevé.",
+            schedule: { at: jourJ, allowWhileIdle: true }, channelId: "budget", smallIcon: "ic_stat_notify", iconColor: "#70b8e0", extra: { kind: "sch", ref: s.id } });
         });
       }
       // Sauvegarde : aussi quand il n'y en a JAMAIS eu (avant : aucun rappel).
@@ -378,7 +442,7 @@ export default function App() {
       }
       // v1.48.0 : rappel du soir (7 prochains soirs, sauf ceux où une opération existe déjà)
       eveningReminders(ns, data, now).forEach(n => pending.push(n));
-      payReminders(ns, data, now).forEach(n => pending.push(n));   // v1.80.0
+      nightReminders(ns, data, now).forEach(n => pending.push(n));   // v1.80.0 paie · v1.81.0 versements, programmées
       // v1.74.1 : le test vérifie séparément l'affichage (notification immédiate, sans alarme)
       // et la programmation (alarme dans 1 minute) — avant, un seul test à +5 s via une
       // alarme « non exacte » pouvait arriver plusieurs minutes plus tard, ou pas du tout.
@@ -432,14 +496,14 @@ export default function App() {
         const { LocalNotifications: LN } = await import("@capacitor/local-notifications");
         const perm = await LN.checkPermissions();
         if (perm.display !== "granted") return;
-        await LN.cancel({ notifications: Array.from({ length: 10 }, (_, i) => ({ id: 950 + i })) });
-        const list = payReminders(data.notifSettings || {}, data, new Date());
+        await LN.cancel({ notifications: Array.from({ length: 30 }, (_, i) => ({ id: 950 + i })) });
+        const list = nightReminders(data.notifSettings || {}, data, new Date());
         if (list.length) await LN.schedule({ notifications: list });
       } catch (e) { console.warn("pay reminders:", e); }
     }, 1500);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.fixedIncomes, data.notifSettings]);
+  }, [data.fixedIncomes, data.notifSettings, data.transactions, data.autoSavings, data.scheduledTransactions]);
 
   // Boutons de la notification du soir : « Saisir » / « Rien aujourd'hui »
   useEffect(() => {
@@ -458,6 +522,9 @@ export default function App() {
           // v1.80.0 : rappel de paie → fenêtre de pointage (montant réel + date)
           const ex = ev?.notification?.extra;
           if (nid >= 950 && nid <= 959 && ex?.payId && ex?.ym) setPointIncome({ id: ex.payId, ym: ex.ym });
+          // v1.81.0 : versement auto / programmée → fenêtre de pointage
+          if (ex?.kind === "as" && ex.planId) setAsPoint({ planId: ex.planId, key: ex.key });
+          if (ex?.kind === "sch" && ex.ref) setSchPoint({ ref: ex.ref });
         });
       } catch (e) { console.warn("notification actions:", e); }
     })();
@@ -503,6 +570,9 @@ export default function App() {
   // v1.80.0 : contrôle au pointage — chèque : date d'encaissement AVANT de pointer ;
   // remboursement / dépense d'origine / doublon : fenêtre juste APRÈS (jamais bloquante)
   const [pointChk, setPointChk] = useState(null);
+  // v1.81.0 : pointage d'un versement auto ({ planId, key } | { txId }) / d'une programmée ({ ref })
+  const [asPoint,  setAsPoint]  = useState(null);
+  const [schPoint, setSchPoint] = useState(null);
   const togglePointTx  = useCallback(id => {
     const chk = pointCheck(data, id);
     if (chk?.kind === "cheque") { setPointChk(chk); return; }
@@ -563,38 +633,29 @@ export default function App() {
   // ── App title ────────────────────────────────────────────────
   useEffect(() => { document.title = APP_NAME; }, []);
 
-  // ── Versements automatiques ───────────────────────────────────
-  // Déclenchement au démarrage uniquement (cold start)
+  // ── Versements automatiques + programmées arrivés à échéance ──────
+  // v1.81.0 : plus seulement au démarrage — aussi au retour dans l'appli et
+  // toutes les 15 min (appli restée ouverte) : l'occurrence est créée, datée du
+  // JOUR PRÉVU, dès qu'elle est due ; elle est alors déduite du solde estimé et
+  // reste à pointer. Voir dueAutoSavings (hooks.js).
+  const [dueTick, setDueTick] = useState(0);
   useEffect(() => {
-    const now   = new Date();
-    // ⚠️ Heure LOCALE (pas toISOString UTC) — cohérent avec currentYM() partout dans l'app
-    const ym    = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-    const today = now.getDate();
-    const date  = `${ym}-${String(today).padStart(2,"0")}`;
-
-    (data.autoSavings || []).forEach(plan => {
-      if (!plan.enabled)             return;
-      if (plan.lastAppliedYm === ym) return;
-      if (today < plan.dayOfMonth)   return;
-      // Double-garde : vérifier qu'aucune transaction autoSaving pour ce plan ce mois n'existe déjà
-      // Protège contre un double déclenchement si lastAppliedYm était mal enregistré (bug UTC)
-      const alreadyApplied = (data.transactions || []).some(
-        t => t.isAutoSaving && t.autoSavingId === plan.id && t.date.startsWith(ym)
-      );
-      if (alreadyApplied) return;
-      dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, ym, date });
-    });
-
-    // Confirmation automatique des transactions programmées du mois courant
+    const bump = () => { if (document.visibilityState !== "hidden") setDueTick(t => t + 1); };
+    document.addEventListener("visibilitychange", bump);
+    const iv = setInterval(bump, 15 * 60 * 1000);
+    return () => { document.removeEventListener("visibilitychange", bump); clearInterval(iv); };
+  }, []);
+  useEffect(() => {
+    const today = todayISO();
+    dueAutoSavings(data, today).forEach(({ plan, key, date }) =>
+      dispatch({ type: A.APPLY_AUTO_SAVING, planId: plan.id, key, ym: key, date }));
+    // Programmées : confirmées (créées, datées du jour prévu) dès leur date
     (data.scheduledTransactions || []).forEach(s => {
-      if (s.confirmed) return;
-      if (!s.date.startsWith(ym)) return;
-      const scheduledDay = parseInt(s.date.slice(8), 10);
-      if (today < scheduledDay) return;
+      if (s.confirmed || !s.date || s.date > today) return;
       dispatch({ type: A.CONFIRM_SCHEDULED, id: s.id });
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [dueTick, data.autoSavings, data.fixedIncomes, data.scheduledTransactions]);
 
   // ── Persist to localStorage on every data change ─────────────
   useEffect(() => {
@@ -649,6 +710,8 @@ export default function App() {
     if (yearRecap)     { setYearRecap(null);      return; }
     if (patriOpen)     { setPatriOpen(false);     return; }
     if (pointChk)      { setPointChk(null);       return; }
+    if (asPoint)       { setAsPoint(null);        return; }
+    if (schPoint)      { setSchPoint(null);       return; }
     if (recapYM)       { closeMonthRecap();       return; }
     if (projectModal)  { setProjectModal(null);   return; }
     if (reimbModal)    { setReimbModal(null);     return; }
@@ -1028,6 +1091,7 @@ export default function App() {
   switch (tab) {
   case "accueil": return (
       <AccueilView data={data} onOpenPatrimoine={() => setPatriOpen(true)} onTogglePointTx={togglePointTx}
+        onOpenAutoSavingPoint={txId => setAsPoint({ txId })} onOpenScheduledPoint={txId => setSchPoint({ ref: txId })}
         onOpenReimbursement={r => setReimbModal(r || {})}
         onCashCheque={(id, date) => dispatch({ type: A.CASH_CHEQUE, id, date })}
         onDeleteTrans={deleteTransaction}
@@ -1098,17 +1162,8 @@ export default function App() {
         onOverrideIncomeMonth={overrideIncomeMonth}
         onDeleteRecurring={deleteRecurring}
         onConfirmRecurring={confirmRecurring}
-        onApplyAutoSaving={planId => {
-          const now  = new Date();
-          const ym   = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-          const date = `${ym}-${String(now.getDate()).padStart(2,"0")}`;
-          dispatch({ type: A.APPLY_AUTO_SAVING, planId, ym, date });
-        }}
-        onSkipAutoSaving={planId => {
-          const now = new Date();
-          const ym  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-          dispatch({ type: A.SAVE_AUTO_SAVING, plan: { id: planId, lastAppliedYm: ym } });
-        }}
+        onApplyAutoSaving={(planId, key, date) => dispatch({ type: A.APPLY_AUTO_SAVING, planId, key, ym: key, date })}
+        onSkipAutoSaving={(planId, key) => dispatch({ type: A.SKIP_AUTO_SAVING, planId, key })}
         onConfirmScheduled={id => dispatch({ type: A.CONFIRM_SCHEDULED, id })}
         onDeleteScheduled={id  => dispatch({ type: A.DELETE_SCHEDULED,  id })}
         onMonthChange={(y, m) => setHistYM(p => (p.y === y && p.m === m ? p : { y, m }))}
@@ -1670,6 +1725,21 @@ export default function App() {
           onOpenRapport={() => { closeMonthRecap(); navigateTo("rapport"); }}
           onGoUnpointed={() => { closeMonthRecap(); goToHistoriqueWithFilter("unpointed"); }} />
       )}
+      {asPoint && (() => {
+        const tx = (data.transactions || []).find(t => asPoint.txId ? t.id === asPoint.txId
+          : t.autoSavingId === asPoint.planId && (t.autoSavingKey ? t.autoSavingKey === asPoint.key : (t.date || "").startsWith(asPoint.key)));
+        if (!tx || tx.pointed) return null;
+        return <AutoSavingPointModal tx={tx} data={data} onClose={() => setAsPoint(null)}
+          onPoint={id => { dispatch({ type: A.TOGGLE_POINT_TX, id }); setAsPoint(null); addToast("✓ Versement pointé"); }}
+          onSkip={(planId, key) => { dispatch({ type: A.SKIP_AUTO_SAVING, planId, key }); setAsPoint(null); addToast("Versement du mois annulé"); }} />;
+      })()}
+      {schPoint && (() => {
+        const tx = (data.transactions || []).find(t => t.id === schPoint.ref || (t.fromScheduled && t.scheduledId === schPoint.ref));
+        if (!tx || tx.pointed) return null;
+        return <ScheduledPointModal tx={tx} data={data} onClose={() => setSchPoint(null)}
+          onPointAt={(id, date) => { dispatch({ type: A.POINT_TX_AT, id, date }); setSchPoint(null); addToast("✓ Programmée pointée"); }}
+          onCancel={id => { dispatch({ type: A.DELETE_TRANSACTION, id }); setSchPoint(null); addToast(`Dépense annulée · ${fmt(parseFloat(tx.amount) || 0)} rendus au solde`, "error"); }} />;
+      })()}
       {pointChk && (
         <PointCheckModal check={pointChk} data={data} onClose={() => setPointChk(null)}
           onCashCheque={(id, date) => { dispatch({ type: A.CASH_CHEQUE, id, date }); setPointChk(null); addToast("🧾 Chèque encaissé et pointé"); }}

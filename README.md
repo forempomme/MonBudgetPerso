@@ -3,7 +3,7 @@
 Application Android de gestion de budget personnel, développée en React et packagée via Capacitor.
 Interface entièrement en français, 100 % hors-ligne, sans compte ni serveur.
 
-**Version actuelle : `1.80.2`** — thème *Aube sur Minas Tirith*.
+**Version actuelle : `1.81.0`** — thème *Aube sur Minas Tirith*.
 
 ---
 
@@ -188,6 +188,7 @@ gestion-du-budget/
 │   ├── App.jsx          — state, FAB (+ éventail templates rapides), modals, callbacks
 │   ├── store.js         — reducer, actions A.*, DEFAULT_DATA
 │   ├── releve.js        — lecture du relevé PDF + comparaison (lecture seule)
+│   ├── views/AutoSavingViews.jsx — versements auto (réglage, liste) + pointage versements / programmées
 │   ├── taxRules.js      — règles fiscales par année de revenus (récap fiscal) — à mettre à jour chaque janvier
 │   ├── backupCrypto.js  — chiffrement des sauvegardes (AES-256-GCM + PBKDF2, WebCrypto)
 │   ├── hooks.js         — useBalance, useReconciliation, useBalanceWithRecurring, computeProjection…
@@ -200,7 +201,7 @@ gestion-du-budget/
 ├── index.html
 ├── vite.config.js
 ├── capacitor.config.js
-└── package.json         — version: 1.80.2
+└── package.json         — version: 1.81.0
 ```
 
 ---
@@ -348,6 +349,7 @@ Stockage en `localStorage` sous la clé `budget_ultimate_2026_v10`.
 
 | Version | Type | Description |
 |---------|------|--------------|
+| **1.81.0** | minor | **Versements automatiques repensés + harmonisation** — *Versements auto* : déduits du solde estimé **dès le jour prévu** et **datés de ce jour** (avant : créés seulement au démarrage complet de l'appli, datés du jour d'ouverture) — rattrapage au retour dans l'appli et toutes les 15 min ; à pointer ensuite. Réglage en fenêtre centrée (remplace les listes déroulantes) : **jour fixe** (option « décaler au jour ouvré suivant ») ou **après la paie** (le jour même, le lendemain, 2 ou 3 jours de virement après, mar.–ven. hors fériés — suit la date de la paie) ; **date de fin** (aucune, 6 mois, 1 an, mois au choix) avec nombre de versements et total, puis « ✓ Terminé » ; modification d'un versement existant. Notification à 9 h le jour J (toucher → pointage), rappel le soir s'il n'est pas pointé. Fenêtre de pointage : Pointer / **Pas ce mois-ci** (opération supprimée, cagnotte remise) / Plus tard — corrige le ✕ de l'Historique qui ne retirait pas le versement. *Programmées* : notification aussi le **jour J** (la veille devient optionnelle), confirmées dès leur date (plus seulement au démarrage), fenêtre de pointage (date de prélèvement corrigeable, annuler, plus tard). *À traiter* (Accueil) : versements auto et programmées échus non pointés, bouton Pointer. *Notifications* : rappels du soir à **une heure commune** (20 h par défaut : paie, versement, programmée, « rien saisi ») et rappels du matin regroupés. *Salaire* : avertissement quand « budget du mois suivant » + début « Ce mois » (1ᵉʳ versement attendu déjà passé) avec bouton « Mois proch. ». *Correctif* : un versement auto ne peut plus être créé deux fois pour le même mois. |
 | **1.80.2** | patch | **Samedi compté comme jour ouvré** — Nouvel interrupteur « Le samedi compte comme jour ouvré » sous les règles « dernier / avant-dernier jour ouvré » d'un frais ou revenu fixe (selon l'employeur). Le samedi entre dans le comptage, mais un versement ne tombe jamais un samedi ni un lundi (banques) : il est alors avancé au vendredi. Ex. avant-dernier jour ouvré d'octobre 2026 : jeu. 29 → **ven. 30** ; février 2027 : 25 → 26 ; novembre 2026 inchangé (27). Toutes les dates suivent : paie attendue, rappels, projection, Fixes, Historique, relevé. |
 | **1.80.1** | patch | **« En attente » de l'Accueil : tous les mois** — La pastille « ⏳ … en attente › » ouvre une fenêtre qui liste exactement ce qui compose le chiffre (opérations, chèques, frais et revenus fixes non pointés), **tous mois confondus**, groupés par mois avec sous-totaux ; total = chiffre de la pastille. Avant, elle ouvrait l'Historique du mois en cours filtré, qui ne montrait pas les éléments des mois précédents (ex. un chèque de septembre) → chiffres différents. Le ○ pointe directement (mêmes contrôles qu'en 1.80.0), « Voir {mois} dans l'Historique › » ouvre ce mois filtré « en attente ». La paie attendue est rappelée hors total. Aucun calcul modifié. |
 | **1.80.0** | minor | **Paie comptée seulement une fois pointée + contrôles au pointage** — *Paie* (revenu fixe principal = revenu daté le plus élevé) : n'entre plus dans le solde estimé tant qu'elle n'est pas pointée, même si sa date prévue est passée (avant : comptée dès sa date). Accueil : pastille « 💰 Paie attendue · X non comptée », carte « Paie pas encore pointée » avec bouton **Pointer** dans À traiter, « X dispo d'ici la paie » le temps qu'elle arrive ; Calcul du solde : ligne « Paie attendue » dans « Pour information · non compté ». Pointer la paie ouvre toujours la fenêtre de pointage : **montant réel modifiable** + **date de versement** (aujourd'hui / hier / avant-hier / autre, mémorisée). Les autres revenus fixes (CAF…) restent comptés à leur date. *Notification* « 💰 Ta paie est arrivée ? » le soir du jour prévu (20 h) puis les soirs suivants (3 par défaut) tant qu'elle n'est pas pointée — heure et nombre de soirs réglables (Options › Notifications) ; reprogrammée dès que la paie est pointée ; toucher la notification ouvre le pointage. *Contrôles au pointage (Historique)* : dépense avec remboursement attendu → « Et le remboursement ? » (reçu : revenu créé à la date choisie et pointé si voulu · déjà saisi : le relier · pas encore) ; remboursement reçu non pointé → « Le pointer aussi ? » ; pointer un remboursement → « Et la dépense d'origine ? » ; chèque → « Encaissé quand ? » (date du relevé, avant : date du jour) ; opération identique déjà pointée (même montant, type, catégorie, ±3 j) → « Doublon ? » (supprimer / deux achats, mémorisé). La fenêtre s'ouvre après le pointage, jamais bloquante (sauf le chèque, qui demande sa date d'abord). |

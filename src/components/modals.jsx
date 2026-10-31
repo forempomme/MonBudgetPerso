@@ -1561,6 +1561,24 @@ function FixedFormModal({ initialKind, categories, fixedExpenses = [], fixedInco
       <MonthField label="Début" value={startYM} onChange={setStartYM} shortcuts={[
         ["Déjà en cours", ""], ["Ce mois", curM], ["Mois proch.", addMonthsYM(curM, 1)],
       ]} />
+      {/* v1.81.0 : revenu compté le mois suivant + début « Ce mois » → la 1ʳᵉ occurrence attendue
+          est celle versée à la fin du mois PRÉCÉDENT (souvent déjà enregistrée à la main) */}
+      {isInc && advance && day && startYM === curM && (() => {
+        const first = fixedCashDateISO({ day, advance: true, satWorkday }, curM);
+        if (!first || first > todayISO()) return null;
+        const nextPaid = fixedCashDateISO({ day, advance: true, satWorkday }, addMonthsYM(curM, 1));
+        return (
+          <div data-testid="start-warning" style={{ fontSize: ".64rem", lineHeight: 1.45, padding: "9px 11px", borderRadius: 12, margin: "-2px 0 10px",
+            background: "rgba(232,148,74,.1)", border: "1px solid rgba(232,148,74,.5)", color: "#f2c79c" }}>
+            ⚠️ <b style={{ color: "var(--text)" }}>1ᵉʳ versement attendu : le {shortDateFR(first)}</b> (fin du mois précédent, compté ce mois-ci) — déjà passé.<br />
+            Si ce versement est déjà enregistré dans tes opérations, choisis « Mois proch. » : sinon il sera vu comme encore attendu.
+            <button type="button" data-testid="start-next" {...tap(() => setStartYM(addMonthsYM(curM, 1)))}
+              style={{ display: "block", width: "100%", marginTop: 7, padding: "8px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--surface2)", color: "var(--text)", fontWeight: 800, fontSize: ".66rem", cursor: "pointer" }}>
+              Commencer au versement du {nextPaid ? shortDateFR(nextPaid) : "mois prochain"} (Mois proch.)
+            </button>
+          </div>
+        );
+      })()}
       {isInc && (() => {
         // v1.68.0 : changements prévus + effet sur la projection (3 mois)
         const base = autoOn && autoAmt != null ? autoAmt : (amountOf(amt) || 0);

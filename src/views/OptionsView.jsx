@@ -3,11 +3,12 @@ import { Toggle } from "../components/index.jsx";
 import { SecurityExtraSettings } from "./SecuritySheets.jsx";
 import { CategoryManager } from "./CategoryManager.jsx";
 import { DataCheckPanel } from "./DataCheckPanel.jsx";
+import { AutoSavingList, AutoSavingModal } from "./AutoSavingViews.jsx";
 import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { createPortal } from "react-dom";
-import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved, fmtInt } from "../utils.js";
+import { fmt, isIncome, APP_NAME, APP_VERSION, touchMoved, fmtInt, currentYM } from "../utils.js";
 import { EmptyIllustration, TagsModal, sha256hex } from "./shared.jsx";
-import { useGroceryBudget, groceryCategoryIds, computeDataChecks } from "../hooks.js";
+import { useGroceryBudget, groceryCategoryIds, computeDataChecks, firstAutoSavingKey } from "../hooks.js";
 
 // ─────────────────────────────────────────────────────────────────
 //  SideAmountTypesModal — v1.39.32
@@ -247,12 +248,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   const [chequeDelay,   setChequeDelay]   = useState(notifSettings.chequeDelay  ?? 30);
   // v1.48.0 : rappel du soir + remboursements en retard
   const [notifEvening,  setNotifEvening]  = useState(!!notifSettings.evening);
-  const [eveningHour,   setEveningHour]   = useState(notifSettings.eveningHour ?? 21);
+  // v1.81.0 : heure commune des rappels du soir + versements / programmées non pointés
+  const [nightHour,     setNightHour]     = useState(notifSettings.nightHour ?? 20);
+  const [notifNightAs,  setNotifNightAs]  = useState(notifSettings.nightAutoSaving ?? true);
+  const [notifNightSch, setNotifNightSch] = useState(notifSettings.nightScheduled ?? true);
+  const [schedVeille,   setSchedVeille]   = useState(notifSettings.scheduledVeille ?? true);
   const [eveningDays,   setEveningDays]   = useState(notifSettings.eveningDays || "all");
   const [notifReimb,    setNotifReimb]    = useState(notifSettings.reimbursements ?? true);
   // v1.80.0 : paie non pointée
   const [notifPay,      setNotifPay]      = useState(notifSettings.payUnpointed ?? true);
-  const [payHour,       setPayHour]       = useState(notifSettings.payHour ?? 20);
   const [payDays,       setPayDays]       = useState(notifSettings.payDays ?? 3);
 
   function saveNotif(field, val) {
@@ -270,8 +274,7 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
   }
 
   // Versement auto
-  const [addingPlan,    setAddingPlan]    = useState(false);
-  const [planDraft,     setPlanDraft]     = useState({ cagnotteId:"", amount:"", dayOfMonth:"1" });
+  const [planEdit,      setPlanEdit]      = useState(null);   // v1.81.0 : {} (nouveau) | plan
   // Sécurité
   const [pinOn,         setPinOn]         = useState(pinEnabled);
   const [bioOn,         setBioOn]         = useState(bioEnabled);
@@ -326,6 +329,12 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
     onPushBack?.(() => setOpenSheet(null));
     return () => onPopBack?.();
   }, [openSheet]);
+  // v1.81.0 : la fenêtre de réglage d'un versement se ferme avant la feuille
+  useEffect(() => {
+    if (!planEdit) return;
+    onPushBack?.(() => setPlanEdit(null));
+    return () => onPopBack?.();
+  }, [planEdit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Détection scroll vs tap
   const touchPosRef  = useRef({ x: 0, y: 0 });
@@ -734,56 +743,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
       {/* 🎯 Versements automatiques */}
       <Sheet open={openSheet==="autoSavings"} onClose={close} title="🎯 Versements automatiques">
         <div style={{ fontSize:".65rem", color:"var(--text3)", lineHeight:1.6, marginBottom:12 }}>
-          Virement mensuel planifié vers une cagnotte. Il apparaît dans l'Historique pour confirmation.
+          Virement mensuel vers une cagnotte. Le jour prévu, il est déduit du solde estimé (daté de ce jour) : il ne reste qu'à le pointer quand il apparaît sur ton relevé.
         </div>
-        {autoSavings.map(plan => {
-          const cag = data.cagnottes.find(c=>c.id===plan.cagnotteId);
-          return (
-            <div key={plan.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 12px", background:"var(--surface2)", border:`1px solid ${plan.enabled?"rgba(176,144,224,.25)":"var(--border)"}`, borderRadius:9, marginBottom:6 }}>
-              <span style={{ fontSize:".9rem" }}>{cag?.icon||"🐷"}</span>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:".74rem", fontWeight:700 }}>{cag?.name||"—"}</div>
-                <div style={{ fontSize:".6rem", color:"var(--text3)", marginTop:1 }}>{fmt(plan.amount)} le {plan.dayOfMonth} de chaque mois</div>
-              </div>
-              <Toggle on={plan.enabled} color="var(--purple)" onClick={()=>onSaveAutoSaving?.({...plan,enabled:!plan.enabled})} />
-              <button onTouchStart={e=>e.stopPropagation()} onTouchEnd={e=>{e.stopPropagation();if (touchMoved()) return; e.preventDefault();onDeleteAutoSaving?.(plan.id);}} onClick={()=>onDeleteAutoSaving?.(plan.id)}
-                style={{ background:"transparent", border:"1px solid var(--border)", borderRadius:6, padding:"4px 8px", color:"var(--text3)", fontSize:".65rem", cursor:"pointer", minHeight:28, touchAction:"manipulation" }}>✕</button>
-            </div>
-          );
-        })}
-        {!addingPlan ? (
-          <button onClick={()=>setAddingPlan(true)} style={{ width:"100%", background:"transparent", border:"1.5px dashed var(--purple)", borderRadius:9, padding:"10px", color:"var(--purple)", fontWeight:700, fontSize:".75rem", cursor:"pointer", marginTop:4, touchAction:"manipulation" }}>
-            ＋ Planifier un versement
-          </button>
-        ) : (
-          <div style={{ background:"var(--surface2)", border:"1.5px solid var(--purple)", borderRadius:10, padding:12, marginTop:4 }}>
-            <select value={planDraft.cagnotteId} onChange={e=>setPlanDraft(d=>({...d,cagnotteId:e.target.value}))}
-              style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--accent)", borderRadius:8, padding:"9px 10px", color:"var(--text)", fontSize:".78rem", marginBottom:8 }}>
-              <option value="">Choisir une cagnotte…</option>
-              {data.cagnottes.map(c=><option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-            </select>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, marginBottom:10 }}>
-              <div>
-                <div style={{ fontSize:".58rem", color:"var(--text2)", marginBottom:3 }}>Montant (€)</div>
-                <input type="number" value={planDraft.amount} min="1" placeholder="50" onChange={e=>setPlanDraft(d=>({...d,amount:e.target.value}))}
-                  style={{ width:"100%", background:"var(--bg)", border:`1px solid ${planDraft.amount?"var(--purple)":"var(--border)"}`, borderRadius:7, padding:"8px 10px", color:"var(--text)", fontSize:".85rem", fontFamily:"var(--mono)", boxSizing:"border-box" }} />
-              </div>
-              <div>
-                <div style={{ fontSize:".58rem", color:"var(--text2)", marginBottom:3 }}>Jour du mois</div>
-                <select value={planDraft.dayOfMonth} onChange={e=>setPlanDraft(d=>({...d,dayOfMonth:e.target.value}))}
-                  style={{ width:"100%", background:"var(--bg)", border:"1px solid var(--border)", borderRadius:7, padding:"8px 10px", color:"var(--text)", fontSize:".78rem" }}>
-                  {[1,5,10,15,20,25,28].map(d=><option key={d} value={d}>Le {d}</option>)}
-                </select>
-              </div>
-            </div>
-            <div style={{ display:"flex", gap:6 }}>
-              <button onClick={()=>setAddingPlan(false)} style={{ flex:1, background:"transparent", border:"1px solid var(--border)", borderRadius:8, padding:"8px", color:"var(--text3)", fontSize:".7rem", cursor:"pointer" }}>Annuler</button>
-              <button onClick={()=>{if(!planDraft.cagnotteId||!planDraft.amount)return;onSaveAutoSaving?.({cagnotteId:planDraft.cagnotteId,amount:parseFloat(planDraft.amount),dayOfMonth:parseInt(planDraft.dayOfMonth),enabled:true});setAddingPlan(false);setPlanDraft({cagnotteId:"",amount:"",dayOfMonth:"1"});}}
-                style={{ flex:2, background:planDraft.cagnotteId&&planDraft.amount?"var(--purple)":"var(--surface2)", border:"none", borderRadius:8, padding:"8px", color:planDraft.cagnotteId&&planDraft.amount?"var(--bg)":"var(--text3)", fontWeight:800, fontSize:".75rem", cursor:"pointer", touchAction:"manipulation" }}>
-                Créer
-              </button>
-            </div>
-          </div>
+        {/* v1.81.0 : liste + fenêtre de réglage (jour fixe / après la paie, date de fin) */}
+        <AutoSavingList data={data} onNew={() => setPlanEdit({})} onEdit={p => setPlanEdit(p)}
+          onToggle={(p, on) => onSaveAutoSaving?.(on ? { ...p, enabled: true, endYM: p.endYM && p.endYM < currentYM() ? null : p.endYM, startKey: firstAutoSavingKey({ ...p, enabled: true }, data) } : { ...p, enabled: false })} />
+        {planEdit && (
+          <AutoSavingModal plan={planEdit.id ? planEdit : null} data={data} onClose={() => setPlanEdit(null)}
+            onSave={pl => { onSaveAutoSaving?.(pl); setPlanEdit(null); }}
+            onDelete={id => { onDeleteAutoSaving?.(id); setPlanEdit(null); }} />
         )}
       </Sheet>
 
@@ -1048,20 +1016,15 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
           </div>
           <Toggle on={notifOn} color="var(--warning)" onClick={()=>toggleNotifMain(!notifOn)} />
         </div>
-        {notifOn && (
-          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-            {[
-              ["recurring",  notifRecurring, setNotifRecurring, "🔄", "Récurrentes à confirmer",  "Le 1er du mois si non confirmées"],
-              ["autoSaving", notifAuto,      setNotifAuto,      "🐷", "Versements auto cagnotte",  "Le jour J si non appliqué"],
-              ["alertSolde", notifAlert,     setNotifAlert,     "🔔", "Alerte solde bas",          "Quand le solde passe sous le seuil"],
-              ["scheduled",  notifSched,     setNotifSched,     "📅", "Dépenses programmées",      "La veille de chaque dépense prévue"],
-              ["backup",     notifBackup,    setNotifBackup,    "💾", "Rappel sauvegarde",         "Si aucune sauvegarde depuis 7 jours"],
-              ["cheques",    notifCheques,   setNotifCheques,   "🧾", "Chèques non encaissés",     `Tous les ${chequeDelay} jours, et 1 mois avant péremption`],
-              ["reimbursements", notifReimb, setNotifReimb,     "↩️", "Remboursements en retard",  "15 jours après la date prévue, s'il n'est pas reçu"],
-              ["payUnpointed", notifPay,     setNotifPay,       "💰", "Paie non pointée",          `À ${payHour} h le jour prévu${payDays > 1 ? `, puis ${payDays - 1} soir${payDays > 2 ? "s" : ""} de plus` : ""}, tant qu'elle n'est pas pointée`],
-              ["evening",    notifEvening,   setNotifEvening,   "🌙", "Rappel du soir",            "Seulement si rien n'a été saisi ce jour-là"],
-            ].map(([key, val, setter, ico, lbl, desc]) => (
-              <div key={key} style={{ display:"flex", alignItems:"center", gap:10, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+        {notifOn && (() => {
+          // v1.81.0 : rappels regroupés — le soir (une heure commune) / le matin (9 h)
+          const pill = (on, onClick, txt, attr = {}) => (
+            <button {...attr} onClick={onClick} style={{ padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
+              border:`1px solid ${on ? "var(--accent)" : "var(--border)"}`, color: on ? "var(--accent)" : "var(--text2)", background: on ? "var(--accent-glow)" : "transparent" }}>{txt}</button>
+          );
+          const row = ([key, val, setter, ico, lbl, desc], extra) => (
+            <div key={key} data-notif={key} style={{ padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                 <div style={{ width:32, height:32, borderRadius:8, background:"rgba(200,184,96,.1)", border:"1px solid rgba(200,184,96,.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:".85rem", flexShrink:0 }}>{ico}</div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ fontSize:".72rem", fontWeight:700, color:"var(--text)" }}>{lbl}</div>
@@ -1069,72 +1032,37 @@ export function OptionsView({ data, onEditCat, onDeleteCat, onNewCat, onExport, 
                 </div>
                 <Toggle on={val} color="var(--warning)" onClick={()=>{ setter(!val); saveNotif(key,!val); }} />
               </div>
-            ))}
-            {notifEvening && (
-              <div style={{ marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
-                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>🌙 Heure</span>
-                  {[20, 21, 22].map(h => (
-                    <button key={h} onClick={() => { setEveningHour(h); saveNotif("eveningHour", h); }} style={{
-                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
-                      border:`1px solid ${eveningHour===h ? "var(--accent)" : "var(--border)"}`, color: eveningHour===h ? "var(--accent)" : "var(--text2)",
-                      background: eveningHour===h ? "var(--accent-glow)" : "transparent" }}>{h} h</button>
-                  ))}
-                  <select value={[20,21,22].includes(eveningHour) ? "" : eveningHour} onChange={e => { const h = parseInt(e.target.value, 10); if (!isNaN(h)) { setEveningHour(h); saveNotif("eveningHour", h); } }}
-                    style={{ width:72, padding:"4px 6px", fontSize:".62rem", borderRadius:14 }}>
-                    <option value="">Autre…</option>
-                    {[17,18,19,23].map(h => <option key={h} value={h}>{h} h</option>)}
-                  </select>
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>Jours</span>
-                  {[["all","Tous"],["week","Semaine"],["weekend","Week-end"]].map(([k,l]) => (
-                    <button key={k} onClick={() => { setEveningDays(k); saveNotif("eveningDays", k); }} style={{
-                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
-                      border:`1px solid ${eveningDays===k ? "var(--accent)" : "var(--border)"}`, color: eveningDays===k ? "var(--accent)" : "var(--text2)",
-                      background: eveningDays===k ? "var(--accent-glow)" : "transparent" }}>{l}</button>
-                  ))}
-                </div>
-                <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.4 }}>Les 7 prochains soirs sont programmés ; celui du jour est annulé dès qu'une opération est saisie. Sans ouvrir l'app pendant 7 jours, les rappels s'arrêtent.</div>
-              </div>
-            )}
-            {notifPay && (
-              <div data-testid="pay-notif-settings" style={{ marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
-                <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8 }}>
-                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>💰 Heure</span>
-                  {[19, 20, 21, 22].map(h => (
-                    <button key={h} data-pay-hour={h} onClick={() => { setPayHour(h); saveNotif("payHour", h); }} style={{
-                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
-                      border:`1px solid ${payHour===h ? "var(--accent)" : "var(--border)"}`, color: payHour===h ? "var(--accent)" : "var(--text2)",
-                      background: payHour===h ? "var(--accent-glow)" : "transparent" }}>{h} h</button>
-                  ))}
-                </div>
-                <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-                  <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1, minWidth:90 }}>Rappels</span>
-                  {[[1,"Le jour même"],[2,"2 soirs"],[3,"3 soirs"],[5,"5 soirs"]].map(([n,l]) => (
-                    <button key={n} data-pay-days={n} onClick={() => { setPayDays(n); saveNotif("payDays", n); }} style={{
-                      padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
-                      border:`1px solid ${payDays===n ? "var(--accent)" : "var(--border)"}`, color: payDays===n ? "var(--accent)" : "var(--text2)",
-                      background: payDays===n ? "var(--accent-glow)" : "transparent" }}>{l}</button>
-                  ))}
-                </div>
-                <div style={{ fontSize:".56rem", color:"var(--text3)", marginTop:6, lineHeight:1.4 }}>La paie n'est comptée dans le solde estimé qu'une fois pointée. Aucun rappel si elle est pointée avant l'heure. Toucher la notification ouvre le pointage (montant réel et date).</div>
-              </div>
-            )}
-            {notifCheques && (
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginTop:8, padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
-                <span style={{ fontSize:".62rem", color:"var(--text2)", flex:1 }}>🧾 Rappel chèque tous les</span>
-                {[15, 30, 60].map(n => (
-                  <button key={n} onClick={() => { setChequeDelay(n); saveNotif("chequeDelay", n); }} style={{
-                    padding:"5px 10px", borderRadius:14, fontSize:".62rem", fontWeight:800, cursor:"pointer",
-                    border:`1px solid ${chequeDelay===n ? "var(--chq)" : "var(--border)"}`, color: chequeDelay===n ? "var(--chq)" : "var(--text2)",
-                    background: chequeDelay===n ? "var(--chq-glow)" : "transparent",
-                  }}>{n} j</button>
-                ))}
-              </div>
-            )}
+              {val && extra && <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap", marginTop:8, paddingLeft:42 }}>{extra}</div>}
+            </div>
+          );
+          const grp = t => <div style={{ fontSize:".56rem", fontWeight:800, letterSpacing:".1em", textTransform:"uppercase", color:"var(--text3)", margin:"10px 2px 4px" }}>{t}</div>;
+          return (
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            {grp("🌙 Rappels du soir")}
+            <div data-testid="night-hour" style={{ padding:"9px 12px", background:"var(--surface2)", borderRadius:10 }}>
+              <div style={{ fontSize:".72rem", fontWeight:700 }}>Heure des rappels du soir</div>
+              <div style={{ fontSize:".6rem", color:"var(--text3)", margin:"1px 0 7px" }}>Une seule heure pour tous les rappels ci-dessous</div>
+              <div style={{ display:"flex", gap:6 }}>{[19, 20, 21, 22].map(h => pill(nightHour === h, () => { setNightHour(h); saveNotif("nightHour", h); }, `${h} h`, { "data-night-hour": h }))}</div>
+            </div>
+            {row(["payUnpointed", notifPay, setNotifPay, "💰", "Paie non pointée", `Le jour prévu${payDays > 1 ? `, puis ${payDays - 1} soir${payDays > 2 ? "s" : ""} de plus` : ""} · n'est comptée qu'une fois pointée`],
+              <div data-testid="pay-notif-settings" style={{ display:"flex", gap:6, flexWrap:"wrap" }}>{[[1,"Le jour même"],[2,"2 soirs"],[3,"3 soirs"],[5,"5 soirs"]].map(([n,l]) => pill(payDays === n, () => { setPayDays(n); saveNotif("payDays", n); }, l, { key: n, "data-pay-days": n }))}</div>)}
+            {row(["nightAutoSaving", notifNightAs, setNotifNightAs, "🐷", "Versement auto non pointé", "Le soir du jour prévu"])}
+            {row(["nightScheduled", notifNightSch, setNotifNightSch, "📅", "Programmée non pointée", "Le soir du jour prévu"])}
+            {row(["evening", notifEvening, setNotifEvening, "✏️", "Rien saisi aujourd'hui", "Seulement si aucune opération ce jour-là"],
+              <>{[["all","Tous"],["week","Semaine"],["weekend","Week-end"]].map(([k,l]) => pill(eveningDays === k, () => { setEveningDays(k); saveNotif("eveningDays", k); }, l, { key: k }))}</>)}
+            {grp("☀️ Rappels du matin (9 h)")}
+            {row(["autoSaving", notifAuto, setNotifAuto, "🐷", "Versements auto du jour", "Le jour prévu : déduit du solde, à pointer"])}
+            {row(["scheduled", notifSched, setNotifSched, "📅", "Dépenses programmées", schedVeille ? "La veille et le jour J" : "Le jour J"],
+              pill(schedVeille, () => { setSchedVeille(!schedVeille); saveNotif("scheduledVeille", !schedVeille); }, "+ la veille", { "data-testid": "sched-veille" }))}
+            {row(["recurring", notifRecurring, setNotifRecurring, "🔄", "Récurrentes à confirmer", "Le 1er du mois si non confirmées"])}
+            {row(["cheques", notifCheques, setNotifCheques, "🧾", "Chèques non encaissés", `Tous les ${chequeDelay} jours, et 1 mois avant péremption`],
+              <>{[15, 30, 60].map(n => pill(chequeDelay === n, () => { setChequeDelay(n); saveNotif("chequeDelay", n); }, `${n} j`, { key: n }))}</>)}
+            {row(["reimbursements", notifReimb, setNotifReimb, "↩️", "Remboursements en retard", "15 jours après la date prévue, s'il n'est pas reçu"])}
+            {row(["backup", notifBackup, setNotifBackup, "💾", "Rappel sauvegarde", "Si aucune sauvegarde depuis 7 jours"])}
+            {row(["alertSolde", notifAlert, setNotifAlert, "🔔", "Alerte solde bas", "Quand le solde passe sous le seuil"])}
           </div>
-        )}
+          );
+        })()}
         {!notifOn && (
           <div style={{ textAlign:"center", color:"var(--text3)", fontSize:".72rem", padding:"20px 0" }}>
             Activez les notifications pour configurer les rappels.

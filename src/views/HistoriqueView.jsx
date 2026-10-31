@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { fmt, currentYM, isIncome, txLabel, txTypeClass, txSign, todayISO, recurringRefDate, daysBetweenISO, touchMoved, fixedAmountFor, resolveFixedDay, pv } from "../utils.js";
-import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection } from "../hooks.js";
+import { useMonthStats, isPointable, isActiveForMonth, isIncomeDirection, dueAutoSavings } from "../hooks.js";
 import { EmptyIllustration, MONTHS_FR } from "./shared.jsx";
 
 // v1.74.0 : bouton d'action rond (glissement d'une ligne, feuille d'actions) — même famille que le menu du +
@@ -243,17 +243,12 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
   const recurringTemplates = data.recurringTemplates || [];
 
   // Versements auto à confirmer ce mois
-  const autoSavingsPending = useMemo(() => {
-    const plans = data.autoSavings || [];
-    const today = new Date();
-    return plans.filter(plan => {
-      if (!plan.enabled) return false;
-      const alreadyDone = transactions.some(t =>
-        t.autoSavingId === plan.id && t.date.startsWith(month)
-      );
-      return !alreadyDone && plan.dayOfMonth <= today.getDate();
-    });
-  }, [data.autoSavings, transactions, month]);
+  // v1.81.0 : même source que la création automatique (dueAutoSavings) ; normalement
+  // vide, l'occurrence étant créée dès qu'elle est due. « ✕ » = pas ce mois-ci.
+  const autoSavingsPending = useMemo(() =>
+    dueAutoSavings(data).map(({ plan, key, date }) => ({ ...plan, _key: key, _date: date })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [data.autoSavings, transactions, data.fixedIncomes, data.cagnottes]);
 
   const scheduledPending = useMemo(() => {
     const today = todayISO();
@@ -508,7 +503,7 @@ export function HistoriqueView({ data, onOpenReleve, onEditOffAccount, onEditTra
     const cag = cagnottes.find(c => c.id === plan.cagnotteId);
     return pendRow({ key: plan.id, icon: cag?.icon || "🐷", tint: "var(--purple)", name: cag?.name || "—", sub: "versement mensuel",
       amount: fmt(plan.amount), amtCol: "var(--purple)", okLabel: "＋", okCol: "var(--purple)",
-      onOk: () => onApplyAutoSaving?.(plan.id), onNo: () => onSkipAutoSaving?.(plan.id) });
+      onOk: () => onApplyAutoSaving?.(plan.id, plan._key, plan._date), onNo: () => onSkipAutoSaving?.(plan.id, plan._key) });
   };
   const schedRow = sc => {
     const cat = categories.find(c => c.id === sc.categoryId);

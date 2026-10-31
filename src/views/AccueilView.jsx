@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { Delta, Modal } from "../components/index.jsx";
 import { fmt, currentYM, getPrevMonth, isIncome, MONTHS_SHORT, recurringRefDate, todayISO, daysAgoISO, touchMoved, resolveFixedDay, fixedOccurrenceYM, fixedAmountFor, pv, isPrivacy, MASK } from "../utils.js";
-import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection } from "../hooks.js";
+import { useBalanceBreakdown, useGroceryBudget, computePeriodTotals, computeDailyForecast, computeRestToLive, computeSurplus, pendingReimbursements, useMonthStats, usePriorYearStats, useTotalFixes, computeProjection, useProjectionAccuracy, effectiveFixesForMonth, effectiveIncomesForMonth, useReconciliation, isActiveForMonth, computeTagBudgets, computeWallets, pendingCheques, isIncomeDirection, unpointedDueOps } from "../hooks.js";
 import { MONTHS_FR, SectionTitle } from "./shared.jsx";
 import { BalanceBreakdownSheet } from "./BalanceBreakdownSheet.jsx";
 import { PendingSheet } from "./PendingSheet.jsx";
@@ -106,7 +106,7 @@ function SmartIndicator({ balance, curMonthInc, curMonthExp, lastBackupDate, onS
     </div>
   );
 }
-export function AccueilView({ data, onOpenPatrimoine, onTogglePointTx, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
+export function AccueilView({ data, onOpenPatrimoine, onTogglePointTx, onOpenAutoSavingPoint, onOpenScheduledPoint, onOpenReimbursement, onOpenOffAccount, onCashCheque, onDeleteTrans, onShowDetail, onSwitchTab, onSaveProvisional, onDeleteProvisional, onGoToHistorique, alertEnabled, alertThreshold, roundingEnabled, roundingCagnotteId, roundingLastTransferDate, onMarkRoundingTransferred, onDeleteScheduled, onConfirmRecurring, onTogglePointFix, onTogglePointIncome, onSaveProjectionSnapshot, onDismissInsight, onSaveSurplus }) {
 
   // Sections masquables — persistées en localStorage
   // v1.49.0 : période du bloc Bilan — pas mémorisée, revient toujours sur le mois
@@ -463,7 +463,8 @@ export function AccueilView({ data, onOpenPatrimoine, onTogglePointTx, onOpenRei
   );
   const awaitingPay = breakdown.awaitingPay?.items || [];   // v1.80.0 : paie due, non pointée → non comptée
   const [pendingOpen, setPendingOpen] = useState(false);   // v1.80.1 : « En attente » tous mois confondus
-  const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0 || awaitingPay.length > 0
+  const dueOps = unpointedDueOps(data);   // v1.81.0 : versements auto / programmées échus non pointés
+  const hasTodo = !!surplus?.show || pendingCheques(transactions).length > 0 || awaitingPay.length > 0 || dueOps.autoSavings.length > 0 || dueOps.scheduled.length > 0
     || unpointedFixes.length > 0 || unpointedIncomes.length > 0 || upcomingScheduled.length > 0 || upcomingRecurring.length > 0;
 
   // ── Couleur dynamique du solde ────────────────────────────────
@@ -894,6 +895,28 @@ export function AccueilView({ data, onOpenPatrimoine, onTogglePointTx, onOpenRei
             style={{ padding: "7px 12px", borderRadius: 12, border: "1px solid var(--success)", background: "rgba(104,212,152,.14)", color: "var(--success)", fontSize: ".66rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Pointer</button>
         </div>
       ))}
+
+      {/* ── 🐷 / 📅 Versements auto et programmées échus, pas encore pointés (v1.81.0) ── */}
+      {[...dueOps.autoSavings.map(t => ({ t, kind: "as" })), ...dueOps.scheduled.map(t => ({ t, kind: "sch" }))].map(({ t, kind }) => {
+        const isAs = kind === "as";
+        const cag = isAs ? cagnottes.find(c => c.id === t.targetCagId) : null;
+        const col = isAs ? "var(--purple)" : "var(--accent)";
+        const dd = `${parseInt(t.date.slice(8, 10), 10)}/${t.date.slice(5, 7)}`;
+        return (
+          <div key={t.id} data-testid={isAs ? "card-as-unpointed" : "card-sch-unpointed"} style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 7px", padding: "10px 12px", borderRadius: 16,
+            background: `color-mix(in srgb, ${col} 8%, transparent)`, border: `1px solid color-mix(in srgb, ${col} 40%, transparent)` }}>
+            <span style={{ fontSize: "1.1rem" }}>{isAs ? "🐷" : "📅"}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: ".7rem", fontWeight: 800, color: col }}>{isAs ? "Versement auto pas encore pointé" : "Programmée pas encore pointée"}</div>
+              <div style={{ fontSize: ".58rem", color: "var(--text2)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {fmt(parseFloat(t.amount) || 0)} {isAs ? `→ ${cag?.name || "cagnotte"}` : `· ${t.note || "dépense"}`} · prévu{isAs ? "" : "e"} le {dd} · déduit{isAs ? "" : "e"} du solde
+              </div>
+            </div>
+            <button data-testid={isAs ? "point-as" : "point-sch"} onClick={() => { if (touchMoved()) return; (isAs ? onOpenAutoSavingPoint : onOpenScheduledPoint)?.(t.id); }}
+              style={{ padding: "7px 12px", borderRadius: 12, border: `1px solid ${col}`, background: `color-mix(in srgb, ${col} 16%, transparent)`, color: col, fontSize: ".66rem", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>Pointer</button>
+          </div>
+        );
+      })}
 
       {/* ── 🧾 Chèques non encaissés (v1.43.0) — n'apparaît que s'il y en a ── */}
       {(() => {

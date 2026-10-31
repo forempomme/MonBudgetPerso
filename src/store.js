@@ -99,6 +99,8 @@ export const A = /** @type {const} */ ({
   SAVE_AUTO_SAVING:         "SAVE_AUTO_SAVING",
   DELETE_AUTO_SAVING:       "DELETE_AUTO_SAVING",
   APPLY_AUTO_SAVING:        "APPLY_AUTO_SAVING",
+  SKIP_AUTO_SAVING:         "SKIP_AUTO_SAVING",       // v1.81.0 : « pas ce mois-ci »
+  POINT_TX_AT:              "POINT_TX_AT",            // v1.81.0 : pointer à une date corrigée
   SAVE_SCHEDULED:           "SAVE_SCHEDULED",
   DELETE_SCHEDULED:         "DELETE_SCHEDULED",
   CONFIRM_SCHEDULED:        "CONFIRM_SCHEDULED",
@@ -261,6 +263,8 @@ export const DEFAULT_DATA = {
     evening: false, eveningHour: 21, eveningDays: "all",   // "all" | "week" | "weekend"
     reimbursements: true,             // v1.48.0 : rappel des remboursements en retard
     payUnpointed: true, payHour: 20, payDays: 3,   // v1.80.0 : paie non pointée (soir du jour prévu + soirs suivants)
+    // v1.81.0 : rappels du soir à une heure commune ; versement / programmée non pointés ; veille des programmées
+    nightHour: 20, nightAutoSaving: true, nightScheduled: true, scheduledVeille: true,
   },
 };
 
@@ -315,6 +319,8 @@ export function normalizeData(saved) {
     savingsGoals: src.savingsGoals || {},
     cagTypes: Array.isArray(src.cagTypes) ? src.cagTypes : DEFAULT_CAG_TYPES,
   };
+  // v1.81.0 : anciens versements auto jamais appliqués → pas de rattrapage du mois précédent
+  data.autoSavings = (data.autoSavings || []).map(p => p.startKey || p.lastAppliedYm ? p : { ...p, startKey: currentYM() });
 
   // Migration v1.39.31 → v1.39.32 : les tickets resto saisis dans l'ancien
   // champ unique `mealVoucherAmount` n'étaient plus affichés depuis le
@@ -1131,6 +1137,7 @@ export function reducer(state, action) {
         categoryId: s.categoryId,
         note: s.note || "",
         fromScheduled: true,
+        scheduledId: s.id,   // v1.81.0 : lien avec la notification du jour J
       };
       return {
         ...state,
@@ -1149,7 +1156,8 @@ export function reducer(state, action) {
       const now    = new Date();
       const today  = now.getDate();
       const curYM  = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-      const lastAppliedYm = today >= plan.dayOfMonth ? curYM : null;
+      // v1.81.0 : la fenêtre de réglage fournit startKey (1ʳᵉ occurrence non passée)
+      const lastAppliedYm = plan.startKey ? null : (today >= plan.dayOfMonth ? curYM : null);
       return { ...state, autoSavings: [...(state.autoSavings||[]), { ...plan, id: uid("as"), lastAppliedYm }] };
     }
 
@@ -1159,15 +1167,20 @@ export function reducer(state, action) {
     case A.APPLY_AUTO_SAVING: {
       const plan = (state.autoSavings||[]).find(p => p.id === action.planId);
       if (!plan) return state;
+      // v1.81.0 : idempotent — jamais deux opérations pour la même occurrence
+      // (déclenchements rapprochés : ouverture, retour dans l'appli, minuterie)
+      const occKey = action.key || action.ym;
+      if (state.transactions.some(t => t.autoSavingId === plan.id && (t.autoSavingKey ? t.autoSavingKey === occKey : (t.date || "").startsWith(occKey)))) return state;
       const newTx = {
         id: uid("ast"),
         type: "epargne",
         amount: parseFloat(plan.amount),
-        date: action.date,
+        date: action.date,                    // v1.81.0 : date PRÉVUE de l'occurrence
         targetCagId: plan.cagnotteId,
         note: "Versement automatique",
         isAutoSaving: true,
         autoSavingId: plan.id,
+        autoSavingKey: action.key || action.ym,
       };
       return {
         ...state,
@@ -1175,11 +1188,32 @@ export function reducer(state, action) {
         cagnottes: state.cagnottes.map(c =>
           c.id === plan.cagnotteId ? { ...c, current: c.current + parseFloat(plan.amount) } : c
         ),
-        autoSavings: state.autoSavings.map(p =>
-          p.id === action.planId ? { ...p, lastAppliedYm: action.ym } : p
-        ),
+        autoSavings: state.autoSavings.map(p => {
+          if (p.id !== action.planId) return p;
+          const k = action.key || action.ym;
+          return { ...p, lastAppliedYm: !p.lastAppliedYm || k > p.lastAppliedYm ? k : p.lastAppliedYm };
+        }),
       };
     }
+
+    // v1.81.0 : « pas ce mois-ci » — l'occurrence est annulée : opération supprimée,
+    // cagnotte remise à son montant ; le plan reprend à l'occurrence suivante
+    case A.SKIP_AUTO_SAVING: {
+      const plan = (state.autoSavings || []).find(p => p.id === action.planId);
+      if (!plan) return state;
+      const key = action.key;
+      const tx = state.transactions.find(t => t.autoSavingId === plan.id && (t.autoSavingKey ? t.autoSavingKey === key : (t.date || "").startsWith(key)));
+      const amt = tx ? parseFloat(tx.amount) || 0 : 0;
+      return {
+        ...state,
+        transactions: tx ? state.transactions.filter(t => t.id !== tx.id) : state.transactions,
+        cagnottes: tx ? state.cagnottes.map(c => c.id === (tx.targetCagId || plan.cagnotteId) ? { ...c, current: Math.round(((parseFloat(c.current) || 0) - amt) * 100) / 100 } : c) : state.cagnottes,
+        autoSavings: state.autoSavings.map(p => p.id === plan.id ? { ...p, skipped: { ...(p.skipped || {}), [key]: true } } : p),
+      };
+    }
+
+    case A.POINT_TX_AT:
+      return { ...state, transactions: state.transactions.map(t => t.id === action.id ? { ...t, pointed: true, date: action.date || t.date } : t) };
 
     // v1.75.0 : réglages de sécurité complémentaires (liste blanche des champs)
     case A.SAVE_SECURITY_EXTRA: {
